@@ -1,0 +1,55 @@
+const asyncHandler = require("../utils/async-handler");
+const billingsService = require("../services/billings.service");
+
+const listInvoices = asyncHandler(async (req, res) => {
+  const data = await billingsService.listInvoices(req.user.organizationId, req.query);
+  res.json({ success: true, data });
+});
+
+const createInvoice = asyncHandler(async (req, res) => {
+  const data = await billingsService.createInvoice(req.user.organizationId, req.body);
+  res.status(201).json({ success: true, message: "Invoice created", data });
+});
+
+const getInvoice = asyncHandler(async (req, res) => {
+  const data = await billingsService.getInvoiceById(req.user.organizationId, req.params.id);
+  res.json({ success: true, data });
+});
+
+const updateInvoice = asyncHandler(async (req, res) => {
+  const data = await billingsService.updateInvoice(req.user.organizationId, req.params.id, req.body);
+  res.json({ success: true, message: "Invoice updated", data });
+});
+
+const issueInvoice = asyncHandler(async (req, res) => {
+  const data = await billingsService.issueInvoice(req.user.organizationId, req.params.id, req.body);
+  res.json({ success: true, message: "Invoice issued", data });
+});
+
+const recordPayment = asyncHandler(async (req, res) => {
+  const data = await billingsService.recordPayment(req.user.organizationId, req.params.id, req.body);
+  res.status(201).json({ success: true, message: "Payment recorded", data });
+});
+
+const downloadInvoicePdf = asyncHandler(async (req, res) => {
+  const pdf = await billingsService.generateInvoicePdf(req.user.organizationId, req.params.id);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${pdf.filename}"`);
+  res.send(pdf.buffer);
+});
+
+const deleteInvoice = asyncHandler(async (req, res) => {
+  await billingsService.deleteInvoice(req.user.organizationId, req.params.id);
+  res.json({ success: true, message: "Invoice deleted" });
+});
+
+module.exports = {
+  listInvoices,
+  createInvoice,
+  getInvoice,
+  updateInvoice,
+  issueInvoice,
+  recordPayment,
+  downloadInvoicePdf,
+  deleteInvoice
+};

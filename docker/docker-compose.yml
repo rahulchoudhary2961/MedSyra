@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: healthcare-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: healthcare_saas
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - healthcare_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_private
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: healthcare-backend
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    environment:
+      PORT: 5000
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/healthcare_saas
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: http://localhost:3000,http://frontend:3000
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      REQUIRE_HTTPS: ${REQUIRE_HTTPS:-true}
+    command: sh -c "npm run migrate && npm start"
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - backend_private
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: healthcare-frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:5000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_started
+
+  redis:
+    image: redis:7-alpine
+    container_name: healthcare-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - healthcare_redis_data:/data
+    networks:
+      - backend_private
+
+volumes:
+  healthcare_postgres_data:
+  healthcare_redis_data:
+
+networks:
+  backend_private:
+    internal: true
