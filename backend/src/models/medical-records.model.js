@@ -17,12 +17,28 @@ const listMedicalRecords = async (organizationId, query) => {
     conditions.push(`mr.status = $${values.length}`);
   }
 
+  if (query.patientId) {
+    values.push(query.patientId);
+    conditions.push(`mr.patient_id = $${values.length}`);
+  }
+
+  if (query.doctorId) {
+    values.push(query.doctorId);
+    conditions.push(`mr.doctor_id = $${values.length}`);
+  }
+
+  if (query.appointmentId) {
+    values.push(query.appointmentId);
+    conditions.push(`mr.appointment_id = $${values.length}`);
+  }
+
   values.push(limit, offset);
   const whereClause = conditions.join(" AND ");
 
   const querySql = `
     SELECT
       mr.id,
+      mr.appointment_id,
       mr.patient_id,
       p.full_name AS patient_name,
       mr.doctor_id,
@@ -30,6 +46,9 @@ const listMedicalRecords = async (organizationId, query) => {
       mr.record_type,
       mr.status,
       mr.record_date,
+      mr.symptoms,
+      mr.diagnosis,
+      mr.prescription,
       mr.notes,
       mr.file_url,
       mr.created_at,
@@ -69,10 +88,10 @@ const createMedicalRecord = async (organizationId, payload) => {
   const query = `
     INSERT INTO medical_records (
       organization_id, patient_id, doctor_id, record_type,
-      status, record_date, notes, file_url
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-    RETURNING id, patient_id, doctor_id, record_type, status,
-              record_date, notes, file_url, created_at, updated_at
+      appointment_id, status, record_date, symptoms, diagnosis, prescription, notes, file_url
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    RETURNING id, appointment_id, patient_id, doctor_id, record_type, status,
+              record_date, symptoms, diagnosis, prescription, notes, file_url, created_at, updated_at
   `;
 
   const values = [
@@ -80,20 +99,25 @@ const createMedicalRecord = async (organizationId, payload) => {
     payload.patientId,
     payload.doctorId,
     payload.recordType,
+    payload.appointmentId || null,
     payload.status || "completed",
     payload.recordDate,
+    payload.symptoms || null,
+    payload.diagnosis || null,
+    payload.prescription || null,
     payload.notes || null,
     payload.fileUrl || null
   ];
 
   const { rows } = await pool.query(query, values);
-  return rows[0];
+  return getMedicalRecordById(organizationId, rows[0].id);
 };
 
 const getMedicalRecordById = async (organizationId, id) => {
   const query = `
     SELECT
       mr.id,
+      mr.appointment_id,
       mr.patient_id,
       p.full_name AS patient_name,
       mr.doctor_id,
@@ -101,6 +125,9 @@ const getMedicalRecordById = async (organizationId, id) => {
       mr.record_type,
       mr.status,
       mr.record_date,
+      mr.symptoms,
+      mr.diagnosis,
+      mr.prescription,
       mr.notes,
       mr.file_url,
       mr.created_at,
@@ -115,13 +142,32 @@ const getMedicalRecordById = async (organizationId, id) => {
   return rows[0] || null;
 };
 
+const getMedicalRecordByAppointmentId = async (organizationId, appointmentId) => {
+  const query = `
+    SELECT id
+    FROM medical_records
+    WHERE organization_id = $1 AND appointment_id = $2
+    LIMIT 1
+  `;
+  const { rows } = await pool.query(query, [organizationId, appointmentId]);
+  if (!rows[0]) {
+    return null;
+  }
+
+  return getMedicalRecordById(organizationId, rows[0].id);
+};
+
 const updateMedicalRecord = async (organizationId, id, payload) => {
   const columnMap = {
     patientId: "patient_id",
     doctorId: "doctor_id",
     recordType: "record_type",
+    appointmentId: "appointment_id",
     status: "status",
     recordDate: "record_date",
+    symptoms: "symptoms",
+    diagnosis: "diagnosis",
+    prescription: "prescription",
     notes: "notes",
     fileUrl: "file_url"
   };
@@ -146,11 +192,16 @@ const updateMedicalRecord = async (organizationId, id, payload) => {
     UPDATE medical_records
     SET ${setClauses.join(", ")}, updated_at = NOW()
     WHERE organization_id = $1 AND id = $2
-    RETURNING id, patient_id, doctor_id, record_type, status, record_date, notes, file_url, created_at, updated_at
+    RETURNING id, appointment_id, patient_id, doctor_id, record_type, status, record_date,
+              symptoms, diagnosis, prescription, notes, file_url, created_at, updated_at
   `;
 
   const { rows } = await pool.query(query, values);
-  return rows[0] || null;
+  if (!rows[0]) {
+    return null;
+  }
+
+  return getMedicalRecordById(organizationId, rows[0].id);
 };
 
 const deleteMedicalRecord = async (organizationId, id) => {
@@ -167,6 +218,7 @@ module.exports = {
   listMedicalRecords,
   createMedicalRecord,
   getMedicalRecordById,
+  getMedicalRecordByAppointmentId,
   updateMedicalRecord,
   deleteMedicalRecord
 };

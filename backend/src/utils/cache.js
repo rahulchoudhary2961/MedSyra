@@ -8,6 +8,8 @@ const defaultTtlSeconds = env.cacheDefaultTtlSeconds;
 let redisClient = null;
 let redisEnabled = false;
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const tryInitRedis = async () => {
   if (!redisUrl) {
     return;
@@ -20,17 +22,35 @@ const tryInitRedis = async () => {
     redisClient.on("error", (error) => {
       redisEnabled = false;
       logger.logWarn("redis_client_error", {
-        error: error.message
+        error: error?.message || String(error || "unknown")
       });
     });
 
-    await redisClient.connect();
-    redisEnabled = true;
-    logger.logInfo("redis_connected");
+    const maxAttempts = 5;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        await redisClient.connect();
+        redisEnabled = true;
+        logger.logInfo("redis_connected", { attempts: attempt });
+        break;
+      } catch (connectError) {
+        redisEnabled = false;
+        if (attempt === maxAttempts) {
+          throw connectError;
+        }
+        const delayMs = 500 * attempt;
+        logger.logWarn("redis_connect_retry", {
+          attempt,
+          delayMs,
+          error: connectError?.message || String(connectError || "unknown")
+        });
+        await wait(delayMs);
+      }
+    }
   } catch (error) {
     redisEnabled = false;
     logger.logWarn("redis_unavailable_fallback_to_memory", {
-      error: error.message
+      error: error?.message || String(error || "unknown")
     });
   }
 };
@@ -83,10 +103,15 @@ const invalidateByPrefix = async (prefix) => {
   if (redisEnabled && redisClient) {
     const keys = [];
     for await (const key of redisClient.scanIterator({ MATCH: `${prefix}*` })) {
-      keys.push(key);
+      if (typeof key === "string" && key.length > 0) {
+        keys.push(key);
+      }
     }
-    if (keys.length > 0) {
-      await redisClient.del(keys);
+
+    const uniqueKeys = [...new Set(keys)];
+
+    if (uniqueKeys.length > 0) {
+      await redisClient.sendCommand(["DEL", ...uniqueKeys]);
     }
     return;
   }

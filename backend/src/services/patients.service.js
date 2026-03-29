@@ -7,6 +7,7 @@ const invalidatePatientAndDashboardCaches = async (organizationId) => {
   await Promise.all([
     cache.invalidateByPrefix(`patients:list:${organizationId}`),
     cache.invalidateByPrefix(`patients:item:${organizationId}`),
+    cache.invalidateByPrefix(`patients:profile:${organizationId}`),
     cache.invalidateByPrefix(`dashboard:summary:${organizationId}`),
     cache.invalidateByPrefix(`dashboard:reports:${organizationId}`)
   ]);
@@ -105,6 +106,34 @@ const getPatientById = async (organizationId, id) => {
   return patient;
 };
 
+const getPatientProfile = async (organizationId, id) => {
+  const cacheKey = `patients:profile:${organizationId}:${id}`;
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const profile = await patientsRepository.getPatientProfile(organizationId, id);
+  if (!profile.patient) {
+    throw new ApiError(404, "Patient not found");
+  }
+
+  const payload = {
+    patient: profile.patient,
+    visits: profile.visits,
+    invoices: profile.invoices,
+    summary: {
+      totalVisits: Number(profile.summary.total_visits || 0),
+      totalSpent: Number(profile.summary.total_spent || 0),
+      lastVisitDate: profile.summary.last_visit_date || null,
+      pendingAmount: Number(profile.summary.pending_amount || 0)
+    }
+  };
+
+  await cache.set(cacheKey, payload, 60);
+  return payload;
+};
+
 const updatePatient = async (organizationId, id, payload) => {
   const normalizedPayload = normalizePatientPayload(payload);
 
@@ -149,6 +178,7 @@ module.exports = {
   listPatients,
   createPatient,
   getPatientById,
+  getPatientProfile,
   updatePatient,
   deletePatient
 };

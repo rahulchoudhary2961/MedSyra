@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Heart } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { apiRequest } from "@/lib/api";
+import BrandLogo from "../../components/BrandLogo";
 
 type ApiMessage = { success: boolean; message: string };
 
 export default function VerifyEmailPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
   const [message, setMessage] = useState("");
@@ -33,6 +35,14 @@ export default function VerifyEmailPage() {
         body: { email, token }
       });
       setMessage(response.message);
+      const params = new URLSearchParams();
+      if (email) {
+        params.set("email", email);
+      }
+      params.set("verified", "1");
+      window.setTimeout(() => {
+        router.replace(`/auth/signin?${params.toString()}`);
+      }, 800);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify email");
     } finally {
@@ -59,11 +69,11 @@ export default function VerifyEmailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-blue-50 to-teal-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-cyan-600 rounded-2xl mb-4">
-            <Heart className="w-7 h-7 text-white" fill="white" />
+          <div className="mb-4 flex justify-center">
+            <BrandLogo size={72} className="rounded-[20px] shadow-[0_0_36px_rgba(16,185,129,0.24)]" priority />
           </div>
           <h1 className="text-2xl text-gray-900">Verify Email</h1>
           <p className="text-gray-600 mt-1 text-sm">Enter your email and verification token.</p>
@@ -93,7 +103,7 @@ export default function VerifyEmailPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-60"
+            className="w-full py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"
           >
             {loading ? "Verifying..." : "Verify Email"}
           </button>
@@ -109,9 +119,10 @@ export default function VerifyEmailPage() {
         </form>
 
         <p className="text-center text-sm text-gray-600 mt-6">
-          Continue to <Link href="/auth/signin" className="text-cyan-600">Sign In</Link>
+          Continue to <Link href="/auth/signin" className="text-emerald-600">Sign In</Link>
         </p>
       </div>
     </div>
   );
 }
+

@@ -6,12 +6,12 @@ interface StatCardProps {
     change: string;
     trend: "up" | "down";
     icon: LucideIcon;
-    color: "blue" | "cyan" | "teal" | "green";
+    color: "blue" | "emerald" | "teal" | "green";
 }
 
 const colorClasses = {
-    blue: "bg-blue-50 text-blue-600",
-    cyan: "bg-cyan-50 text-cyan-600",
+    blue: "bg-teal-50 text-teal-600",
+    emerald: "bg-emerald-50 text-emerald-600",
     teal: "bg-teal-50 text-teal-600",
     green: "bg-green-50 text-green-600"
 };

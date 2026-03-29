@@ -113,6 +113,11 @@ const me = asyncHandler(async (req, res) => {
   });
 });
 
+const listUsers = asyncHandler(async (req, res) => {
+  const data = await authService.listUsers(req.user.organizationId, req.query);
+  res.json({ success: true, data: { items: data } });
+});
+
 module.exports = {
   signup,
   signin,
@@ -120,5 +125,6 @@ module.exports = {
   resendVerificationEmail,
   requestPasswordReset,
   resetPassword,
-  me
+  me,
+  listUsers
 };

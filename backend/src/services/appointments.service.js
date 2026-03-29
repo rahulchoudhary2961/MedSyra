@@ -1,227 +1,340 @@
 const ApiError = require("../utils/api-error");
 const appointmentsRepository = require("../models/appointments.model");
-const patientsModel = require("../models/patients.model");
 const doctorsModel = require("../models/doctors.model");
+const patientsModel = require("../models/patients.model");
+const medicalRecordsService = require("../services/medical-records.service");
 const cache = require("../utils/cache");
+const { isDoctorAvailableForSlot } = require("../utils/doctor-availability");
 
-const ALLOWED_TRANSITIONS = {
-  pending: new Set(["confirmed", "cancelled"]),
-  confirmed: new Set(["completed"]),
-  completed: new Set([]),
-  cancelled: new Set([])
-};
+const cachePrefix = (organizationId) => `appointments:list:${organizationId}:`;
+const dashboardSummaryCachePrefix = (organizationId) => `dashboard:summary:${organizationId}`;
+const dashboardReportsCachePrefix = (organizationId) => `dashboard:reports:${organizationId}`;
 
-const invalidateDashboardCaches = async (organizationId) => {
+const invalidateAppointmentCaches = async (organizationId) => {
   await Promise.all([
-    cache.invalidateByPrefix(`appointments:list:${organizationId}`),
-    cache.invalidateByPrefix(`appointments:item:${organizationId}`),
-    cache.invalidateByPrefix(`dashboard:summary:${organizationId}`),
-    cache.invalidateByPrefix(`dashboard:reports:${organizationId}`)
+    cache.invalidateByPrefix(cachePrefix(organizationId)),
+    cache.invalidateByPrefix(dashboardSummaryCachePrefix(organizationId)),
+    cache.invalidateByPrefix(dashboardReportsCachePrefix(organizationId))
   ]);
 };
 
-const listAppointments = async (organizationId, query) => {
-  if (query.startDate && query.endDate && query.startDate > query.endDate) {
-    throw new ApiError(400, "startDate must be before or equal to endDate");
+const validateNotInPast = (appointmentDate, appointmentTime) => {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  if (appointmentDate !== today) {
+    return;
   }
 
-  const page = Number.parseInt(query.page, 10) || 1;
-  const limit = Number.parseInt(query.limit, 10) || 10;
-  const q = query.q || "";
-  const status = query.status || "";
-  const doctorId = query.doctorId || "";
-  const date = query.date || "";
-  const startDate = query.startDate || "";
-  const endDate = query.endDate || "";
-  const order = query.order || "desc";
+  const [hours, minutes] = appointmentTime.slice(0, 5).split(":").map(Number);
+  const appointmentDateTime = new Date(now);
+  appointmentDateTime.setHours(hours, minutes, 0, 0);
 
+  if (appointmentDateTime.getTime() < now.getTime()) {
+    throw new ApiError(400, "Cannot book an appointment in the past");
+  }
+};
+
+const buildWalkInPhone = () => {
+  const digits = `${Date.now()}${Math.floor(Math.random() * 1000)}`
+    .replace(/\D/g, "")
+    .slice(-9);
+  return `9${digits.padStart(9, "0")}`;
+};
+
+const resolveActorDoctor = async (organizationId, actor) => {
+  if (actor?.role !== "doctor") {
+    return null;
+  }
+
+  const doctor =
+    (await doctorsModel.getDoctorByUserId(organizationId, actor.sub)) ||
+    (await doctorsModel.getDoctorByEmail(organizationId, actor.email));
+  if (!doctor) {
+    throw new ApiError(403, "Doctor account is not linked to a doctor profile");
+  }
+
+  return doctor;
+};
+
+const resolveAppointmentPatient = async (organizationId, payload) => {
+  if (payload.patientId) {
+    const patient = await patientsModel.getPatientById(organizationId, payload.patientId);
+    if (!patient) {
+      throw new ApiError(404, "Patient not found for this organization");
+    }
+
+    return {
+      patientId: patient.id,
+      patientName: patient.full_name,
+      mobileNumber: payload.mobileNumber || patient.phone || null,
+      email: payload.email || patient.email || null
+    };
+  }
+
+  if (payload.category !== "walk-in") {
+    throw new ApiError(400, "patientId is required");
+  }
+
+  if (!payload.patientName) {
+    throw new ApiError(400, "patientName is required for walk-in appointments");
+  }
+
+  const phone = (payload.mobileNumber || "").trim();
+  const duplicate =
+    phone.length > 0
+      ? await patientsModel.findDuplicatePatient(organizationId, {
+          phone,
+          email: payload.email || null
+        })
+      : null;
+
+  if (duplicate) {
+    const patient = await patientsModel.getPatientById(organizationId, duplicate.id);
+    return {
+      patientId: patient.id,
+      patientName: patient.full_name,
+      mobileNumber: patient.phone || phone || null,
+      email: patient.email || payload.email || null
+    };
+  }
+
+  const patient = await patientsModel.createPatient(organizationId, {
+    fullName: payload.patientName.trim(),
+    gender: "other",
+    phone: phone || buildWalkInPhone(),
+    email: payload.email || null,
+    status: "active"
+  });
+
+  return {
+    patientId: patient.id,
+    patientName: patient.full_name,
+    mobileNumber: patient.phone || null,
+    email: patient.email || null
+  };
+};
+
+const listAppointments = async (organizationId, query, actor = null) => {
+  const page = Number.parseInt(query.page, 10) || 1;
+  const limit = Number.parseInt(query.limit, 10) || 100;
+  const actorDoctor = await resolveActorDoctor(organizationId, actor);
+  const effectiveQuery = actorDoctor ? { ...query, doctorId: actorDoctor.id } : query;
   const cacheKey =
-    `appointments:list:${organizationId}:` +
-    `page=${page}:limit=${limit}:q=${q.toLowerCase()}:status=${status.toLowerCase()}:` +
-    `doctor=${doctorId}:date=${date}:start=${startDate}:end=${endDate}:order=${order}`;
+    `${cachePrefix(organizationId)}` +
+    `page=${page}:limit=${limit}:year=${effectiveQuery.year || ""}:month=${effectiveQuery.month || ""}:day=${effectiveQuery.day || ""}:date=${effectiveQuery.date || ""}:patientId=${effectiveQuery.patientId || ""}:doctorId=${effectiveQuery.doctorId || ""}`;
 
   const cached = await cache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
-  const result = await appointmentsRepository.listAppointments(organizationId, query);
-  await cache.set(cacheKey, result, 30);
+  const result = await appointmentsRepository.listAppointments(organizationId, effectiveQuery);
+  await cache.set(cacheKey, result, 60);
   return result;
 };
 
-const createAppointment = async (organizationId, payload) => {
-  const required = ["patientId", "doctorId", "appointmentDate", "appointmentTime", "appointmentType"];
+const createAppointment = async (organizationId, payload, actor = null) => {
+  if (actor?.role === "doctor") {
+    throw new ApiError(403, "Doctors cannot create appointments");
+  }
+
+  const required = ["patientName", "appointmentDate", "appointmentTime", "category", "durationMinutes"];
   const missing = required.filter((field) => !payload[field]);
 
   if (missing.length > 0) {
     throw new ApiError(400, `Missing required fields: ${missing.join(", ")}`);
   }
 
-  const [patient, doctor] = await Promise.all([
-    patientsModel.getPatientById(organizationId, payload.patientId),
-    doctorsModel.getDoctorById(organizationId, payload.doctorId)
-  ]);
+  validateNotInPast(payload.appointmentDate, payload.appointmentTime);
 
-  if (!patient) {
-    throw new ApiError(404, "Patient not found for this organization");
-  }
+  const patient = await resolveAppointmentPatient(organizationId, payload);
+  const normalizedPayload = {
+    ...payload,
+    patientId: patient.patientId,
+    patientName: patient.patientName,
+    mobileNumber: patient.mobileNumber,
+    email: patient.email
+  };
 
-  if (!doctor) {
-    throw new ApiError(404, "Doctor not found for this organization");
-  }
-
-  const conflict = await appointmentsRepository.findDoctorSlotConflict(organizationId, {
-    doctorId: payload.doctorId,
-    appointmentDate: payload.appointmentDate,
-    appointmentTime: payload.appointmentTime
-  });
-
-  if (conflict) {
-    throw new ApiError(409, "Doctor is already booked for this time slot");
-  }
-
-  const created = await appointmentsRepository.createAppointment(organizationId, payload);
-  await invalidateDashboardCaches(organizationId);
-  return created;
-};
-
-const getAppointmentById = async (organizationId, id) => {
-  const cacheKey = `appointments:item:${organizationId}:${id}`;
-  const cached = await cache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const appointment = await appointmentsRepository.getAppointmentById(organizationId, id);
-  if (!appointment) {
-    throw new ApiError(404, "Appointment not found");
-  }
-
-  await cache.set(cacheKey, appointment, 30);
-  return appointment;
-};
-
-const validateStatusTransition = (currentStatus, nextStatus) => {
-  if (currentStatus === nextStatus) {
-    return true;
-  }
-
-  const transitions = ALLOWED_TRANSITIONS[currentStatus] || new Set();
-  return transitions.has(nextStatus);
-};
-
-const updateAppointment = async (organizationId, id, payload) => {
-  const existing = await appointmentsRepository.getAppointmentById(organizationId, id);
-  if (!existing) {
-    throw new ApiError(404, "Appointment not found");
-  }
-
-  if (payload.patientId || payload.doctorId) {
-    const [patient, doctor] = await Promise.all([
-      payload.patientId ? patientsModel.getPatientById(organizationId, payload.patientId) : Promise.resolve(true),
-      payload.doctorId ? doctorsModel.getDoctorById(organizationId, payload.doctorId) : Promise.resolve(true)
-    ]);
-
-    if (!patient) {
-      throw new ApiError(404, "Patient not found for this organization");
-    }
-
+  if (normalizedPayload.doctorId) {
+    const doctor = await doctorsModel.getDoctorById(organizationId, normalizedPayload.doctorId);
     if (!doctor) {
       throw new ApiError(404, "Doctor not found for this organization");
     }
-  }
-
-  const nextStatus = payload.status || existing.status;
-  if (!validateStatusTransition(existing.status, nextStatus)) {
-    throw new ApiError(400, `Invalid status transition from ${existing.status} to ${nextStatus}`);
-  }
-
-  const doctorId = payload.doctorId || existing.doctor_id;
-  const appointmentDate = payload.appointmentDate || existing.appointment_date;
-  const appointmentTime = payload.appointmentTime || existing.appointment_time;
-
-  if (
-    doctorId !== existing.doctor_id ||
-    appointmentDate !== existing.appointment_date ||
-    appointmentTime !== existing.appointment_time
-  ) {
-    const conflict = await appointmentsRepository.findDoctorSlotConflict(organizationId, {
-      doctorId,
-      appointmentDate,
-      appointmentTime,
-      excludeId: id
-    });
-
-    if (conflict) {
-      throw new ApiError(409, "Doctor is already booked for this time slot");
+    if (
+      !isDoctorAvailableForSlot(
+        doctor,
+        normalizedPayload.appointmentDate,
+        normalizedPayload.appointmentTime,
+        normalizedPayload.durationMinutes
+      )
+    ) {
+      throw new ApiError(400, "Selected time is outside this doctor's working hours, break time, or holiday schedule");
     }
   }
 
-  const updated = await appointmentsRepository.updateAppointment(organizationId, id, payload);
-  if (!updated) {
+  const conflict = normalizedPayload.doctorId
+    ? await appointmentsRepository.findDoctorConflicts(organizationId, normalizedPayload)
+    : null;
+  if (conflict) {
+    throw new ApiError(409, "This doctor already has an overlapping appointment");
+  }
+
+  const created = await appointmentsRepository.createAppointment(organizationId, normalizedPayload);
+  await invalidateAppointmentCaches(organizationId);
+  return created;
+};
+
+const updateAppointment = async (organizationId, appointmentId, payload, actor = null) => {
+  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId);
+  if (!current) {
     throw new ApiError(404, "Appointment not found");
   }
 
-  if (updated.status === "completed") {
-    await patientsModel.updateLastVisitFromAppointment(organizationId, updated.patient_id, updated.appointment_date);
+  const actorDoctor = await resolveActorDoctor(organizationId, actor);
+  if (actorDoctor && current.doctor_id !== actorDoctor.id) {
+    throw new ApiError(403, "You can only update your own appointments");
   }
 
-  await invalidateDashboardCaches(organizationId);
+  if (actor?.role === "doctor") {
+    const allowedKeys = new Set(["status"]);
+    const invalidKey = Object.keys(payload).find((key) => !allowedKeys.has(key));
+    if (invalidKey) {
+      throw new ApiError(403, "Doctors can only update appointment status");
+    }
+  }
+
+  const merged = {
+    patientName: payload.patientName ?? current.patient_name ?? current.title,
+    patientId: payload.patientId ?? current.patient_id ?? null,
+    mobileNumber: payload.mobileNumber ?? current.mobile_number,
+    email: payload.email ?? current.email,
+    doctorId: payload.doctorId ?? current.doctor_id,
+    category: payload.category ?? current.category ?? "consultation",
+    status: payload.status ?? current.status ?? "pending",
+    appointmentDate: payload.appointmentDate ?? current.appointment_date,
+    appointmentTime: payload.appointmentTime ?? current.appointment_time,
+    durationMinutes: payload.durationMinutes ?? current.duration_minutes,
+    plannedProcedures: payload.plannedProcedures ?? current.planned_procedures,
+    notes: payload.notes ?? current.notes
+  };
+
+  const patient = await resolveAppointmentPatient(organizationId, merged);
+  merged.patientId = patient.patientId;
+  merged.patientName = patient.patientName;
+  merged.mobileNumber = patient.mobileNumber;
+  merged.email = patient.email;
+
+  if (merged.doctorId) {
+    const doctor = await doctorsModel.getDoctorById(organizationId, merged.doctorId);
+    if (!doctor) {
+      throw new ApiError(404, "Doctor not found for this organization");
+    }
+    if (!isDoctorAvailableForSlot(doctor, merged.appointmentDate, merged.appointmentTime, merged.durationMinutes)) {
+      throw new ApiError(400, "Selected time is outside this doctor's working hours, break time, or holiday schedule");
+    }
+  }
+
+  validateNotInPast(merged.appointmentDate, merged.appointmentTime);
+
+  if (merged.status !== "cancelled" && merged.doctorId) {
+    const conflict = await appointmentsRepository.findDoctorConflicts(organizationId, merged, appointmentId);
+    if (conflict) {
+      throw new ApiError(409, "This doctor already has an overlapping appointment");
+    }
+  }
+
+  const updated = await appointmentsRepository.updateAppointment(organizationId, appointmentId, merged);
+  if (updated.status === "completed" && current.status !== "completed") {
+    await medicalRecordsService.createAppointmentRecordIfMissing(organizationId, {
+      appointmentId: updated.id,
+      patientId: updated.patient_id || merged.patientId,
+      doctorId: updated.doctor_id || merged.doctorId,
+      recordType: "Visit Note",
+      recordDate: updated.appointment_date,
+      notes: updated.notes || null
+    });
+  }
+  await invalidateAppointmentCaches(organizationId);
   return updated;
 };
 
-const updateAppointmentStatus = async (organizationId, id, status) => {
-  if (!status) {
-    throw new ApiError(400, "status is required");
-  }
-
-  const existing = await appointmentsRepository.getAppointmentById(organizationId, id);
-  if (!existing) {
+const completeConsultation = async (organizationId, appointmentId, payload, actor = null) => {
+  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId);
+  if (!current) {
     throw new ApiError(404, "Appointment not found");
   }
 
-  if (!validateStatusTransition(existing.status, status)) {
-    throw new ApiError(400, `Invalid status transition from ${existing.status} to ${status}`);
+  const actorDoctor = await resolveActorDoctor(organizationId, actor);
+  if (actorDoctor && current.doctor_id !== actorDoctor.id) {
+    throw new ApiError(403, "You can only complete your own appointments");
   }
 
-  const updated = await appointmentsRepository.updateAppointmentStatus(organizationId, id, status);
-  if (!updated) {
-    throw new ApiError(404, "Appointment not found");
-  }
+  const updatedAppointment = await appointmentsRepository.updateAppointment(organizationId, appointmentId, {
+    patientName: current.patient_name || current.title,
+    patientId: current.patient_id,
+    mobileNumber: current.mobile_number,
+    email: current.email,
+    doctorId: current.doctor_id,
+    category: current.category || "consultation",
+    status: "completed",
+    appointmentDate: current.appointment_date,
+    appointmentTime: current.appointment_time,
+    durationMinutes: current.duration_minutes,
+    plannedProcedures: current.planned_procedures,
+    notes: payload.notes ?? current.notes
+  });
 
-  if (status === "completed") {
-    await patientsModel.updateLastVisitFromAppointment(organizationId, updated.patient_id, updated.appointment_date);
-  }
+  const medicalRecord = await medicalRecordsService.upsertAppointmentConsultationRecord(organizationId, {
+    appointmentId: updatedAppointment.id,
+    patientId: updatedAppointment.patient_id || current.patient_id,
+    doctorId: updatedAppointment.doctor_id || current.doctor_id,
+    recordType: "Consultation",
+    status: "completed",
+    recordDate: updatedAppointment.appointment_date,
+    symptoms: payload.symptoms || null,
+    diagnosis: payload.diagnosis || null,
+    prescription: payload.prescription || null,
+    notes: payload.notes || updatedAppointment.notes || null
+  });
 
-  await invalidateDashboardCaches(organizationId);
-  return updated;
+  await invalidateAppointmentCaches(organizationId);
+  return {
+    appointment: updatedAppointment,
+    medicalRecord
+  };
 };
 
-const cancelAppointment = async (organizationId, id) => {
-  const existing = await appointmentsRepository.getAppointmentById(organizationId, id);
-  if (!existing) {
+const deleteAppointment = async (organizationId, appointmentId, actor = null) => {
+  if (actor?.role === "doctor") {
+    throw new ApiError(403, "Doctors cannot delete appointments");
+  }
+
+  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId);
+  if (!current) {
     throw new ApiError(404, "Appointment not found");
   }
 
-  if (!validateStatusTransition(existing.status, "cancelled")) {
-    throw new ApiError(400, `Invalid status transition from ${existing.status} to cancelled`);
+  await appointmentsRepository.deleteAppointment(organizationId, appointmentId);
+  await invalidateAppointmentCaches(organizationId);
+};
+
+const bulkCancelAppointments = async (organizationId, payload, actor = null) => {
+  if (actor?.role === "doctor") {
+    throw new ApiError(403, "Doctors cannot bulk cancel appointments");
   }
 
-  const cancelled = await appointmentsRepository.cancelAppointment(organizationId, id);
-  if (!cancelled) {
-    throw new ApiError(404, "Appointment not found");
-  }
-
-  await invalidateDashboardCaches(organizationId);
-  return cancelled;
+  const updatedCount = await appointmentsRepository.bulkCancelAppointments(organizationId, payload);
+  await invalidateAppointmentCaches(organizationId);
+  return { updatedCount };
 };
 
 module.exports = {
   listAppointments,
-  getAppointmentById,
   createAppointment,
   updateAppointment,
-  updateAppointmentStatus,
-  cancelAppointment
+  completeConsultation,
+  deleteAppointment,
+  bulkCancelAppointments
 };

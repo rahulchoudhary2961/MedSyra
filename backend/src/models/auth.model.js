@@ -43,6 +43,27 @@ const findUserById = async (id) => {
   return rows[0] || null;
 };
 
+const listUsersByOrganization = async (organizationId, role = null) => {
+  const values = [organizationId];
+  let roleClause = "";
+
+  if (role) {
+    values.push(role);
+    roleClause = `AND role = $2`;
+  }
+
+  const query = `
+    SELECT id, organization_id, full_name, email, phone, role, email_verified_at, created_at
+    FROM users
+    WHERE organization_id = $1
+      ${roleClause}
+    ORDER BY full_name ASC
+  `;
+
+  const { rows } = await pool.query(query, values);
+  return rows;
+};
+
 const setEmailVerificationToken = async ({ userId, tokenHash, expiresAt }) => {
   const query = `
     UPDATE users
@@ -141,6 +162,7 @@ module.exports = {
   createUser,
   findUserByEmail,
   findUserById,
+  listUsersByOrganization,
   setEmailVerificationToken,
   verifyEmailWithToken,
   setPasswordResetToken,

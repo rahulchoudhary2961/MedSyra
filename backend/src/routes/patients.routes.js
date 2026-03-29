@@ -7,6 +7,7 @@ const router = express.Router();
 
 router.get("/", validateRequest({ query: patientsSchemas.listQuery }), controller.listPatients);
 router.post("/", validateRequest({ body: patientsSchemas.createBody }), controller.createPatient);
+router.get("/:id/profile", validateRequest({ params: patientsSchemas.idParams }), controller.getPatientProfile);
 router.get("/:id", validateRequest({ params: patientsSchemas.idParams }), controller.getPatient);
 router.patch(
   "/:id",

@@ -4,7 +4,6 @@ CREATE TABLE IF NOT EXISTS invoices (
   invoice_number TEXT NOT NULL,
   patient_id UUID NOT NULL REFERENCES patients(id),
   doctor_id UUID REFERENCES doctors(id),
-  appointment_id UUID REFERENCES appointments(id),
   issue_date DATE NOT NULL DEFAULT CURRENT_DATE,
   due_date DATE,
   status TEXT NOT NULL DEFAULT 'draft',

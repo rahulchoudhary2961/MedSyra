@@ -115,6 +115,85 @@ const getPatientById = async (organizationId, id) => {
   return rows[0] || null;
 };
 
+const getPatientProfile = async (organizationId, id) => {
+  const patientPromise = getPatientById(organizationId, id);
+  const appointmentsPromise = pool.query(
+    `
+    SELECT
+      a.id,
+      a.appointment_date::text AS appointment_date,
+      a.appointment_time,
+      a.status,
+      a.notes,
+      a.doctor_id,
+      d.full_name AS doctor_name
+    FROM appointments a
+    LEFT JOIN doctors d
+      ON d.id = a.doctor_id
+     AND d.organization_id = a.organization_id
+    WHERE a.organization_id = $1
+      AND a.patient_id = $2
+    ORDER BY a.appointment_date DESC, a.appointment_time DESC
+    `,
+    [organizationId, id]
+  );
+  const invoicesPromise = pool.query(
+    `
+    SELECT
+      i.id,
+      i.invoice_number,
+      i.total_amount,
+      i.balance_amount,
+      i.status,
+      i.issue_date::text AS issue_date
+    FROM invoices i
+    WHERE i.organization_id = $1
+      AND i.patient_id = $2
+    ORDER BY i.issue_date DESC, i.created_at DESC
+    `,
+    [organizationId, id]
+  );
+  const summaryPromise = pool.query(
+    `
+    SELECT
+      COUNT(a.id)::int AS total_visits,
+      COALESCE(SUM(i.paid_amount), 0)::numeric(12,2) AS total_spent,
+      MAX(a.appointment_date)::text AS last_visit_date,
+      COALESCE(SUM(i.balance_amount), 0)::numeric(12,2) AS pending_amount
+    FROM patients p
+    LEFT JOIN appointments a
+      ON a.patient_id = p.id
+     AND a.organization_id = p.organization_id
+    LEFT JOIN invoices i
+      ON i.patient_id = p.id
+     AND i.organization_id = p.organization_id
+    WHERE p.organization_id = $1
+      AND p.id = $2
+    GROUP BY p.id
+    `,
+    [organizationId, id]
+  );
+
+  const [patient, appointmentsRes, invoicesRes, summaryRes] = await Promise.all([
+    patientPromise,
+    appointmentsPromise,
+    invoicesPromise,
+    summaryPromise
+  ]);
+
+  return {
+    patient,
+    visits: appointmentsRes.rows,
+    invoices: invoicesRes.rows,
+    summary: summaryRes.rows[0] || {
+      total_visits: 0,
+      total_spent: 0,
+      last_visit_date: null,
+      pending_amount: 0
+    }
+  };
+};
+
 const updatePatient = async (organizationId, id, payload) => {
   const columnMap = {
     fullName: "full_name",
@@ -168,26 +247,12 @@ const softDeletePatient = async (organizationId, id) => {
   return rows[0] || null;
 };
 
-const updateLastVisitFromAppointment = async (organizationId, patientId, appointmentDate) => {
-  const query = `
-    UPDATE patients
-    SET last_visit_at = CASE
-      WHEN last_visit_at IS NULL OR last_visit_at < $3::date THEN $3::date
-      ELSE last_visit_at
-    END,
-    updated_at = NOW()
-    WHERE organization_id = $1 AND id = $2 AND is_active = true
-  `;
-
-  await pool.query(query, [organizationId, patientId, appointmentDate]);
-};
-
 module.exports = {
   listPatients,
   createPatient,
   findDuplicatePatient,
   getPatientById,
+  getPatientProfile,
   updatePatient,
-  softDeletePatient,
-  updateLastVisitFromAppointment
+  softDeletePatient
 };

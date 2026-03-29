@@ -43,12 +43,20 @@ CREATE INDEX IF NOT EXISTS idx_patients_org_created_at ON patients (organization
 CREATE TABLE IF NOT EXISTS doctors (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   full_name TEXT NOT NULL,
   specialty TEXT NOT NULL,
   experience_years INT,
   availability TEXT,
   phone TEXT,
   email TEXT,
+  work_start_time TIME,
+  work_end_time TIME,
+  break_start_time TIME,
+  break_end_time TIME,
+  weekly_off_days TEXT,
+  holiday_dates TEXT,
+  consultation_fee NUMERIC(12,2),
   rating NUMERIC(2,1) NOT NULL DEFAULT 0,
   patient_count INT NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'available',
@@ -58,36 +66,47 @@ CREATE TABLE IF NOT EXISTS doctors (
 
 CREATE INDEX IF NOT EXISTS idx_doctors_org_status ON doctors (organization_id, status);
 CREATE INDEX IF NOT EXISTS idx_doctors_org_full_name ON doctors (organization_id, full_name);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_doctors_org_user_id
+ON doctors (organization_id, user_id)
+WHERE user_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS appointments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID NOT NULL REFERENCES organizations(id),
-  patient_id UUID NOT NULL REFERENCES patients(id),
-  doctor_id UUID NOT NULL REFERENCES doctors(id),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  patient_id UUID REFERENCES patients(id) ON DELETE RESTRICT,
+  patient_name TEXT,
+  patient_identifier TEXT,
+  mobile_number TEXT,
+  email TEXT,
+  doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
+  category TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
   appointment_date DATE NOT NULL,
   appointment_time TIME NOT NULL,
-  appointment_type TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
+  duration_minutes INT NOT NULL DEFAULT 15,
+  planned_procedures TEXT,
   notes TEXT,
-  fee_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT appointments_status_check CHECK (status IN ('pending', 'confirmed', 'cancelled', 'completed', 'checked-in', 'no-show'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_appointments_org_date ON appointments (organization_id, appointment_date);
-CREATE INDEX IF NOT EXISTS idx_appointments_org_doctor_date_time ON appointments (organization_id, doctor_id, appointment_date, appointment_time);
-CREATE INDEX IF NOT EXISTS idx_appointments_org_status_date ON appointments (organization_id, status, appointment_date);
-CREATE INDEX IF NOT EXISTS idx_appointments_org_patient_status_date ON appointments (organization_id, patient_id, status, appointment_date DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_appointments_active_doctor_slot ON appointments (organization_id, doctor_id, appointment_date, appointment_time) WHERE status IN ('pending', 'confirmed');
+CREATE INDEX IF NOT EXISTS idx_appointments_org_date_time
+ON appointments (organization_id, appointment_date, appointment_time);
 
 CREATE TABLE IF NOT EXISTS medical_records (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id),
   patient_id UUID NOT NULL REFERENCES patients(id),
   doctor_id UUID NOT NULL REFERENCES doctors(id),
+  appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
   record_type TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'completed',
   record_date DATE NOT NULL,
+  symptoms TEXT,
+  diagnosis TEXT,
+  prescription TEXT,
   notes TEXT,
   file_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -138,7 +157,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   invoice_number TEXT NOT NULL,
   patient_id UUID NOT NULL REFERENCES patients(id),
   doctor_id UUID REFERENCES doctors(id),
-  appointment_id UUID REFERENCES appointments(id),
+  appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
   issue_date DATE NOT NULL DEFAULT CURRENT_DATE,
   due_date DATE,
   status TEXT NOT NULL DEFAULT 'draft',
@@ -153,6 +172,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_org_number ON invoices (organization_id, invoice_number);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_org_appointment ON invoices (organization_id, appointment_id) WHERE appointment_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_invoices_org_status_date ON invoices (organization_id, status, issue_date DESC);
 
 CREATE TABLE IF NOT EXISTS invoice_items (
@@ -184,4 +204,5 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payments_org_invoice ON payments (organization_id, invoice_id, paid_at DESC);
+
 

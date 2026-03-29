@@ -29,6 +29,16 @@ export interface Doctor {
   availability: string | null;
   phone: string | null;
   email: string | null;
+  user_id?: string | null;
+  linked_user_full_name?: string | null;
+  linked_user_email?: string | null;
+  work_start_time: string | null;
+  work_end_time: string | null;
+  break_start_time: string | null;
+  break_end_time: string | null;
+  weekly_off_days: string | null;
+  holiday_dates: string | null;
+  consultation_fee: number | null;
   rating: number;
   patient_count: number;
   status: string;
@@ -36,20 +46,28 @@ export interface Doctor {
 
 export interface Appointment {
   id: string;
-  patient_id: string;
-  patient_name: string;
-  doctor_id: string;
-  doctor_name: string;
+  title: string;
+  patient_id?: string | null;
+  patient_name: string | null;
+  patient_identifier: string | null;
+  mobile_number: string | null;
+  email: string | null;
+  doctor_id: string | null;
+  doctor_name?: string | null;
+  category: string | null;
+  status: string;
   appointment_date: string;
   appointment_time: string;
-  appointment_type: string;
-  status: string;
+  duration_minutes: number;
+  planned_procedures: string | null;
   notes: string | null;
-  fee_amount: number;
+  invoice_id?: string | null;
+  invoice_status?: string | null;
 }
 
 export interface MedicalRecord {
   id: string;
+  appointment_id?: string | null;
   patient_id: string;
   patient_name: string;
   doctor_id: string;
@@ -57,6 +75,9 @@ export interface MedicalRecord {
   record_type: string;
   status: string;
   record_date: string;
+  symptoms?: string | null;
+  diagnosis?: string | null;
+  prescription?: string | null;
   notes: string | null;
   file_url?: string | null;
   created_at?: string;
@@ -78,6 +99,7 @@ export interface Invoice {
   patient_name: string;
   doctor_id: string | null;
   doctor_name: string | null;
+  appointment_id?: string | null;
   issue_date: string;
   due_date: string | null;
   status: string;

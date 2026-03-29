@@ -1,5 +1,6 @@
 const USER_ROLES = {
   ADMIN: "admin",
+  RECEPTIONIST: "receptionist",
   DOCTOR: "doctor",
   NURSE: "nurse",
   BILLING: "billing",

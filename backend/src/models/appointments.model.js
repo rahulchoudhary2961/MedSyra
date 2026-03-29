@@ -4,80 +4,96 @@ const parsePagination = require("../utils/pagination");
 const listAppointments = async (organizationId, query) => {
   const { offset, limit, page } = parsePagination(query);
   const values = [organizationId];
-  const conditions = ["a.organization_id = $1"];
+  const dataConditions = ["a.organization_id = $1"];
+  const countConditions = ["organization_id = $1"];
 
   if (query.date) {
     values.push(query.date);
-    conditions.push(`a.appointment_date = $${values.length}`);
+    dataConditions.push(`a.appointment_date = $${values.length}`);
+    countConditions.push(`appointment_date = $${values.length}`);
+  } else {
+    if (query.year) {
+      values.push(Number(query.year));
+      dataConditions.push(`EXTRACT(YEAR FROM a.appointment_date) = $${values.length}`);
+      countConditions.push(`EXTRACT(YEAR FROM appointment_date) = $${values.length}`);
+    }
+
+    if (query.month) {
+      values.push(Number(query.month));
+      dataConditions.push(`EXTRACT(MONTH FROM a.appointment_date) = $${values.length}`);
+      countConditions.push(`EXTRACT(MONTH FROM appointment_date) = $${values.length}`);
+    }
+
+    if (query.day) {
+      values.push(Number(query.day));
+      dataConditions.push(`EXTRACT(DAY FROM a.appointment_date) = $${values.length}`);
+      countConditions.push(`EXTRACT(DAY FROM appointment_date) = $${values.length}`);
+    }
   }
 
-  if (query.startDate) {
-    values.push(query.startDate);
-    conditions.push(`a.appointment_date >= $${values.length}`);
-  }
-
-  if (query.endDate) {
-    values.push(query.endDate);
-    conditions.push(`a.appointment_date <= $${values.length}`);
+  if (query.patientId) {
+    values.push(query.patientId);
+    dataConditions.push(`a.patient_id = $${values.length}`);
+    countConditions.push(`patient_id = $${values.length}`);
   }
 
   if (query.doctorId) {
     values.push(query.doctorId);
-    conditions.push(`a.doctor_id = $${values.length}`);
-  }
-
-  if (query.status) {
-    values.push(query.status);
-    conditions.push(`a.status = $${values.length}`);
-  }
-
-  if (query.q) {
-    values.push(`%${query.q}%`);
-    const idx = values.length;
-    conditions.push(`(p.full_name ILIKE $${idx} OR p.phone ILIKE $${idx})`);
+    dataConditions.push(`a.doctor_id = $${values.length}`);
+    countConditions.push(`doctor_id = $${values.length}`);
   }
 
   values.push(limit, offset);
-  const whereClause = conditions.join(" AND ");
-  const orderDirection = query.order && query.order.toLowerCase() === "asc" ? "ASC" : "DESC";
+  const dataWhereClause = dataConditions.join(" AND ");
+  const countWhereClause = countConditions.join(" AND ");
 
-  const querySql = `
+  const dataQuery = `
     SELECT
       a.id,
+      a.title,
       a.patient_id,
-      p.full_name AS patient_name,
+      a.patient_name,
+      COALESCE(a.patient_id::text, a.patient_identifier) AS patient_identifier,
+      a.mobile_number,
+      a.email,
       a.doctor_id,
       d.full_name AS doctor_name,
-      a.appointment_date,
-      a.appointment_time,
-      a.appointment_type,
+      a.category,
       a.status,
+      inv.id AS invoice_id,
+      inv.status AS invoice_status,
+      a.appointment_date::text AS appointment_date,
+      a.appointment_time,
+      a.duration_minutes,
+      a.planned_procedures,
       a.notes,
-      a.fee_amount,
       a.created_at,
       a.updated_at
     FROM appointments a
-    LEFT JOIN patients p ON p.id = a.patient_id AND p.organization_id = a.organization_id
-    LEFT JOIN doctors d ON d.id = a.doctor_id AND d.organization_id = a.organization_id
-    WHERE ${whereClause}
-    ORDER BY a.appointment_date ${orderDirection}, a.appointment_time ${orderDirection}
+    LEFT JOIN doctors d
+      ON d.id = a.doctor_id
+     AND d.organization_id = a.organization_id
+    LEFT JOIN invoices inv
+      ON inv.appointment_id = a.id
+     AND inv.organization_id = a.organization_id
+    WHERE ${dataWhereClause}
+    ORDER BY a.appointment_date ASC, a.appointment_time ASC, a.created_at ASC
     LIMIT $${values.length - 1} OFFSET $${values.length}
   `;
 
-  const countSql = `
+  const countQuery = `
     SELECT COUNT(*)::int AS total
-    FROM appointments a
-    LEFT JOIN patients p ON p.id = a.patient_id AND p.organization_id = a.organization_id
-    WHERE ${whereClause}
+    FROM appointments
+    WHERE ${countWhereClause}
   `;
 
-  const [result, countResult] = await Promise.all([
-    pool.query(querySql, values),
-    pool.query(countSql, values.slice(0, values.length - 2))
+  const [dataResult, countResult] = await Promise.all([
+    pool.query(dataQuery, values),
+    pool.query(countQuery, values.slice(0, values.length - 2))
   ]);
 
   return {
-    items: result.rows,
+    items: dataResult.rows,
     pagination: {
       page,
       limit,
@@ -87,154 +103,235 @@ const listAppointments = async (organizationId, query) => {
   };
 };
 
+const createAppointment = async (organizationId, payload) => {
+  const query = `
+    INSERT INTO appointments (
+      organization_id,
+      title,
+      patient_id,
+      patient_name,
+      patient_identifier,
+      mobile_number,
+      email,
+      doctor_id,
+      category,
+      status,
+      appointment_date,
+      appointment_time,
+      duration_minutes,
+      planned_procedures,
+      notes
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    RETURNING
+      id,
+      title,
+      patient_id,
+      patient_name,
+      COALESCE(patient_id::text, patient_identifier) AS patient_identifier,
+      mobile_number,
+      email,
+      doctor_id,
+      category,
+      status,
+      appointment_date::text AS appointment_date,
+      appointment_time,
+      duration_minutes,
+      planned_procedures,
+      notes,
+      created_at,
+      updated_at
+  `;
+
+  const values = [
+    organizationId,
+    payload.patientName,
+    payload.patientId,
+    payload.patientName,
+    payload.patientId,
+    payload.mobileNumber || null,
+    payload.email || null,
+    payload.doctorId || null,
+    payload.category,
+    payload.status || "pending",
+    payload.appointmentDate,
+    payload.appointmentTime,
+    payload.durationMinutes,
+    payload.plannedProcedures || null,
+    payload.notes || null
+  ];
+
+  const { rows } = await pool.query(query, values);
+  return getAppointmentById(organizationId, rows[0].id);
+};
+
 const getAppointmentById = async (organizationId, id) => {
   const query = `
     SELECT
       a.id,
+      a.title,
       a.patient_id,
-      p.full_name AS patient_name,
+      a.patient_name,
+      COALESCE(a.patient_id::text, a.patient_identifier) AS patient_identifier,
+      a.mobile_number,
+      a.email,
       a.doctor_id,
       d.full_name AS doctor_name,
-      a.appointment_date,
-      a.appointment_time,
-      a.appointment_type,
+      a.category,
       a.status,
+      inv.id AS invoice_id,
+      inv.status AS invoice_status,
+      a.appointment_date::text AS appointment_date,
+      a.appointment_time,
+      a.duration_minutes,
+      a.planned_procedures,
       a.notes,
-      a.fee_amount,
       a.created_at,
       a.updated_at
     FROM appointments a
-    LEFT JOIN patients p ON p.id = a.patient_id AND p.organization_id = a.organization_id
-    LEFT JOIN doctors d ON d.id = a.doctor_id AND d.organization_id = a.organization_id
+    LEFT JOIN doctors d
+      ON d.id = a.doctor_id
+     AND d.organization_id = a.organization_id
+    LEFT JOIN invoices inv
+      ON inv.appointment_id = a.id
+     AND inv.organization_id = a.organization_id
     WHERE a.organization_id = $1 AND a.id = $2
   `;
-
   const { rows } = await pool.query(query, [organizationId, id]);
   return rows[0] || null;
 };
 
-const findDoctorSlotConflict = async (organizationId, { doctorId, appointmentDate, appointmentTime, excludeId = null }) => {
-  const values = [organizationId, doctorId, appointmentDate, appointmentTime];
-  let excludeClause = "";
-
-  if (excludeId) {
-    values.push(excludeId);
-    excludeClause = `AND id <> $${values.length}`;
-  }
-
+const findDoctorConflicts = async (organizationId, payload, excludeId = null) => {
   const query = `
     SELECT id
     FROM appointments
     WHERE organization_id = $1
       AND doctor_id = $2
       AND appointment_date = $3
-      AND appointment_time = $4
-      AND status IN ('pending', 'confirmed')
-      ${excludeClause}
+      AND status <> 'cancelled'
+      AND ($4::uuid IS NULL OR id <> $4::uuid)
+      AND (
+        (appointment_time, appointment_time + make_interval(mins => duration_minutes))
+          OVERLAPS
+        ($5::time, $5::time + make_interval(mins => $6::int))
+      )
     LIMIT 1
   `;
-
-  const { rows } = await pool.query(query, values);
+  const { rows } = await pool.query(query, [
+    organizationId,
+    payload.doctorId,
+    payload.appointmentDate,
+    excludeId,
+    payload.appointmentTime,
+    payload.durationMinutes
+  ]);
   return rows[0] || null;
 };
 
-const createAppointment = async (organizationId, payload) => {
+const updateAppointment = async (organizationId, id, payload) => {
   const query = `
-    INSERT INTO appointments (
-      organization_id, patient_id, doctor_id, appointment_date,
-      appointment_time, appointment_type, status, notes, fee_amount
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-    RETURNING id, patient_id, doctor_id, appointment_date, appointment_time,
-              appointment_type, status, notes, fee_amount, created_at, updated_at
+    UPDATE appointments
+    SET
+      title = $3,
+      patient_id = $4,
+      patient_name = $5,
+      patient_identifier = $6,
+      mobile_number = $7,
+      email = $8,
+      doctor_id = $9,
+      category = $10,
+      status = $11,
+      appointment_date = $12,
+      appointment_time = $13,
+      duration_minutes = $14,
+      planned_procedures = $15,
+      notes = $16,
+      updated_at = NOW()
+    WHERE organization_id = $1 AND id = $2
+    RETURNING
+      id,
+      title,
+      patient_id,
+      patient_name,
+      COALESCE(patient_id::text, patient_identifier) AS patient_identifier,
+      mobile_number,
+      email,
+      doctor_id,
+      category,
+      status,
+      appointment_date::text AS appointment_date,
+      appointment_time,
+      duration_minutes,
+      planned_procedures,
+      notes,
+      created_at,
+      updated_at
   `;
 
   const values = [
     organizationId,
+    id,
+    payload.patientName,
     payload.patientId,
-    payload.doctorId,
+    payload.patientName,
+    payload.patientId,
+    payload.mobileNumber || null,
+    payload.email || null,
+    payload.doctorId || null,
+    payload.category,
+    payload.status || "pending",
     payload.appointmentDate,
     payload.appointmentTime,
-    payload.appointmentType,
-    payload.status || "pending",
-    payload.notes || null,
-    payload.feeAmount || 0
+    payload.durationMinutes,
+    payload.plannedProcedures || null,
+    payload.notes || null
   ];
 
   const { rows } = await pool.query(query, values);
-  return rows[0];
-};
-
-const updateAppointment = async (organizationId, id, payload) => {
-  const columnMap = {
-    patientId: "patient_id",
-    doctorId: "doctor_id",
-    appointmentDate: "appointment_date",
-    appointmentTime: "appointment_time",
-    appointmentType: "appointment_type",
-    status: "status",
-    notes: "notes",
-    feeAmount: "fee_amount"
-  };
-
-  const mappedEntries = Object.entries(payload)
-    .filter(([key, value]) => columnMap[key] && value !== undefined)
-    .map(([key, value]) => [columnMap[key], value]);
-
-  if (mappedEntries.length === 0) {
-    return getAppointmentById(organizationId, id);
+  if (!rows[0]) {
+    return null;
   }
 
-  const setClauses = [];
-  const values = [organizationId, id];
-
-  mappedEntries.forEach(([column, value], index) => {
-    setClauses.push(`${column} = $${index + 3}`);
-    values.push(value);
-  });
-
-  const query = `
-    UPDATE appointments
-    SET ${setClauses.join(", ")}, updated_at = NOW()
-    WHERE organization_id = $1 AND id = $2
-    RETURNING id, patient_id, doctor_id, appointment_date, appointment_time,
-              appointment_type, status, notes, fee_amount, created_at, updated_at
-  `;
-
-  const { rows } = await pool.query(query, values);
-  return rows[0] || null;
+  return getAppointmentById(organizationId, rows[0].id);
 };
 
-const updateAppointmentStatus = async (organizationId, id, status) => {
+const deleteAppointment = async (organizationId, id) => {
   const query = `
-    UPDATE appointments
-    SET status = $3, updated_at = NOW()
+    DELETE FROM appointments
     WHERE organization_id = $1 AND id = $2
-    RETURNING id, patient_id, doctor_id, appointment_date, appointment_time,
-              appointment_type, status, notes, fee_amount, created_at, updated_at
+    RETURNING id
   `;
-  const { rows } = await pool.query(query, [organizationId, id, status]);
-  return rows[0] || null;
-};
-
-const cancelAppointment = async (organizationId, id) => {
-  const query = `
-    UPDATE appointments
-    SET status = 'cancelled', updated_at = NOW()
-    WHERE organization_id = $1 AND id = $2
-    RETURNING id, patient_id, doctor_id, appointment_date, appointment_time,
-              appointment_type, status, notes, fee_amount, created_at, updated_at
-  `;
-
   const { rows } = await pool.query(query, [organizationId, id]);
   return rows[0] || null;
 };
 
+const bulkCancelAppointments = async (organizationId, payload) => {
+  const values = [organizationId, payload.appointmentDate];
+  let doctorClause = "";
+
+  if (payload.doctorId) {
+    values.push(payload.doctorId);
+    doctorClause = ` AND doctor_id = $${values.length}`;
+  }
+
+  const query = `
+    UPDATE appointments
+    SET status = 'cancelled', updated_at = NOW()
+    WHERE organization_id = $1
+      AND appointment_date = $2
+      AND status NOT IN ('cancelled', 'completed', 'no-show')
+      ${doctorClause}
+    RETURNING id
+  `;
+  const { rows } = await pool.query(query, values);
+  return rows.length;
+};
+
 module.exports = {
   listAppointments,
-  getAppointmentById,
-  findDoctorSlotConflict,
   createAppointment,
+  getAppointmentById,
+  findDoctorConflicts,
   updateAppointment,
-  updateAppointmentStatus,
-  cancelAppointment
+  deleteAppointment,
+  bulkCancelAppointments
 };

@@ -7,6 +7,8 @@ services:
       POSTGRES_DB: healthcare_saas
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
     volumes:
       - healthcare_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -39,7 +41,7 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     networks:
       - backend_private
 
@@ -62,6 +64,13 @@ services:
     container_name: healthcare-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     volumes:
       - healthcare_redis_data:/data
     networks:
@@ -73,4 +82,3 @@ volumes:
 
 networks:
   backend_private:
-    internal: true

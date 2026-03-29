@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const path = require("path");
 const env = require("./config/env");
 const routes = require("./routes");
 const notFoundHandler = require("./middlewares/not-found");
@@ -31,7 +32,8 @@ app.use(botProtection);
 app.use(requestSecurityMonitor);
 app.use(globalApiLimiter);
 app.use(enforceJsonContentType);
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "10mb" }));
+app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.get("/health", (_req, res) => {
   res.json({ success: true, message: "API is healthy" });

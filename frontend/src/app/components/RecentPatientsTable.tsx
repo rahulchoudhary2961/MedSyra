@@ -1,18 +1,22 @@
+"use client";
+
 import { Eye, Edit2 } from "lucide-react";
 import { Patient } from "@/types/api";
 
 type Props = {
   patients: Patient[];
+  onView: (patient: Patient) => void;
+  onEdit: (patient: Patient) => void;
 };
 
 const getStatusClass = (status: string) => {
   const normalized = status.toLowerCase();
   if (normalized === "active") return "bg-green-50 text-green-700";
-  if (normalized.includes("follow")) return "bg-blue-50 text-blue-700";
+  if (normalized.includes("follow")) return "bg-teal-50 text-teal-700";
   return "bg-yellow-50 text-yellow-700";
 };
 
-export default function RecentPatientsTable({ patients }: Props) {
+export default function RecentPatientsTable({ patients, onView, onEdit }: Props) {
   return (
     <div className="bg-white rounded-xl p-6 border border-gray-200">
       <div className="flex items-center justify-between mb-6">
@@ -52,10 +56,20 @@ export default function RecentPatientsTable({ patients }: Props) {
                 </td>
                 <td className="py-4">
                   <div className="flex items-center gap-2">
-                    <button className="p-1.5 rounded hover:bg-gray-100 text-gray-600">
+                    <button
+                      type="button"
+                      onClick={() => onView(patient)}
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
+                      title="View patient profile"
+                    >
                       <Eye className="w-4 h-4" />
                     </button>
-                    <button className="p-1.5 rounded hover:bg-gray-100 text-gray-600">
+                    <button
+                      type="button"
+                      onClick={() => onEdit(patient)}
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
+                      title="Edit patient"
+                    >
                       <Edit2 className="w-4 h-4" />
                     </button>
                   </div>

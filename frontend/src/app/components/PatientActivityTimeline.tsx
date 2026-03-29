@@ -14,8 +14,8 @@ const iconByType = {
 
 const colorClasses = {
   registration: "bg-green-50 text-green-600",
-  record: "bg-blue-50 text-blue-600",
-  appointment: "bg-cyan-50 text-cyan-600",
+  record: "bg-teal-50 text-teal-600",
+  appointment: "bg-emerald-50 text-emerald-600",
   payment: "bg-teal-50 text-teal-600"
 };
 
@@ -50,3 +50,4 @@ export default function PatientActivityTimeline({ items }: Props) {
     </div>
   );
 }
+

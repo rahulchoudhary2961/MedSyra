@@ -42,13 +42,6 @@ All protected routes require header:
 - `POST /doctors`
   - body: `{ fullName, specialty, experienceYears, availability, phone, email, rating, patientCount, status }`
 
-## Appointments (protected)
-- `GET /appointments?date=&doctorId=&status=&page=&limit=`
-- `POST /appointments`
-  - body: `{ patientId, doctorId, appointmentDate, appointmentTime, appointmentType, status, notes, feeAmount }`
-- `PATCH /appointments/:id/status`
-  - body: `{ status }`
-
 ## Medical Records (protected)
 - `GET /medical-records?q=&status=&page=&limit=`
 - `POST /medical-records`
@@ -61,7 +54,7 @@ All protected routes require header:
 ## Billings (protected)
 - `GET /billings?q=&status=&page=&limit=`
 - `POST /billings`
-  - body: `{ patientId, doctorId?, appointmentId?, description, amount, currency?, issueDate?, dueDate?, status?, notes? }`
+  - body: `{ patientId, doctorId?, description, amount, currency?, issueDate?, dueDate?, status?, notes? }`
 - `GET /billings/:id`
 - `PATCH /billings/:id`
   - body: `{ description?, amount?, dueDate?, status?, notes? }`
@@ -74,13 +67,13 @@ All protected routes require header:
 
 ## Dashboard (protected)
 - `GET /dashboard/summary`
-  - returns `totalPatients`, `todaysAppointments`, `availableDoctors`, `monthlyRevenue`, and recent activity
+  - returns `totalPatients`, `totalMedicalRecords`, `availableDoctors`, `monthlyRevenue`, and recent activity
 - `GET /dashboard/reports`
   - returns:
-    - `stats`: `{ totalPatients, totalAppointments, revenue3m, growthRate }`
-    - `monthlyData`: `[{ month, patients, revenue, appointments }]`
+    - `stats`: `{ totalPatients, totalMedicalRecords, revenue3m, growthRate }`
+    - `monthlyData`: `[{ month, patients, revenue, records }]`
     - `departmentData`: `[{ name, value }]`
-    - `appointmentTypes`: `[{ type, count }]`
+    - `recordTypes`: `[{ type, count }]`
 
 ## Seed Credentials
 - Email: `admin@citygeneral.com`

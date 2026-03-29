@@ -7,7 +7,7 @@ const getSummary = asyncHandler(async (req, res) => {
 });
 
 const getReports = asyncHandler(async (req, res) => {
-  const data = await dashboardService.getReports(req.user.organizationId);
+  const data = await dashboardService.getReports(req.user.organizationId, req.query);
   res.json({ success: true, data });
 });
 

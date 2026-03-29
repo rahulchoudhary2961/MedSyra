@@ -3,9 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Heart, Mail, Lock, EyeOff, Eye } from "lucide-react";
+import { Mail, Lock, EyeOff, Eye } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { setAuthToken } from "@/lib/auth";
+import BrandLogo from "../../components/BrandLogo";
 
 type SigninResponse = {
   success: boolean;
@@ -54,11 +55,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-blue-50 to-teal-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-cyan-600 rounded-2xl mb-4">
-            <Heart className="w-8 h-8 text-white" fill="white" />
+          <div className="mb-4 flex justify-center">
+            <BrandLogo size={80} className="rounded-[22px] shadow-[0_0_40px_rgba(16,185,129,0.28)]" priority />
           </div>
 
           <h1 className="text-3xl text-gray-900 mb-2">Welcome Back</h1>
@@ -119,7 +120,7 @@ export default function LoginPage() {
                 <span className="text-sm text-gray-600">Remember me</span>
               </label>
 
-              <Link href="/auth/forgot-password" className="text-sm text-cyan-600 hover:text-cyan-700">
+              <Link href="/auth/forgot-password" className="text-sm text-emerald-600 hover:text-emerald-700">
                 Forgot password?
               </Link>
             </div>
@@ -129,7 +130,7 @@ export default function LoginPage() {
                 <p className="text-sm text-red-600">{errorMessage}</p>
                 <p className="text-xs text-gray-500">
                   If you have not verified your email yet, go to {" "}
-                  <Link href="/auth/verify-email" className="text-cyan-600">Verify Email</Link>.
+                  <Link href="/auth/verify-email" className="text-emerald-600">Verify Email</Link>.
                 </p>
               </div>
             )}
@@ -137,7 +138,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-60"
+              className="w-full py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"
             >
               {isSubmitting ? "Signing In..." : "Sign In"}
             </button>
@@ -145,17 +146,18 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-gray-600 mt-6">
             Don&apos;t have an account?{" "}
-            <Link href="/auth/signup" className="text-cyan-600 hover:text-cyan-700">
+            <Link href="/auth/signup" className="text-emerald-600 hover:text-emerald-700">
               Sign Up
             </Link>
           </p>
         </div>
 
         <p className="text-center text-sm text-gray-500 mt-6">
-          By signing in, you agree to our <a className="text-cyan-600">Terms</a> and{" "}
-          <a className="text-cyan-600">Privacy Policy</a>
+          By signing in, you agree to our <a className="text-emerald-600">Terms</a> and{" "}
+          <a className="text-emerald-600">Privacy Policy</a>
         </p>
       </div>
     </div>
   );
 }
+

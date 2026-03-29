@@ -32,6 +32,11 @@ const listInvoices = async (organizationId, query) => {
     conditions.push(`(i.invoice_number ILIKE $${idx} OR p.full_name ILIKE $${idx})`);
   }
 
+  if (query.patientId) {
+    values.push(query.patientId);
+    conditions.push(`i.patient_id = $${values.length}`);
+  }
+
   values.push(limit, offset);
   const where = conditions.join(" AND ");
 
@@ -43,6 +48,7 @@ const listInvoices = async (organizationId, query) => {
       p.full_name AS patient_name,
       i.doctor_id,
       d.full_name AS doctor_name,
+      i.appointment_id,
       i.issue_date,
       i.due_date,
       i.status,
@@ -73,7 +79,22 @@ const listInvoices = async (organizationId, query) => {
       COALESCE(SUM(total_amount), 0)::numeric(12,2) AS total_revenue,
       COUNT(*) FILTER (WHERE status = 'paid')::int AS paid_invoices,
       COUNT(*) FILTER (WHERE status IN ('issued', 'partially_paid'))::int AS pending_invoices,
-      COUNT(*) FILTER (WHERE status = 'overdue')::int AS overdue_invoices
+      COUNT(*) FILTER (WHERE status = 'overdue')::int AS overdue_invoices,
+      (
+        SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
+        FROM payments
+        WHERE organization_id = $1 AND status = 'completed' AND method = 'cash'
+      ) AS cash_total,
+      (
+        SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
+        FROM payments
+        WHERE organization_id = $1 AND status = 'completed' AND method = 'upi'
+      ) AS upi_total,
+      (
+        SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
+        FROM payments
+        WHERE organization_id = $1 AND status = 'completed' AND method = 'card'
+      ) AS card_total
     FROM invoices
     WHERE organization_id = $1
   `;
@@ -90,7 +111,10 @@ const listInvoices = async (organizationId, query) => {
       totalRevenue: Number(statsRes.rows[0].total_revenue || 0),
       paidInvoices: Number(statsRes.rows[0].paid_invoices || 0),
       pendingInvoices: Number(statsRes.rows[0].pending_invoices || 0),
-      overdueInvoices: Number(statsRes.rows[0].overdue_invoices || 0)
+      overdueInvoices: Number(statsRes.rows[0].overdue_invoices || 0),
+      cashTotal: Number(statsRes.rows[0].cash_total || 0),
+      upiTotal: Number(statsRes.rows[0].upi_total || 0),
+      cardTotal: Number(statsRes.rows[0].card_total || 0)
     },
     pagination: {
       page,
@@ -110,6 +134,7 @@ const getInvoiceById = async (organizationId, id) => {
       p.full_name AS patient_name,
       i.doctor_id,
       d.full_name AS doctor_name,
+      i.appointment_id,
       i.issue_date,
       i.due_date,
       i.status,
@@ -167,8 +192,8 @@ const createInvoice = async (organizationId, payload) => {
 
     const invoiceQuery = `
       INSERT INTO invoices (
-        organization_id, invoice_number, patient_id, doctor_id, appointment_id,
-        issue_date, due_date, status, total_amount, paid_amount, balance_amount, currency, notes
+        organization_id, invoice_number, patient_id, doctor_id,
+        appointment_id, issue_date, due_date, status, total_amount, paid_amount, balance_amount, currency, notes
       )
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$9,$10,$11)
       RETURNING *
@@ -200,7 +225,7 @@ const createInvoice = async (organizationId, payload) => {
     await client.query(itemQuery, [invoice.id, description, 1, amount, amount]);
 
     await client.query("COMMIT");
-    return invoice;
+    return getInvoiceById(organizationId, invoice.id);
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -354,6 +379,69 @@ const addPayment = async (organizationId, invoiceId, payload) => {
   }
 };
 
+const markInvoicePaid = async (organizationId, invoiceId, payload) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const invoiceRes = await client.query(
+      "SELECT * FROM invoices WHERE organization_id = $1 AND id = $2 FOR UPDATE",
+      [organizationId, invoiceId]
+    );
+    const invoice = invoiceRes.rows[0];
+    if (!invoice) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const remaining = Number(invoice.balance_amount);
+    if (remaining <= 0) {
+      await client.query("COMMIT");
+      return {
+        invoice,
+        payment: null
+      };
+    }
+
+    const paymentQuery = `
+      INSERT INTO payments (organization_id, invoice_id, amount, method, reference, status, paid_at)
+      VALUES ($1,$2,$3,$4,$5,'completed',NOW())
+      RETURNING *
+    `;
+
+    const paymentRes = await client.query(paymentQuery, [
+      organizationId,
+      invoiceId,
+      remaining,
+      payload.method || "cash",
+      payload.reference || null
+    ]);
+
+    const updatedInvoiceRes = await client.query(
+      `
+      UPDATE invoices
+      SET paid_amount = total_amount,
+          balance_amount = 0,
+          status = 'paid',
+          updated_at = NOW()
+      WHERE organization_id = $1 AND id = $2
+      RETURNING *
+      `,
+      [organizationId, invoiceId]
+    );
+
+    await client.query("COMMIT");
+    return {
+      invoice: updatedInvoiceRes.rows[0],
+      payment: paymentRes.rows[0]
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 const deleteInvoice = async (organizationId, id) => {
   const query = `
     DELETE FROM invoices
@@ -371,5 +459,6 @@ module.exports = {
   updateInvoice,
   issueInvoice,
   addPayment,
+  markInvoicePaid,
   deleteInvoice
 };

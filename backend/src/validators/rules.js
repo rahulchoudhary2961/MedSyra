@@ -197,6 +197,20 @@ const urlRule = () => (value, fieldName) => {
   return normalized;
 };
 
+const relativeUploadPathRule = () => (value, fieldName) => {
+  const normalized = stringRule({ minLength: 2, maxLength: 2048, safe: false })(value, fieldName);
+
+  if (!normalized.startsWith("/uploads/")) {
+    throw new ApiError(400, `${fieldName} must be a valid upload path`);
+  }
+
+  if (normalized.includes("..")) {
+    throw new ApiError(400, `${fieldName} must not contain path traversal`);
+  }
+
+  return normalized;
+};
+
 module.exports = {
   optional,
   stringRule,
@@ -208,5 +222,6 @@ module.exports = {
   dateRule,
   timeRule,
   passwordRule,
-  urlRule
+  urlRule,
+  relativeUploadPathRule
 };

@@ -1,0 +1,5 @@
+ALTER TABLE medical_records
+  ADD COLUMN IF NOT EXISTS appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS symptoms TEXT,
+  ADD COLUMN IF NOT EXISTS diagnosis TEXT,
+  ADD COLUMN IF NOT EXISTS prescription TEXT;

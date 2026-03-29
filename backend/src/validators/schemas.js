@@ -9,18 +9,27 @@ const {
   dateRule,
   timeRule,
   passwordRule,
-  urlRule
+  urlRule,
+  relativeUploadPathRule
 } = require("./rules");
 const { USER_ROLES } = require("../constants/roles");
 
 const roles = Object.values(USER_ROLES);
-const appointmentStatuses = ["confirmed", "pending", "completed", "cancelled"];
 const medicalRecordStatuses = ["completed", "pending review", "in progress"];
+const medicalRecordUploadContentTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"];
+const medicalRecordFileUrlRule = (value, fieldName) => {
+  try {
+    return urlRule()(value, fieldName);
+  } catch (_error) {
+    return relativeUploadPathRule()(value, fieldName);
+  }
+};
 const patientStatuses = ["active", "follow-up", "pending", "inactive"];
 const doctorStatuses = ["available", "busy", "off duty", "off-duty"];
 const bloodTypes = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const invoiceStatuses = ["draft", "issued", "partially_paid", "paid", "overdue", "void"];
 const paymentMethods = ["cash", "card", "bank_transfer", "insurance", "upi", "other"];
+const reportPeriods = ["7d", "30d", "90d", "12m"];
 
 const idParamsSchema = {
   fields: {
@@ -59,6 +68,11 @@ const authSchemas = {
   requestPasswordResetBody: {
     fields: {
       email: emailRule()
+    }
+  },
+  listUsersQuery: {
+    fields: {
+      role: optional(stringRule({ enumValues: roles, maxLength: 50 }))
     }
   },
   resetPasswordBody: {
@@ -112,6 +126,13 @@ const patientsSchemas = {
     },
     requireAtLeastOne: true
   },
+  uploadBody: {
+    fields: {
+      fileName: stringRule({ minLength: 1, maxLength: 120, safe: false }),
+      contentType: stringRule({ enumValues: medicalRecordUploadContentTypes, maxLength: 40, safe: false }),
+      dataBase64: stringRule({ minLength: 20, maxLength: 8_000_000, safe: false })
+    }
+  },
   idParams: idParamsSchema
 };
 
@@ -131,64 +152,84 @@ const doctorsSchemas = {
       availability: optional(stringRule({ minLength: 2, maxLength: 100 })),
       phone: optional(phoneRule()),
       email: optional(emailRule()),
+      userId: optional(uuidRule()),
+      workStartTime: optional(timeRule()),
+      workEndTime: optional(timeRule()),
+      breakStartTime: optional(timeRule()),
+      breakEndTime: optional(timeRule()),
+      weeklyOffDays: optional(stringRule({ maxLength: 200, safe: false })),
+      holidayDates: optional(stringRule({ maxLength: 1000, safe: false })),
+      consultationFee: optional(numberRule({ min: 0, max: 1000000 })),
       rating: optional(numberRule({ min: 0, max: 5 })),
       patientCount: optional(integerRule({ min: 0, max: 1000000 })),
       status: optional(stringRule({ enumValues: doctorStatuses, maxLength: 30 }))
     }
-  }
+  },
+  idParams: idParamsSchema
 };
+
+const appointmentCategories = ["consultation", "follow-up", "procedure", "checkup", "emergency", "review", "walk-in"];
 
 const appointmentsSchemas = {
   listQuery: {
     fields: {
       ...paginationQuerySchema,
-      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      limit: optional(integerRule({ min: 1, max: 500, coerceString: true })),
+      year: optional(integerRule({ min: 2000, max: 2100, coerceString: true })),
+      month: optional(integerRule({ min: 1, max: 12, coerceString: true })),
+      day: optional(integerRule({ min: 1, max: 31, coerceString: true })),
       date: optional(dateRule()),
-      startDate: optional(dateRule()),
-      endDate: optional(dateRule()),
-      doctorId: optional(uuidRule()),
-      status: optional(stringRule({ enumValues: appointmentStatuses, maxLength: 20 })),
-      order: optional(stringRule({ enumValues: ["asc", "desc"], maxLength: 4 }))
+      patientId: optional(uuidRule()),
+      doctorId: optional(uuidRule())
     }
   },
   createBody: {
     fields: {
-      patientId: uuidRule(),
-      doctorId: uuidRule(),
+      patientName: stringRule({ minLength: 2, maxLength: 120 }),
+      patientId: optional(uuidRule()),
+      mobileNumber: optional(phoneRule()),
+      email: optional(emailRule()),
+      doctorId: optional(uuidRule()),
+      category: stringRule({ enumValues: appointmentCategories, maxLength: 40 }),
+      status: optional(stringRule({ enumValues: ["pending", "confirmed", "cancelled", "completed", "checked-in", "no-show"], maxLength: 20 })),
       appointmentDate: dateRule(),
       appointmentTime: timeRule(),
-      appointmentType: stringRule({
-        enumValues: ["checkup", "follow-up", "followup", "consultation", "surgery", "emergency"],
-        maxLength: 30
-      }),
-      status: optional(stringRule({ enumValues: appointmentStatuses, maxLength: 20 })),
-      notes: optional(stringRule({ maxLength: 1000 })),
-      feeAmount: optional(numberRule({ min: 0, max: 1000000 }))
+      durationMinutes: integerRule({ min: 5, max: 240 }),
+      plannedProcedures: optional(stringRule({ maxLength: 2000 })),
+      notes: optional(stringRule({ maxLength: 1000 }))
     }
   },
   updateBody: {
     fields: {
+      patientName: optional(stringRule({ minLength: 2, maxLength: 120 })),
       patientId: optional(uuidRule()),
+      mobileNumber: optional(phoneRule()),
+      email: optional(emailRule()),
       doctorId: optional(uuidRule()),
+      category: optional(stringRule({ enumValues: appointmentCategories, maxLength: 40 })),
+      status: optional(stringRule({ enumValues: ["pending", "confirmed", "cancelled", "completed", "checked-in", "no-show"], maxLength: 20 })),
       appointmentDate: optional(dateRule()),
       appointmentTime: optional(timeRule()),
-      appointmentType: optional(
-        stringRule({
-          enumValues: ["checkup", "follow-up", "followup", "consultation", "surgery", "emergency"],
-          maxLength: 30
-        })
-      ),
-      status: optional(stringRule({ enumValues: appointmentStatuses, maxLength: 20 })),
-      notes: optional(stringRule({ maxLength: 1000 })),
-      feeAmount: optional(numberRule({ min: 0, max: 1000000 }))
+      durationMinutes: optional(integerRule({ min: 5, max: 240 })),
+      plannedProcedures: optional(stringRule({ maxLength: 2000 })),
+      notes: optional(stringRule({ maxLength: 1000 }))
+    },
+    requireAtLeastOne: true
+  },
+  completeConsultationBody: {
+    fields: {
+      symptoms: optional(stringRule({ maxLength: 2000 })),
+      diagnosis: optional(stringRule({ maxLength: 2000 })),
+      prescription: optional(stringRule({ maxLength: 2000 })),
+      notes: optional(stringRule({ maxLength: 2000 }))
     },
     requireAtLeastOne: true
   },
   idParams: idParamsSchema,
-  updateStatusParams: idParamsSchema,
-  updateStatusBody: {
+  bulkCancelBody: {
     fields: {
-      status: stringRule({ enumValues: appointmentStatuses, maxLength: 20 })
+      appointmentDate: dateRule(),
+      doctorId: optional(uuidRule())
     }
   }
 };
@@ -198,33 +239,43 @@ const medicalRecordsSchemas = {
     fields: {
       ...paginationQuerySchema,
       q: optional(stringRule({ minLength: 1, maxLength: 120 })),
-      status: optional(stringRule({ enumValues: medicalRecordStatuses, maxLength: 30 }))
+      status: optional(stringRule({ enumValues: medicalRecordStatuses, maxLength: 30 })),
+      patientId: optional(uuidRule()),
+      doctorId: optional(uuidRule()),
+      appointmentId: optional(uuidRule())
     }
   },
   createBody: {
     fields: {
       patientId: uuidRule(),
       doctorId: uuidRule(),
+      appointmentId: optional(uuidRule()),
       recordType: stringRule({ minLength: 2, maxLength: 100 }),
       status: optional(stringRule({ enumValues: medicalRecordStatuses, maxLength: 30 })),
       recordDate: dateRule(),
+      symptoms: optional(stringRule({ maxLength: 2000 })),
+      diagnosis: optional(stringRule({ maxLength: 2000 })),
+      prescription: optional(stringRule({ maxLength: 2000 })),
       notes: optional(stringRule({ maxLength: 2000 })),
-      fileUrl: optional(urlRule())
+      fileUrl: optional(medicalRecordFileUrlRule)
     }
   },
   updateBody: {
     fields: {
       patientId: optional(uuidRule()),
       doctorId: optional(uuidRule()),
+      appointmentId: optional(uuidRule()),
       recordType: optional(stringRule({ minLength: 2, maxLength: 100 })),
       status: optional(stringRule({ enumValues: medicalRecordStatuses, maxLength: 30 })),
       recordDate: optional(dateRule()),
+      symptoms: optional(stringRule({ maxLength: 2000 })),
+      diagnosis: optional(stringRule({ maxLength: 2000 })),
+      prescription: optional(stringRule({ maxLength: 2000 })),
       notes: optional(stringRule({ maxLength: 2000 })),
-      fileUrl: optional(urlRule())
+      fileUrl: optional(medicalRecordFileUrlRule)
     },
     requireAtLeastOne: true
-  }
-  ,
+  },
   idParams: idParamsSchema
 };
 
@@ -233,7 +284,8 @@ const billingsSchemas = {
     fields: {
       ...paginationQuerySchema,
       q: optional(stringRule({ minLength: 1, maxLength: 120 })),
-      status: optional(stringRule({ enumValues: invoiceStatuses, maxLength: 20 }))
+      status: optional(stringRule({ enumValues: invoiceStatuses, maxLength: 20 })),
+      patientId: optional(uuidRule())
     }
   },
   createBody: {
@@ -242,7 +294,7 @@ const billingsSchemas = {
       doctorId: optional(uuidRule()),
       appointmentId: optional(uuidRule()),
       description: stringRule({ minLength: 2, maxLength: 200 }),
-      amount: numberRule({ min: 0.01, max: 10000000 }),
+      amount: optional(numberRule({ min: 0.01, max: 10000000 })),
       currency: optional(stringRule({ minLength: 3, maxLength: 3, pattern: /^[A-Z]{3}$/, safe: false })),
       issueDate: optional(dateRule()),
       dueDate: optional(dateRule()),
@@ -274,7 +326,21 @@ const billingsSchemas = {
       paidAt: optional(stringRule({ minLength: 10, maxLength: 40, safe: false }))
     }
   },
+  quickPayBody: {
+    fields: {
+      method: optional(stringRule({ enumValues: paymentMethods, maxLength: 30 })),
+      reference: optional(stringRule({ maxLength: 120 }))
+    }
+  },
   idParams: idParamsSchema
+};
+
+const dashboardSchemas = {
+  reportsQuery: {
+    fields: {
+      period: optional(stringRule({ enumValues: reportPeriods, maxLength: 10 }))
+    }
+  }
 };
 
 module.exports = {
@@ -283,5 +349,6 @@ module.exports = {
   doctorsSchemas,
   appointmentsSchemas,
   medicalRecordsSchemas,
-  billingsSchemas
+  billingsSchemas,
+  dashboardSchemas
 };

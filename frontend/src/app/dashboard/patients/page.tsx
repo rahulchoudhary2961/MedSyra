@@ -1,5 +1,7 @@
-﻿"use client";
+"use client";
 
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Edit2, Eye, Plus, Search, Trash2 } from "lucide-react";
 import { apiRequest, ApiRequestError } from "@/lib/api";
@@ -24,6 +26,11 @@ type CreatePatientResponse = {
 };
 
 type UpdatePatientResponse = {
+  success: boolean;
+  data: Patient;
+};
+
+type GetPatientResponse = {
   success: boolean;
   data: Patient;
 };
@@ -57,9 +64,19 @@ const getStatusClass = (status: string) => {
   return "bg-yellow-50 text-yellow-700";
 };
 
+const patientMatchesQuery = (patient: Patient, currentQuery: string) => {
+  const normalizedQuery = currentQuery.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  return [patient.full_name, patient.phone, patient.email]
+    .filter(Boolean)
+    .some((value) => value!.toLowerCase().includes(normalizedQuery));
+};
+
 export default function PatientsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingPatientId, setDeletingPatientId] = useState<string | null>(null);
@@ -72,9 +89,26 @@ export default function PatientsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalPatients, setTotalPatients] = useState(0);
   const [formData, setFormData] = useState<CreatePatientForm>(initialForm);
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [editingPatientId, setEditingPatientId] = useState<string | null>(null);
   const [existingPatientIdHint, setExistingPatientIdHint] = useState<string | null>(null);
+  const initialQuery = searchParams.get("q") || "";
+
+  const openEditModal = useCallback((patient: Patient) => {
+    setFormError("");
+    setExistingPatientIdHint(null);
+    setEditingPatientId(patient.id);
+    setFormData({
+      fullName: patient.full_name || "",
+      age: patient.age?.toString() || "",
+      gender: patient.gender || "",
+      phone: patient.phone || "",
+      email: patient.email || "",
+      bloodType: patient.blood_type || "",
+      emergencyContact: patient.emergency_contact || "",
+      address: patient.address || ""
+    });
+    setShowModal(true);
+  }, []);
 
   const formatLastVisitDate = (value: string | null) => {
     if (!value) return "-";
@@ -111,8 +145,58 @@ export default function PatientsPage() {
   }, []);
 
   useEffect(() => {
-    fetchPatients(1, "");
-  }, [fetchPatients]);
+    setSearch(initialQuery);
+    setQuery(initialQuery);
+    fetchPatients(1, initialQuery);
+  }, [fetchPatients, initialQuery]);
+
+  useEffect(() => {
+    if (search === query) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setQuery(search);
+      setPage(1);
+      fetchPatients(1, search);
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [search, query, fetchPatients]);
+
+  useEffect(() => {
+    const editPatientId = searchParams.get("edit");
+    if (!editPatientId || showModal) {
+      return;
+    }
+
+    const patientToEdit = patients.find((patient) => patient.id === editPatientId);
+    if (patientToEdit) {
+      openEditModal(patientToEdit);
+      router.replace("/dashboard/patients");
+      return;
+    }
+
+    apiRequest<GetPatientResponse>(`/patients/${editPatientId}`, {
+      authenticated: true
+    })
+      .then((response) => {
+        openEditModal(response.data);
+        setPatients((currentPatients) => {
+          if (currentPatients.some((patient) => patient.id === response.data.id)) {
+            return currentPatients.map((patient) => (patient.id === response.data.id ? response.data : patient));
+          }
+
+          return [response.data, ...currentPatients];
+        });
+      })
+      .catch((err: Error) => {
+        setError(err.message || "Failed to load patient details");
+      })
+      .finally(() => {
+        router.replace("/dashboard/patients");
+      });
+  }, [openEditModal, patients, router, searchParams, showModal]);
 
   const handleCreateOrUpdatePatient = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -134,23 +218,55 @@ export default function PatientsPage() {
       };
 
       if (editingPatientId) {
-        await apiRequest<UpdatePatientResponse>(`/patients/${editingPatientId}`, {
+        const response = await apiRequest<UpdatePatientResponse>(`/patients/${editingPatientId}`, {
           method: "PATCH",
           authenticated: true,
           body
         });
+
+        const updatedPatient = response.data;
+        const matchesCurrentQuery = patientMatchesQuery(updatedPatient, query);
+
+        setPatients((currentPatients) => {
+          const nextPatients = currentPatients
+            .map((patient) => (patient.id === updatedPatient.id ? updatedPatient : patient))
+            .filter((patient) => patient.id !== updatedPatient.id || matchesCurrentQuery);
+
+          if (!matchesCurrentQuery) {
+            return nextPatients;
+          }
+
+          return nextPatients;
+        });
       } else {
-        await apiRequest<CreatePatientResponse>("/patients", {
+        const response = await apiRequest<CreatePatientResponse>("/patients", {
           method: "POST",
           authenticated: true,
           body
         });
+
+        const createdPatient = response.data;
+        const matchesCurrentQuery = patientMatchesQuery(createdPatient, query);
+
+        if (matchesCurrentQuery) {
+          setPatients((currentPatients) => [createdPatient, ...currentPatients.filter((patient) => patient.id !== createdPatient.id)].slice(0, 20));
+        }
+
+        setTotalPatients((current) => {
+          const nextTotal = current + 1;
+          setTotalPages(Math.max(1, Math.ceil(nextTotal / 20)));
+          return nextTotal;
+        });
+        setPage(1);
       }
 
       setShowModal(false);
       setFormData(initialForm);
       setEditingPatientId(null);
-      fetchPatients(1, query);
+
+      if (!editingPatientId) {
+        fetchPatients(1, query);
+      }
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 409) {
         const details = (err.details || {}) as { existingPatientId?: string };
@@ -174,32 +290,11 @@ export default function PatientsPage() {
   };
 
   const handleViewPatient = async (patient: Patient) => {
-    setError("");
-    try {
-      const response = await apiRequest<{ success: boolean; data: Patient }>(`/patients/${patient.id}`, {
-        authenticated: true
-      });
-      setSelectedPatient(response.data);
-      setShowViewModal(true);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load patient details";
-      setError(message);
-    }
+    router.push(`/dashboard/patients/${patient.id}`);
   };
 
   const handleEditPatient = (patient: Patient) => {
-    setEditingPatientId(patient.id);
-    setFormData({
-      fullName: patient.full_name || "",
-      age: patient.age?.toString() || "",
-      gender: patient.gender || "",
-      phone: patient.phone || "",
-      email: patient.email || "",
-      bloodType: patient.blood_type || "",
-      emergencyContact: patient.emergency_contact || "",
-      address: patient.address || ""
-    });
-    setShowModal(true);
+    openEditModal(patient);
   };
 
   const handleDeletePatient = async (patient: Patient) => {
@@ -224,12 +319,6 @@ export default function PatientsPage() {
     }
   };
 
-  const runSearch = () => {
-    setQuery(search);
-    setPage(1);
-    fetchPatients(1, search);
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -245,7 +334,7 @@ export default function PatientsPage() {
             setExistingPatientIdHint(null);
             setShowModal(true);
           }}
-          className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
           Add New Patient
@@ -260,17 +349,10 @@ export default function PatientsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && runSearch()}
               placeholder="Search by name, phone, or email..."
               className="bg-transparent border-none outline-none flex-1 text-sm"
             />
           </div>
-          <button
-            onClick={runSearch}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            Search
-          </button>
         </div>
       </div>
 
@@ -310,7 +392,7 @@ export default function PatientsPage() {
                 <tr key={patient.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white">
+                      <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white">
                         {patient.full_name
                           .split(" ")
                           .map((n) => n?.[0])
@@ -337,13 +419,22 @@ export default function PatientsPage() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                       <button
+                        type="button"
                         onClick={() => handleViewPatient(patient)}
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
                         title="View patient"
                       >
                         <Eye className="w-4 h-4" />
                       </button>
+                      <Link
+                        href={`/dashboard/patients/${patient.id}`}
+                        className="p-1.5 rounded hover:bg-gray-100 text-emerald-700"
+                        title="Open profile"
+                      >
+                        <span className="text-xs font-medium">Profile</span>
+                      </Link>
                       <button
+                        type="button"
                         onClick={() => handleEditPatient(patient)}
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
                         title="Edit patient"
@@ -351,6 +442,7 @@ export default function PatientsPage() {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleDeletePatient(patient)}
                         disabled={deletingPatientId === patient.id}
                         className="p-1.5 rounded hover:bg-red-50 text-red-600 disabled:opacity-60"
@@ -410,7 +502,7 @@ export default function PatientsPage() {
                       <button
                         type="button"
                         onClick={openExistingPatientRecord}
-                        className="text-sm text-cyan-700 mt-2 hover:underline"
+                        className="text-sm text-emerald-700 mt-2 hover:underline"
                       >
                         Open existing patient record
                       </button>
@@ -432,11 +524,13 @@ export default function PatientsPage() {
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Age</label>
                     <input
-                      type="number"
-                      min={1}
-                      max={130}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="\d*"
                       value={formData.age}
-                      onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, age: e.target.value.replace(/\D/g, "").slice(0, 3) })
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                     />
                   </div>
@@ -531,7 +625,7 @@ export default function PatientsPage() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-60"
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"
                 >
                   {isSubmitting ? "Saving..." : editingPatientId ? "Save Changes" : "Add Patient"}
                 </button>
@@ -541,39 +635,8 @@ export default function PatientsPage() {
         </div>
       )}
 
-      {showViewModal && selectedPatient && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-xl w-full">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl text-gray-900">Patient Details</h2>
-              <p className="text-sm text-gray-600 mt-1">{selectedPatient.full_name}</p>
-            </div>
-            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <p><span className="text-gray-500">Age:</span> {selectedPatient.age ?? "-"}</p>
-              <p><span className="text-gray-500">Gender:</span> {selectedPatient.gender || "-"}</p>
-              <p><span className="text-gray-500">Phone:</span> {selectedPatient.phone || "-"}</p>
-              <p><span className="text-gray-500">Email:</span> {selectedPatient.email || "-"}</p>
-              <p><span className="text-gray-500">Blood Type:</span> {selectedPatient.blood_type || "-"}</p>
-              <p><span className="text-gray-500">Emergency Contact:</span> {selectedPatient.emergency_contact || "-"}</p>
-              <p><span className="text-gray-500">Status:</span> {selectedPatient.status || "-"}</p>
-              <p><span className="text-gray-500">Last Visit:</span> {formatLastVisitDate(selectedPatient.last_visit_at)}</p>
-              <p className="sm:col-span-2"><span className="text-gray-500">Address:</span> {selectedPatient.address || "-"}</p>
-            </div>
-            <div className="p-6 border-t border-gray-200 flex justify-end">
-              <button
-                onClick={() => {
-                  setShowViewModal(false);
-                  setSelectedPatient(null);
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
+
 

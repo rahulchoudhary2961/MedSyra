@@ -11,7 +11,13 @@ const createDoctor = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, message: "Doctor created", data });
 });
 
+const deleteDoctor = asyncHandler(async (req, res) => {
+  await doctorsService.deleteDoctor(req.user.organizationId, req.params.id);
+  res.json({ success: true, message: "Doctor deleted" });
+});
+
 module.exports = {
   listDoctors,
-  createDoctor
+  createDoctor,
+  deleteDoctor
 };

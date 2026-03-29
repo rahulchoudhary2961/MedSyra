@@ -225,6 +225,10 @@ const getMe = async (userId) => {
   return user;
 };
 
+const listUsers = async (organizationId, query) => {
+  return authModel.listUsersByOrganization(organizationId, query.role || null);
+};
+
 module.exports = {
   signup,
   signin,
@@ -232,5 +236,6 @@ module.exports = {
   resendVerificationEmail,
   requestPasswordReset,
   resetPassword,
-  getMe
+  getMe,
+  listUsers
 };

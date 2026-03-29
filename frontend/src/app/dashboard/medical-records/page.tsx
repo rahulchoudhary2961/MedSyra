@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, Eye, FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import { canDeleteMedicalRecords, isFullAccessRole } from "@/lib/roles";
 import { Doctor, MedicalRecord, Patient } from "@/types/api";
 
 type MedicalRecordsResponse = {
@@ -29,21 +30,46 @@ type PatientsResponse = {
 type MedicalRecordPayload = {
   patientId: string;
   doctorId: string;
+  appointmentId?: string | null;
   recordType: string;
   status: string;
   recordDate: string;
+  symptoms: string | null;
+  diagnosis: string | null;
+  prescription: string | null;
   notes: string | null;
   fileUrl: string | null;
+};
+
+type UploadAttachmentResponse = {
+  success: boolean;
+  data: {
+    fileUrl: string;
+    fileName: string;
+    contentType: string;
+    size: number;
+  };
 };
 
 const initialForm = {
   patientId: "",
   doctorId: "",
+  appointmentId: "",
   recordType: "",
   status: "completed",
   recordDate: "",
+  symptoms: "",
+  diagnosis: "",
+  prescription: "",
   notes: "",
   fileUrl: ""
+};
+
+type MeResponse = {
+  success: boolean;
+  data: {
+    role: string;
+  };
 };
 
 export default function MedicalRecordsPage() {
@@ -60,7 +86,10 @@ export default function MedicalRecordsPage() {
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MedicalRecord | null>(null);
+  const [currentRole, setCurrentRole] = useState("");
   const [form, setForm] = useState(initialForm);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const patientsMap = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient.full_name])),
@@ -77,6 +106,9 @@ export default function MedicalRecordsPage() {
     recordType: form.recordType.trim(),
     status: form.status,
     recordDate: form.recordDate,
+    symptoms: form.symptoms.trim() || null,
+    diagnosis: form.diagnosis.trim() || null,
+    prescription: form.prescription.trim() || null,
     notes: form.notes.trim() || null,
     fileUrl: form.fileUrl.trim() || null
   });
@@ -84,7 +116,33 @@ export default function MedicalRecordsPage() {
   const resetForm = () => {
     setForm(initialForm);
     setEditingRecordId(null);
+    setSelectedFile(null);
   };
+
+  const resolveAttachmentUrl = (fileUrl: string) => {
+    if (/^https?:\/\//i.test(fileUrl)) {
+      return fileUrl;
+    }
+
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1";
+    return `${apiBaseUrl.replace(/\/api\/v1\/?$/, "")}${fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`}`;
+  };
+
+  const fileToBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        if (typeof result !== "string") {
+          reject(new Error("Failed to read file"));
+          return;
+        }
+
+        resolve(result.split(",", 2)[1] || "");
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
 
   const loadRecords = () => {
     setLoading(true);
@@ -98,12 +156,14 @@ export default function MedicalRecordsPage() {
 
   const loadMetadata = () => {
     Promise.all([
-      apiRequest<DoctorsResponse>("/doctors?limit=200", { authenticated: true }),
-      apiRequest<PatientsResponse>("/patients?limit=100", { authenticated: true })
+      apiRequest<DoctorsResponse>("/doctors?limit=100", { authenticated: true }),
+      apiRequest<PatientsResponse>("/patients?limit=100", { authenticated: true }),
+      apiRequest<MeResponse>("/auth/me", { authenticated: true })
     ])
-      .then(([doctorsRes, patientsRes]) => {
+      .then(([doctorsRes, patientsRes, meRes]) => {
         setDoctors(doctorsRes.data.items || []);
         setPatients(patientsRes.data.items || []);
+        setCurrentRole(meRes.data.role || "");
       })
       .catch((err: Error) => setError(err.message || "Failed to load form options"));
   };
@@ -119,7 +179,25 @@ export default function MedicalRecordsPage() {
     setError("");
 
     try {
-      const payload = buildPayload();
+      let fileUrl = form.fileUrl.trim() || null;
+      if (selectedFile) {
+        const dataBase64 = await fileToBase64(selectedFile);
+        const uploadResponse = await apiRequest<UploadAttachmentResponse>("/medical-records/upload", {
+          method: "POST",
+          authenticated: true,
+          body: {
+            fileName: selectedFile.name,
+            contentType: selectedFile.type,
+            dataBase64
+          }
+        });
+        fileUrl = uploadResponse.data.fileUrl;
+      }
+
+      const payload = {
+        ...buildPayload(),
+        fileUrl
+      };
       if (editingRecordId) {
         await apiRequest(`/medical-records/${editingRecordId}`, {
           method: "PATCH",
@@ -218,19 +296,21 @@ export default function MedicalRecordsPage() {
     setForm({
       patientId: record.patient_id,
       doctorId: record.doctor_id,
+      appointmentId: record.appointment_id || "",
       recordType: record.record_type || "",
       status: record.status || "completed",
       recordDate: record.record_date || "",
+      symptoms: record.symptoms || "",
+      diagnosis: record.diagnosis || "",
+      prescription: record.prescription || "",
       notes: record.notes || "",
       fileUrl: record.file_url || ""
     });
+    setSelectedFile(null);
     setShowFormModal(true);
   };
 
   const handleDelete = async (record: MedicalRecord) => {
-    const confirmed = window.confirm(`Delete record "${record.record_type}" for ${record.patient_name}?`);
-    if (!confirmed) return;
-
     setDeletingId(record.id);
     setError("");
     try {
@@ -238,6 +318,7 @@ export default function MedicalRecordsPage() {
         method: "DELETE",
         authenticated: true
       });
+      setDeleteTarget(null);
       loadRecords();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete medical record";
@@ -249,7 +330,7 @@ export default function MedicalRecordsPage() {
 
   const handleDownload = (record: MedicalRecord) => {
     if (record.file_url) {
-      window.open(record.file_url, "_blank", "noopener,noreferrer");
+      window.open(resolveAttachmentUrl(record.file_url), "_blank", "noopener,noreferrer");
       return;
     }
 
@@ -295,16 +376,18 @@ export default function MedicalRecordsPage() {
           <h1 className="text-gray-900">Medical records</h1>
           <p className="text-gray-600 mt-1">Access and manage patient medical records</p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setShowFormModal(true);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700"
-        >
-          <Plus className="w-4 h-4" />
-          Add Record
-        </button>
+        {(isFullAccessRole(currentRole) || currentRole === "doctor") && (
+          <button
+            onClick={() => {
+              resetForm();
+              setShowFormModal(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+          >
+            <Plus className="w-4 h-4" />
+            Add Record
+          </button>
+        )}
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -341,7 +424,7 @@ export default function MedicalRecordsPage() {
                 <tr key={record.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white">
+                      <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white">
                         {record.patient_name
                           .split(" ")
                           .map((n) => n[0])
@@ -390,21 +473,25 @@ export default function MedicalRecordsPage() {
                       >
                         <Download className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={() => handleEdit(record)}
-                        className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
-                        title="Edit"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(record)}
-                        disabled={deletingId === record.id}
-                        className="p-1.5 rounded hover:bg-red-50 text-red-600 disabled:opacity-60"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {(isFullAccessRole(currentRole) || currentRole === "doctor") && (
+                        <button
+                          onClick={() => handleEdit(record)}
+                          className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                      {canDeleteMedicalRecords(currentRole) && (
+                        <button
+                          onClick={() => setDeleteTarget(record)}
+                          disabled={deletingId === record.id}
+                          className="p-1.5 rounded hover:bg-red-50 text-red-600 disabled:opacity-60"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -415,8 +502,8 @@ export default function MedicalRecordsPage() {
       </div>
 
       {showFormModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleSubmit} className="bg-white rounded-xl max-w-lg w-full p-6 space-y-4">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
+          <form onSubmit={handleSubmit} className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-lg text-gray-900">{editingRecordId ? "Edit Medical Record" : "Add Medical Record"}</h2>
 
             <div>
@@ -464,6 +551,36 @@ export default function MedicalRecordsPage() {
               />
             </div>
 
+            <div>
+              <label className="block text-sm text-gray-700 mb-2">Symptoms</label>
+              <textarea
+                rows={2}
+                value={form.symptoms}
+                onChange={(e) => setForm({ ...form, symptoms: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-700 mb-2">Diagnosis</label>
+              <textarea
+                rows={2}
+                value={form.diagnosis}
+                onChange={(e) => setForm({ ...form, diagnosis: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-700 mb-2">Prescription</label>
+              <textarea
+                rows={2}
+                value={form.prescription}
+                onChange={(e) => setForm({ ...form, prescription: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-gray-700 mb-2">Status</label>
@@ -490,14 +607,27 @@ export default function MedicalRecordsPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-700 mb-2">File URL (optional)</label>
+              <label className="block text-sm text-gray-700 mb-2">Attachment (photo or PDF)</label>
               <input
-                type="url"
-                value={form.fileUrl}
-                onChange={(e) => setForm({ ...form, fileUrl: e.target.value })}
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                placeholder="https://example.com/record.pdf"
               />
+              {selectedFile ? (
+                <p className="mt-2 text-xs text-emerald-700">Selected: {selectedFile.name}</p>
+              ) : form.fileUrl ? (
+                <a
+                  href={resolveAttachmentUrl(form.fileUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-block text-xs text-emerald-700 hover:underline"
+                >
+                  Open current attachment
+                </a>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">Accepted: JPG, PNG, WEBP, GIF, PDF up to 5MB.</p>
+              )}
             </div>
 
             <div>
@@ -524,7 +654,7 @@ export default function MedicalRecordsPage() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-4 py-2 bg-cyan-600 text-white rounded-lg disabled:opacity-60"
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg disabled:opacity-60"
               >
                 {isSubmitting ? "Saving..." : editingRecordId ? "Update Record" : "Save Record"}
               </button>
@@ -534,8 +664,8 @@ export default function MedicalRecordsPage() {
       )}
 
       {showViewModal && selectedRecord && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-xl w-full">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
+          <div className="bg-white rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl text-gray-900">Medical Record Details</h2>
               <p className="text-sm text-gray-600 mt-1">{selectedRecord.record_type}</p>
@@ -545,15 +675,18 @@ export default function MedicalRecordsPage() {
               <p><span className="text-gray-500">Doctor:</span> {doctorsMap.get(selectedRecord.doctor_id) || selectedRecord.doctor_name}</p>
               <p><span className="text-gray-500">Status:</span> {selectedRecord.status}</p>
               <p><span className="text-gray-500">Date:</span> {selectedRecord.record_date}</p>
+              <p className="sm:col-span-2"><span className="text-gray-500">Symptoms:</span> {selectedRecord.symptoms || "-"}</p>
+              <p className="sm:col-span-2"><span className="text-gray-500">Diagnosis:</span> {selectedRecord.diagnosis || "-"}</p>
+              <p className="sm:col-span-2"><span className="text-gray-500">Prescription:</span> {selectedRecord.prescription || "-"}</p>
               <p className="sm:col-span-2"><span className="text-gray-500">Notes:</span> {selectedRecord.notes || "-"}</p>
               <p className="sm:col-span-2">
                 <span className="text-gray-500">File URL:</span>{" "}
                 {selectedRecord.file_url ? (
                   <a
-                    href={selectedRecord.file_url}
+                    href={resolveAttachmentUrl(selectedRecord.file_url)}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-cyan-700 hover:underline"
+                    className="text-emerald-700 hover:underline"
                   >
                     Open attachment
                   </a>
@@ -576,6 +709,41 @@ export default function MedicalRecordsPage() {
           </div>
         </div>
       )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center overflow-y-auto p-4">
+          <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl text-gray-900">Delete Medical Record</h2>
+            </div>
+            <div className="p-6 space-y-3">
+              <p className="text-sm text-gray-700">
+                Delete record <span className="font-medium text-gray-900">&quot;{deleteTarget.record_type}&quot;</span> for{" "}
+                <span className="font-medium text-gray-900">{deleteTarget.patient_name}</span>?
+              </p>
+              <p className="text-sm text-red-600">This will permanently remove the medical record.</p>
+            </div>
+            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete(deleteTarget)}
+                disabled={deletingId === deleteTarget.id}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60"
+              >
+                {deletingId === deleteTarget.id ? "Deleting..." : "Delete Record"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

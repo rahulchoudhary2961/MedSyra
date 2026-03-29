@@ -16,14 +16,14 @@ const getSummary = async (organizationId) => {
   return result;
 };
 
-const getReports = async (organizationId) => {
-  const key = reportsCacheKey(organizationId);
+const getReports = async (organizationId, query = {}) => {
+  const key = `${reportsCacheKey(organizationId)}:${query.period || "90d"}`;
   const cached = await cache.get(key);
   if (cached) {
     return cached;
   }
 
-  const result = await dashboardRepository.getReports(organizationId);
+  const result = await dashboardRepository.getReports(organizationId, query);
   await cache.set(key, result, 60);
   return result;
 };

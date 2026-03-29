@@ -3,11 +3,13 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Building2, Heart, Mail, Phone, User, Lock, EyeOff, Eye } from "lucide-react";
+import { Building2, Mail, Phone, User, Lock, EyeOff, Eye } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import BrandLogo from "../../components/BrandLogo";
 
 const roles = [
-  { id: "admin", label: "Clinic Admin / Reception", icon: Building2 },
+  { id: "admin", label: "Clinic Admin", icon: Building2 },
+  { id: "receptionist", label: "Receptionist", icon: Building2 },
   { id: "doctor", label: "Doctor", icon: User },
   { id: "nurse", label: "Nurse", icon: User },
   { id: "billing", label: "Billing Staff", icon: User },
@@ -77,11 +79,11 @@ export default function SignUp() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-blue-50 to-teal-50 flex items-center justify-center p-4 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-100 flex items-center justify-center p-4 py-12">
       <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-cyan-600 rounded-2xl mb-4">
-            <Heart className="w-8 h-8 text-white" fill="white" />
+          <div className="mb-4 flex justify-center">
+            <BrandLogo size={80} className="rounded-[22px] shadow-[0_0_40px_rgba(16,185,129,0.28)]" priority />
           </div>
           <h1 className="text-3xl text-gray-900 mb-2">Create Your Account</h1>
           <p className="text-gray-600">Join medsyra to manage your practice efficiently</p>
@@ -158,7 +160,7 @@ export default function SignUp() {
                   <label
                     key={role.id}
                     className={`flex items-center gap-3 p-4 border rounded-lg cursor-pointer ${
-                      formData.role === role.id ? "border-cyan-500 bg-cyan-50" : "border-gray-200"
+                      formData.role === role.id ? "border-emerald-500 bg-emerald-50" : "border-gray-200"
                     }`}
                   >
                     <input
@@ -228,9 +230,9 @@ export default function SignUp() {
                 required
               />
               <span className="ml-2 text-sm text-gray-600">
-                I agree to the <a href="#" className="text-cyan-600 hover:text-cyan-700">Terms of Service</a>
+                I agree to the <a href="#" className="text-emerald-600 hover:text-emerald-700">Terms of Service</a>
                 {" "}and{" "}
-                <a href="#" className="text-cyan-600 hover:text-cyan-700">Privacy Policy</a>
+                <a href="#" className="text-emerald-600 hover:text-emerald-700">Privacy Policy</a>
               </span>
             </label>
 
@@ -240,7 +242,7 @@ export default function SignUp() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-60"
+              className="w-full py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"
             >
               {isSubmitting ? "Creating Account..." : "Create Account"}
             </button>
@@ -248,7 +250,7 @@ export default function SignUp() {
 
           <p className="text-center text-sm text-gray-600 mt-6">
             Already have an account?{" "}
-            <Link href="/auth/signin" className="text-cyan-600 hover:text-cyan-700">
+            <Link href="/auth/signin" className="text-emerald-600 hover:text-emerald-700">
               Sign in
             </Link>
           </p>
@@ -257,3 +259,4 @@ export default function SignUp() {
     </div>
   );
 }
+

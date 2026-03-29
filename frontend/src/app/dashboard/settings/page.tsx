@@ -176,7 +176,7 @@ export default function SettingsPage() {
             <button
               onClick={() => setActiveTab("profile")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg ${
-                activeTab === "profile" ? "bg-cyan-50 text-cyan-700" : "hover:bg-gray-100 text-gray-700"
+                activeTab === "profile" ? "bg-emerald-50 text-emerald-700" : "hover:bg-gray-100 text-gray-700"
               }`}
             >
               <User className="w-5 h-5" />
@@ -186,7 +186,7 @@ export default function SettingsPage() {
               onClick={() => setActiveTab("notifications")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg ${
                 activeTab === "notifications"
-                  ? "bg-cyan-50 text-cyan-700"
+                  ? "bg-emerald-50 text-emerald-700"
                   : "hover:bg-gray-100 text-gray-700"
               }`}
             >
@@ -196,7 +196,7 @@ export default function SettingsPage() {
             <button
               onClick={() => setActiveTab("clinic")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg ${
-                activeTab === "clinic" ? "bg-cyan-50 text-cyan-700" : "hover:bg-gray-100 text-gray-700"
+                activeTab === "clinic" ? "bg-emerald-50 text-emerald-700" : "hover:bg-gray-100 text-gray-700"
               }`}
             >
               <Building2 className="w-5 h-5" />
@@ -205,7 +205,7 @@ export default function SettingsPage() {
             <button
               onClick={() => setActiveTab("security")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg ${
-                activeTab === "security" ? "bg-cyan-50 text-cyan-700" : "hover:bg-gray-100 text-gray-700"
+                activeTab === "security" ? "bg-emerald-50 text-emerald-700" : "hover:bg-gray-100 text-gray-700"
               }`}
             >
               <Shield className="w-5 h-5" />
@@ -225,7 +225,7 @@ export default function SettingsPage() {
               {!isLoadingProfile && currentUser && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-6 pb-6 border-b border-gray-200">
-                    <div className="w-20 h-20 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white text-2xl">
+                    <div className="w-20 h-20 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white text-2xl">
                       {userInitials}
                     </div>
                     <div>
@@ -338,7 +338,7 @@ export default function SettingsPage() {
                 </button>
                 <button
                   onClick={saveNotifications}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
                 >
                   <Save className="w-4 h-4" />
                   Save
@@ -407,8 +407,7 @@ export default function SettingsPage() {
                     onChange={(e) => setClinicSettings((prev) => ({ ...prev, currency: e.target.value }))}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                   >
-                    <option value="INR">INR</option>
-                    <option value="USD">USD</option>
+                    <option value="INR">INR (Rs.)</option>
                     <option value="EUR">EUR</option>
                     <option value="GBP">GBP</option>
                   </select>
@@ -425,7 +424,7 @@ export default function SettingsPage() {
                 </button>
                 <button
                   onClick={saveClinic}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
                 >
                   <Save className="w-4 h-4" />
                   Save
@@ -464,3 +463,4 @@ export default function SettingsPage() {
     </div>
   );
 }
+

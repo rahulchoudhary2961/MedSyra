@@ -1,27 +1,30 @@
 const pool = require("../config/db");
 
 const getSummary = async (organizationId) => {
-  const [patients, appointmentsToday, availableDoctors, monthlyRevenue, activities] = await Promise.all([
+  const [metrics, activities] = await Promise.all([
     pool.query(
-      "SELECT COUNT(*)::int AS total FROM patients WHERE organization_id = $1 AND is_active = true",
-      [organizationId]
-    ),
-    pool.query(
-      `SELECT COUNT(*)::int AS total
-       FROM appointments
-       WHERE organization_id = $1 AND appointment_date = CURRENT_DATE`,
-      [organizationId]
-    ),
-    pool.query(
-      "SELECT COUNT(*)::int AS total FROM doctors WHERE organization_id = $1 AND status = 'available'",
-      [organizationId]
-    ),
-    pool.query(
-      `SELECT COALESCE(SUM(fee_amount), 0)::numeric(12,2) AS total
-       FROM appointments
-       WHERE organization_id = $1
-         AND status = 'completed'
-         AND DATE_TRUNC('month', appointment_date) = DATE_TRUNC('month', CURRENT_DATE)`,
+      `
+      SELECT
+        (SELECT COUNT(*)::int
+         FROM appointments
+         WHERE organization_id = $1
+           AND appointment_date = CURRENT_DATE) AS today_appointments,
+        (SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2)
+         FROM payments p
+         WHERE p.organization_id = $1
+           AND p.status = 'completed'
+           AND p.paid_at::date = CURRENT_DATE) AS today_revenue,
+        (SELECT COUNT(*)::int
+         FROM invoices
+         WHERE organization_id = $1
+           AND balance_amount > 0
+           AND status IN ('issued', 'partially_paid', 'overdue')) AS pending_payments,
+        (SELECT COUNT(*)::int
+         FROM appointments
+         WHERE organization_id = $1
+           AND appointment_date = CURRENT_DATE
+           AND status = 'no-show') AS no_shows
+      `,
       [organizationId]
     ),
     pool.query(
@@ -36,143 +39,343 @@ const getSummary = async (organizationId) => {
 
   return {
     stats: {
-      totalPatients: patients.rows[0].total,
-      todaysAppointments: appointmentsToday.rows[0].total,
-      availableDoctors: availableDoctors.rows[0].total,
-      monthlyRevenue: Number(monthlyRevenue.rows[0].total)
+      todayAppointments: Number(metrics.rows[0].today_appointments || 0),
+      todayRevenue: Number(metrics.rows[0].today_revenue || 0),
+      pendingPayments: Number(metrics.rows[0].pending_payments || 0),
+      noShows: Number(metrics.rows[0].no_shows || 0)
     },
     recentActivity: activities.rows
   };
 };
 
-const getReports = async (organizationId) => {
-  const [overview, monthlyTrend, departmentDistribution, appointmentTypes] = await Promise.all([
-    pool.query(
-      `
-      WITH current_window AS (
-        SELECT COUNT(*)::int AS total
-        FROM patients
-        WHERE organization_id = $1
-          AND is_active = true
-          AND created_at >= NOW() - INTERVAL '30 days'
+const REPORT_PERIODS = {
+  "7d": { label: "Last 7 days", interval: "7 days", previousInterval: "14 days", previousStart: "7 days", bucket: "day", buckets: 7 },
+  "30d": { label: "Last 30 days", interval: "30 days", previousInterval: "60 days", previousStart: "30 days", bucket: "day", buckets: 30 },
+  "90d": { label: "Last 90 days", interval: "90 days", previousInterval: "180 days", previousStart: "90 days", bucket: "week", buckets: 13 },
+  "12m": { label: "Last 12 months", interval: "12 months", previousInterval: "24 months", previousStart: "12 months", bucket: "month", buckets: 12 }
+};
+
+const getReports = async (organizationId, query = {}) => {
+  const periodKey = query.period || "90d";
+  const period = REPORT_PERIODS[periodKey] || REPORT_PERIODS["90d"];
+
+  const bucketSql =
+    period.bucket === "month"
+      ? {
+          series: `SELECT DATE_TRUNC('month', CURRENT_DATE) - (INTERVAL '1 month' * gs.i) AS bucket_start
+                   FROM generate_series(${period.buckets - 1}, 0, -1) AS gs(i)`,
+          label: "Mon YYYY"
+        }
+      : period.bucket === "week"
+        ? {
+            series: `SELECT DATE_TRUNC('week', CURRENT_DATE) - (INTERVAL '1 week' * gs.i) AS bucket_start
+                     FROM generate_series(${period.buckets - 1}, 0, -1) AS gs(i)`,
+            label: "DD Mon"
+          }
+        : {
+            series: `SELECT CURRENT_DATE - gs.i AS bucket_start
+                     FROM generate_series(${period.buckets - 1}, 0, -1) AS gs(i)`,
+            label: "DD Mon"
+          };
+
+  const [overview, trend, statusBreakdown, paymentMethods, topDoctors, outstandingInvoices, departmentDistribution, recordTypes] =
+    await Promise.all([
+      pool.query(
+        `
+        WITH current_window AS (
+          SELECT COUNT(*)::int AS total
+          FROM patients
+          WHERE organization_id = $1
+            AND is_active = true
+            AND created_at >= NOW() - INTERVAL '${period.interval}'
+        ),
+        previous_window AS (
+          SELECT COUNT(*)::int AS total
+          FROM patients
+          WHERE organization_id = $1
+            AND is_active = true
+            AND created_at >= NOW() - INTERVAL '${period.previousInterval}'
+            AND created_at < NOW() - INTERVAL '${period.previousStart}'
+        )
+        SELECT
+          (SELECT COUNT(*)::int
+           FROM patients
+           WHERE organization_id = $1
+             AND is_active = true) AS total_patients,
+          (SELECT COUNT(*)::int
+           FROM medical_records
+           WHERE organization_id = $1
+             AND record_date >= CURRENT_DATE - INTERVAL '${period.interval}') AS total_medical_records,
+          (SELECT COUNT(*)::int
+           FROM appointments
+           WHERE organization_id = $1
+             AND appointment_date >= CURRENT_DATE - INTERVAL '${period.interval}') AS total_appointments,
+          (SELECT COUNT(*)::int
+           FROM appointments
+           WHERE organization_id = $1
+             AND appointment_date >= CURRENT_DATE - INTERVAL '${period.interval}'
+             AND status = 'completed') AS completed_appointments,
+          (SELECT COUNT(*)::int
+           FROM appointments
+           WHERE organization_id = $1
+             AND appointment_date >= CURRENT_DATE - INTERVAL '${period.interval}'
+             AND status = 'no-show') AS no_shows,
+          (SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2)
+           FROM payments p
+           WHERE p.organization_id = $1
+             AND p.status = 'completed'
+             AND p.paid_at >= NOW() - INTERVAL '${period.interval}') AS revenue,
+          (SELECT COALESCE(SUM(i.balance_amount), 0)::numeric(12,2)
+           FROM invoices i
+           WHERE i.organization_id = $1
+             AND i.status IN ('issued', 'partially_paid', 'overdue')) AS pending_amount,
+          (SELECT COUNT(*)::int
+           FROM invoices i
+           WHERE i.organization_id = $1
+             AND i.status IN ('issued', 'partially_paid', 'overdue')) AS pending_invoices,
+          (SELECT COALESCE(SUM(i.total_amount), 0)::numeric(12,2)
+           FROM invoices i
+           WHERE i.organization_id = $1
+             AND i.issue_date >= CURRENT_DATE - INTERVAL '${period.interval}'
+             AND i.status IN ('issued', 'partially_paid', 'paid')) AS invoiced_amount,
+          (SELECT total FROM current_window) AS current_patients_window,
+          (SELECT total FROM previous_window) AS previous_patients_window
+        `,
+        [organizationId]
       ),
-      previous_window AS (
-        SELECT COUNT(*)::int AS total
-        FROM patients
-        WHERE organization_id = $1
-          AND is_active = true
-          AND created_at >= NOW() - INTERVAL '60 days'
-          AND created_at < NOW() - INTERVAL '30 days'
-      )
-      SELECT
-        (SELECT COUNT(*)::int
-         FROM patients
-         WHERE organization_id = $1
-           AND is_active = true) AS total_patients,
-        (SELECT COUNT(*)::int
-         FROM appointments
-         WHERE organization_id = $1
-           AND appointment_date >= CURRENT_DATE - INTERVAL '90 days') AS total_appointments_3m,
-        (SELECT COALESCE(SUM(fee_amount), 0)::numeric(12,2)
-         FROM appointments
-         WHERE organization_id = $1
-           AND status = 'completed'
-           AND appointment_date >= CURRENT_DATE - INTERVAL '90 days') AS revenue_3m,
-        (SELECT total FROM current_window) AS current_patients_30d,
-        (SELECT total FROM previous_window) AS previous_patients_30d
-      `,
-      [organizationId]
-    ),
-    pool.query(
-      `
-      WITH month_series AS (
-        SELECT DATE_TRUNC('month', CURRENT_DATE) - (INTERVAL '1 month' * gs.i) AS month_start
-        FROM generate_series(5, 0, -1) AS gs(i)
-      )
-      SELECT
-        TO_CHAR(ms.month_start, 'Mon') AS month,
-        COALESCE(p.new_patients, 0)::int AS patients,
-        COALESCE(r.revenue, 0)::numeric(12,2) AS revenue,
-        COALESCE(a.total_appointments, 0)::int AS appointments
-      FROM month_series ms
-      LEFT JOIN (
-        SELECT DATE_TRUNC('month', created_at) AS month_start, COUNT(*) AS new_patients
-        FROM patients
-        WHERE organization_id = $1
-          AND is_active = true
-        GROUP BY DATE_TRUNC('month', created_at)
-      ) p ON p.month_start = ms.month_start
-      LEFT JOIN (
-        SELECT DATE_TRUNC('month', appointment_date) AS month_start, COUNT(*) AS total_appointments
+      pool.query(
+        `
+        WITH buckets AS (
+          ${bucketSql.series}
+        )
+        SELECT
+          TO_CHAR(b.bucket_start, '${bucketSql.label}') AS label,
+          COALESCE(appt.total_appointments, 0)::int AS appointments,
+          COALESCE(appt.no_shows, 0)::int AS no_shows,
+          COALESCE(pay.revenue, 0)::numeric(12,2) AS revenue,
+          COALESCE(mr.records, 0)::int AS records
+        FROM buckets b
+        LEFT JOIN (
+          SELECT DATE_TRUNC('${period.bucket}', appointment_date::timestamp) AS bucket_start,
+                 COUNT(*) AS total_appointments,
+                 COUNT(*) FILTER (WHERE status = 'no-show') AS no_shows
+          FROM appointments
+          WHERE organization_id = $1
+            AND appointment_date >= CURRENT_DATE - INTERVAL '${period.interval}'
+          GROUP BY DATE_TRUNC('${period.bucket}', appointment_date::timestamp)
+        ) appt ON appt.bucket_start = b.bucket_start
+        LEFT JOIN (
+          SELECT DATE_TRUNC('${period.bucket}', paid_at) AS bucket_start,
+                 SUM(amount) AS revenue
+          FROM payments
+          WHERE organization_id = $1
+            AND status = 'completed'
+            AND paid_at >= NOW() - INTERVAL '${period.interval}'
+          GROUP BY DATE_TRUNC('${period.bucket}', paid_at)
+        ) pay ON pay.bucket_start = b.bucket_start
+        LEFT JOIN (
+          SELECT DATE_TRUNC('${period.bucket}', record_date::timestamp) AS bucket_start,
+                 COUNT(*) AS records
+          FROM medical_records
+          WHERE organization_id = $1
+            AND record_date >= CURRENT_DATE - INTERVAL '${period.interval}'
+          GROUP BY DATE_TRUNC('${period.bucket}', record_date::timestamp)
+        ) mr ON mr.bucket_start = b.bucket_start
+        ORDER BY b.bucket_start ASC
+        `,
+        [organizationId]
+      ),
+      pool.query(
+        `
+        SELECT INITCAP(status) AS name, COUNT(*)::int AS value
         FROM appointments
         WHERE organization_id = $1
-        GROUP BY DATE_TRUNC('month', appointment_date)
-      ) a ON a.month_start = ms.month_start
-      LEFT JOIN (
-        SELECT DATE_TRUNC('month', appointment_date) AS month_start, SUM(fee_amount) AS revenue
-        FROM appointments
+          AND appointment_date >= CURRENT_DATE - INTERVAL '${period.interval}'
+        GROUP BY INITCAP(status)
+        ORDER BY value DESC
+        `,
+        [organizationId]
+      ),
+      pool.query(
+        `
+        SELECT
+          CASE method
+            WHEN 'upi' THEN 'UPI'
+            WHEN 'bank_transfer' THEN 'Bank Transfer'
+            ELSE INITCAP(REPLACE(method, '_', ' '))
+          END AS method,
+          COALESCE(SUM(amount), 0)::numeric(12,2) AS total
+        FROM payments
         WHERE organization_id = $1
           AND status = 'completed'
-        GROUP BY DATE_TRUNC('month', appointment_date)
-      ) r ON r.month_start = ms.month_start
-      ORDER BY ms.month_start ASC
-      `,
-      [organizationId]
-    ),
-    pool.query(
-      `
-      SELECT
-        COALESCE(NULLIF(d.specialty, ''), 'General') AS name,
-        COUNT(*)::int AS value
-      FROM appointments a
-      INNER JOIN doctors d
-        ON d.id = a.doctor_id
-       AND d.organization_id = a.organization_id
-      WHERE a.organization_id = $1
-      GROUP BY COALESCE(NULLIF(d.specialty, ''), 'General')
-      ORDER BY value DESC
-      LIMIT 8
-      `,
-      [organizationId]
-    ),
-    pool.query(
-      `
-      SELECT
-        INITCAP(a.appointment_type) AS type,
-        COUNT(*)::int AS count
-      FROM appointments a
-      WHERE a.organization_id = $1
-      GROUP BY INITCAP(a.appointment_type)
-      ORDER BY count DESC
-      `,
-      [organizationId]
-    )
-  ]);
+          AND paid_at >= NOW() - INTERVAL '${period.interval}'
+        GROUP BY method
+        ORDER BY total DESC
+        `,
+        [organizationId]
+      ),
+      pool.query(
+        `
+        SELECT
+          d.id,
+          d.full_name AS name,
+          COALESCE(NULLIF(d.specialty, ''), 'General') AS specialty,
+          COUNT(a.id)::int AS appointments,
+          COUNT(a.id) FILTER (WHERE a.status = 'completed')::int AS completed,
+          COUNT(a.id) FILTER (WHERE a.status = 'no-show')::int AS no_shows,
+          COALESCE(SUM(p.amount), 0)::numeric(12,2) AS revenue
+        FROM doctors d
+        LEFT JOIN appointments a
+          ON a.doctor_id = d.id
+         AND a.organization_id = d.organization_id
+         AND a.appointment_date >= CURRENT_DATE - INTERVAL '${period.interval}'
+        LEFT JOIN invoices i
+          ON i.doctor_id = d.id
+         AND i.organization_id = d.organization_id
+         AND i.issue_date >= CURRENT_DATE - INTERVAL '${period.interval}'
+        LEFT JOIN payments p
+          ON p.invoice_id = i.id
+         AND p.organization_id = i.organization_id
+         AND p.status = 'completed'
+        WHERE d.organization_id = $1
+        GROUP BY d.id, d.full_name, d.specialty
+        HAVING COUNT(a.id) > 0 OR COALESCE(SUM(p.amount), 0) > 0
+        ORDER BY appointments DESC, revenue DESC
+        LIMIT 6
+        `,
+        [organizationId]
+      ),
+      pool.query(
+        `
+        SELECT
+          i.id,
+          i.invoice_number,
+          p.full_name AS patient_name,
+          COALESCE(d.full_name, 'Unassigned') AS doctor_name,
+          i.issue_date,
+          i.balance_amount::numeric(12,2) AS balance_amount,
+          i.status
+        FROM invoices i
+        JOIN patients p
+          ON p.id = i.patient_id
+         AND p.organization_id = i.organization_id
+        LEFT JOIN doctors d
+          ON d.id = i.doctor_id
+         AND d.organization_id = i.organization_id
+        WHERE i.organization_id = $1
+          AND i.balance_amount > 0
+          AND i.status IN ('issued', 'partially_paid', 'overdue')
+        ORDER BY i.balance_amount DESC, i.issue_date ASC
+        LIMIT 8
+        `,
+        [organizationId]
+      ),
+      pool.query(
+        `
+        SELECT
+          COALESCE(NULLIF(d.specialty, ''), 'General') AS name,
+          COUNT(*)::int AS value
+        FROM medical_records mr
+        LEFT JOIN doctors d
+          ON d.id = mr.doctor_id
+         AND d.organization_id = mr.organization_id
+        WHERE mr.organization_id = $1
+          AND mr.record_date >= CURRENT_DATE - INTERVAL '${period.interval}'
+        GROUP BY COALESCE(NULLIF(d.specialty, ''), 'General')
+        ORDER BY value DESC
+        LIMIT 8
+        `,
+        [organizationId]
+      ),
+      pool.query(
+        `
+        SELECT
+          INITCAP(record_type) AS type,
+          COUNT(*)::int AS count
+        FROM medical_records
+        WHERE organization_id = $1
+          AND record_date >= CURRENT_DATE - INTERVAL '${period.interval}'
+        GROUP BY INITCAP(record_type)
+        ORDER BY count DESC
+        `,
+        [organizationId]
+      )
+    ]);
 
   const metrics = overview.rows[0];
-  const currentPatients = Number(metrics.current_patients_30d || 0);
-  const previousPatients = Number(metrics.previous_patients_30d || 0);
+  const currentPatients = Number(metrics.current_patients_window || 0);
+  const previousPatients = Number(metrics.previous_patients_window || 0);
   const growthRate =
     previousPatients <= 0 ? (currentPatients > 0 ? 100 : 0) : ((currentPatients - previousPatients) / previousPatients) * 100;
 
+  const totalAppointments = Number(metrics.total_appointments || 0);
+  const completedAppointments = Number(metrics.completed_appointments || 0);
+  const noShows = Number(metrics.no_shows || 0);
+  const cancelledCount = statusBreakdown.rows.reduce(
+    (sum, row) => sum + (String(row.name).toLowerCase() === "cancelled" ? Number(row.value || 0) : 0),
+    0
+  );
+  const invoicedAmount = Number(metrics.invoiced_amount || 0);
+  const collectedAmount = Number(metrics.revenue || 0);
+  const collectionRate = invoicedAmount <= 0 ? 0 : (collectedAmount / invoicedAmount) * 100;
+
   return {
+    meta: {
+      period: periodKey,
+      label: period.label
+    },
     stats: {
       totalPatients: Number(metrics.total_patients || 0),
-      totalAppointments: Number(metrics.total_appointments_3m || 0),
-      revenue3m: Number(metrics.revenue_3m || 0),
-      growthRate: Number(growthRate.toFixed(1))
+      totalMedicalRecords: Number(metrics.total_medical_records || 0),
+      revenue: collectedAmount,
+      growthRate: Number(growthRate.toFixed(1)),
+      totalAppointments,
+      completedAppointments,
+      noShows,
+      pendingInvoices: Number(metrics.pending_invoices || 0),
+      pendingAmount: Number(metrics.pending_amount || 0),
+      completionRate: totalAppointments <= 0 ? 0 : Number(((completedAppointments / totalAppointments) * 100).toFixed(1)),
+      cancellationRate: totalAppointments <= 0 ? 0 : Number(((cancelledCount / totalAppointments) * 100).toFixed(1)),
+      collectionRate: Number(collectionRate.toFixed(1))
     },
-    monthlyData: monthlyTrend.rows.map((row) => ({
-      month: row.month,
-      patients: Number(row.patients || 0),
+    trendData: trend.rows.map((row) => ({
+      label: row.label,
+      appointments: Number(row.appointments || 0),
       revenue: Number(row.revenue || 0),
-      appointments: Number(row.appointments || 0)
+      noShows: Number(row.no_shows || 0),
+      records: Number(row.records || 0)
+    })),
+    appointmentStatus: statusBreakdown.rows.map((row) => ({
+      name: row.name,
+      value: Number(row.value || 0)
+    })),
+    paymentMethods: paymentMethods.rows.map((row) => ({
+      method: row.method,
+      total: Number(row.total || 0)
+    })),
+    topDoctors: topDoctors.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      specialty: row.specialty,
+      appointments: Number(row.appointments || 0),
+      completed: Number(row.completed || 0),
+      noShows: Number(row.no_shows || 0),
+      revenue: Number(row.revenue || 0)
+    })),
+    outstandingInvoices: outstandingInvoices.rows.map((row) => ({
+      id: row.id,
+      invoiceNumber: row.invoice_number,
+      patientName: row.patient_name,
+      doctorName: row.doctor_name,
+      issueDate: row.issue_date,
+      balanceAmount: Number(row.balance_amount || 0),
+      status: row.status
     })),
     departmentData: departmentDistribution.rows.map((row) => ({
       name: row.name,
       value: Number(row.value || 0)
     })),
-    appointmentTypes: appointmentTypes.rows.map((row) => ({
+    recordTypes: recordTypes.rows.map((row) => ({
       type: row.type,
       count: Number(row.count || 0)
     }))

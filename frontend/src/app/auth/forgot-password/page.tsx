@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Mail, Heart } from "lucide-react";
+import { Mail } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import BrandLogo from "../../components/BrandLogo";
 
 type ApiMessage = { success: boolean; message: string };
 
@@ -33,11 +34,11 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-blue-50 to-teal-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-cyan-600 rounded-2xl mb-4">
-            <Heart className="w-7 h-7 text-white" fill="white" />
+          <div className="mb-4 flex justify-center">
+            <BrandLogo size={72} className="rounded-[20px] shadow-[0_0_36px_rgba(16,185,129,0.24)]" priority />
           </div>
           <h1 className="text-2xl text-gray-900">Reset Password</h1>
           <p className="text-gray-600 mt-1 text-sm">Enter your email to receive a reset token.</p>
@@ -62,7 +63,7 @@ export default function ForgotPasswordPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-60"
+            className="w-full py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"
           >
             {loading ? "Sending..." : "Send Reset Token"}
           </button>
@@ -70,13 +71,14 @@ export default function ForgotPasswordPage() {
 
         <p className="text-center text-sm text-gray-600 mt-6">
           Have a token?{" "}
-          <Link href={`/auth/reset-password?email=${encodeURIComponent(email)}`} className="text-cyan-600">
+          <Link href={`/auth/reset-password?email=${encodeURIComponent(email)}`} className="text-emerald-600">
             Reset Password
           </Link>
           {" "}or{" "}
-          <Link href="/auth/signin" className="text-cyan-600">Sign In</Link>
+          <Link href="/auth/signin" className="text-emerald-600">Sign In</Link>
         </p>
       </div>
     </div>
   );
 }
+

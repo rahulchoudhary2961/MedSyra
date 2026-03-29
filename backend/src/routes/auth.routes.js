@@ -1,6 +1,7 @@
 const express = require("express");
 const controller = require("../controllers/auth.controller");
 const requireAuth = require("../middlewares/require-auth");
+const authorizeRoles = require("../middlewares/authorize-roles");
 const validateRequest = require("../middlewares/validate-request");
 const { signupLimiter, signinLimiter, recoveryLimiter } = require("../middlewares/abuse-protection");
 const { authSchemas } = require("../validators/schemas");
@@ -43,6 +44,7 @@ router.post(
   validateRequest({ body: authSchemas.resetPasswordBody }),
   controller.resetPassword
 );
+router.get("/users", requireAuth, authorizeRoles("full_access"), validateRequest({ query: authSchemas.listUsersQuery }), controller.listUsers);
 router.get("/me", requireAuth, controller.me);
 
 module.exports = router;

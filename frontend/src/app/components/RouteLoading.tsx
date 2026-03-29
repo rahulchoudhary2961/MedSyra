@@ -1,0 +1,37 @@
+import BrandLogo from "./BrandLogo";
+
+type RouteLoadingProps = {
+  fullScreen?: boolean;
+  message?: string;
+};
+
+export default function RouteLoading({
+  fullScreen = false,
+  message = "Loading..."
+}: RouteLoadingProps) {
+  return (
+    <div
+      className={`flex items-center justify-center ${
+        fullScreen ? "min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-100" : "min-h-[60vh]"
+      }`}
+    >
+      <div className="flex flex-col items-center gap-4 rounded-3xl border border-emerald-100 bg-white/90 px-8 py-7 shadow-[0_20px_60px_rgba(16,185,129,0.12)] backdrop-blur">
+        <div className="relative">
+          <div className="absolute inset-0 rounded-[28px] bg-emerald-400/25 blur-2xl" />
+          <BrandLogo size={88} className="relative rounded-[24px] shadow-[0_0_40px_rgba(16,185,129,0.24)]" priority />
+        </div>
+
+        <div className="text-center">
+          <p className="text-sm font-medium tracking-[0.18em] text-emerald-700 uppercase">MedSyra</p>
+          <p className="mt-1 text-sm text-gray-600">{message}</p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:-0.2s]" />
+          <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-teal-500 [animation-delay:-0.1s]" />
+          <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-emerald-600" />
+        </div>
+      </div>
+    </div>
+  );
+}

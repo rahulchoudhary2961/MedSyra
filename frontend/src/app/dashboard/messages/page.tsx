@@ -58,12 +58,12 @@ export default function Messages() {
                 <div
                   key={conv.id}
                   onClick={() => setSelectedChat(conv)}
-                  className={`p-4 border-b border-gray-100 cursor-pointer transition-colors ${selectedChat.id === conv.id ? "bg-cyan-50" : "hover:bg-gray-50"
+                  className={`p-4 border-b border-gray-100 cursor-pointer transition-colors ${selectedChat.id === conv.id ? "bg-emerald-50" : "hover:bg-gray-50"
                     }`}
                 >
                   <div className="flex items-start gap-3">
                     <div className="relative">
-                      <div className="w-12 h-12 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white">
+                      <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white">
                         {conv.name
                           .split(" ")
                           .map(n => n?.[0])
@@ -84,7 +84,7 @@ export default function Messages() {
                       >{conv.lastMessage}</p>
                     </div>
                     {conv.unread > 0 && (
-                      <div className="w-5 h-5 bg-cyan-600 text-white rounded-full flex items-center justify-center text-xs">{conv.unread}</div>
+                      <div className="w-5 h-5 bg-emerald-600 text-white rounded-full flex items-center justify-center text-xs">{conv.unread}</div>
                     )}
                   </div>
                 </div>
@@ -97,7 +97,7 @@ export default function Messages() {
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white">
+                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white">
                     {selectedChat.name.split(' ').map(n => n[0]).join('')}
                   </div>
                   {selectedChat.online && (
@@ -126,7 +126,7 @@ export default function Messages() {
                   )}
                     <div
                       className={`rounded-lg p-3 ${msg.isOwn
-                        ? "bg-cyan-600 text-white"
+                        ? "bg-emerald-600 text-white"
                         : "bg-gray-100 text-gray-900"
                         }`}
                     >
@@ -151,7 +151,7 @@ export default function Messages() {
                     className="w-full bg-transparent border-none outline-none text-sm"
                   />
                 </div>
-                <button className="p-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors">
+                <button className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
                   <Send className="w-5 h-5" />
                 </button>
               </div>

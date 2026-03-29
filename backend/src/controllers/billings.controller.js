@@ -31,6 +31,11 @@ const recordPayment = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, message: "Payment recorded", data });
 });
 
+const markInvoicePaid = asyncHandler(async (req, res) => {
+  const data = await billingsService.markInvoicePaid(req.user.organizationId, req.params.id, req.body);
+  res.json({ success: true, message: "Invoice marked as paid", data });
+});
+
 const downloadInvoicePdf = asyncHandler(async (req, res) => {
   const pdf = await billingsService.generateInvoicePdf(req.user.organizationId, req.params.id);
   res.setHeader("Content-Type", "application/pdf");
@@ -50,6 +55,7 @@ module.exports = {
   updateInvoice,
   issueInvoice,
   recordPayment,
+  markInvoicePaid,
   downloadInvoicePdf,
   deleteInvoice
 };

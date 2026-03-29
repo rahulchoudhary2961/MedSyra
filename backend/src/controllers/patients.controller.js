@@ -16,6 +16,11 @@ const getPatient = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+const getPatientProfile = asyncHandler(async (req, res) => {
+  const data = await patientsService.getPatientProfile(req.user.organizationId, req.params.id);
+  res.json({ success: true, data });
+});
+
 const updatePatient = asyncHandler(async (req, res) => {
   const data = await patientsService.updatePatient(req.user.organizationId, req.params.id, req.body);
   res.json({ success: true, message: "Patient updated", data });
@@ -30,6 +35,7 @@ module.exports = {
   listPatients,
   createPatient,
   getPatient,
+  getPatientProfile,
   updatePatient,
   deletePatient
 };

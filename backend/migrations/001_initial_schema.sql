@@ -57,23 +57,6 @@ CREATE TABLE IF NOT EXISTS doctors (
 
 CREATE INDEX IF NOT EXISTS idx_doctors_org_status ON doctors (organization_id, status);
 
-CREATE TABLE IF NOT EXISTS appointments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID NOT NULL REFERENCES organizations(id),
-  patient_id UUID NOT NULL REFERENCES patients(id),
-  doctor_id UUID NOT NULL REFERENCES doctors(id),
-  appointment_date DATE NOT NULL,
-  appointment_time TIME NOT NULL,
-  appointment_type TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
-  notes TEXT,
-  fee_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_appointments_org_date ON appointments (organization_id, appointment_date);
-
 CREATE TABLE IF NOT EXISTS medical_records (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id),

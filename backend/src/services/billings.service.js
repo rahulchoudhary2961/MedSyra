@@ -2,17 +2,22 @@ const ApiError = require("../utils/api-error");
 const billingsModel = require("../models/billings.model");
 const patientsModel = require("../models/patients.model");
 const doctorsModel = require("../models/doctors.model");
+const appointmentsModel = require("../models/appointments.model");
 const { createSimplePdfBuffer } = require("../utils/pdf");
 const cache = require("../utils/cache");
 
 const VALID_STATUSES = new Set(["draft", "issued", "partially_paid", "paid", "overdue", "void"]);
 const listCachePrefix = (organizationId) => `billings:list:${organizationId}:`;
 const itemCachePrefix = (organizationId) => `billings:item:${organizationId}:`;
+const dashboardSummaryCachePrefix = (organizationId) => `dashboard:summary:${organizationId}`;
+const dashboardReportsCachePrefix = (organizationId) => `dashboard:reports:${organizationId}`;
 
 const invalidateBillingCaches = async (organizationId) => {
   await Promise.all([
     cache.invalidateByPrefix(listCachePrefix(organizationId)),
-    cache.invalidateByPrefix(itemCachePrefix(organizationId))
+    cache.invalidateByPrefix(itemCachePrefix(organizationId)),
+    cache.invalidateByPrefix(dashboardSummaryCachePrefix(organizationId)),
+    cache.invalidateByPrefix(dashboardReportsCachePrefix(organizationId))
   ]);
 };
 
@@ -36,8 +41,8 @@ const listInvoices = async (organizationId, query) => {
 };
 
 const createInvoice = async (organizationId, payload) => {
-  if (!payload.patientId || !payload.amount || !payload.description) {
-    throw new ApiError(400, "patientId, amount and description are required");
+  if (!payload.patientId || !payload.description) {
+    throw new ApiError(400, "patientId and description are required");
   }
 
   const patient = await patientsModel.getPatientById(organizationId, payload.patientId);
@@ -45,14 +50,27 @@ const createInvoice = async (organizationId, payload) => {
     throw new ApiError(404, "Patient not found for this organization");
   }
 
+  let doctor = null;
   if (payload.doctorId) {
-    const doctor = await doctorsModel.getDoctorById(organizationId, payload.doctorId);
+    doctor = await doctorsModel.getDoctorById(organizationId, payload.doctorId);
     if (!doctor) {
       throw new ApiError(404, "Doctor not found for this organization");
     }
   }
 
-  const created = await billingsModel.createInvoice(organizationId, payload);
+  if (payload.appointmentId) {
+    const appointment = await appointmentsModel.getAppointmentById(organizationId, payload.appointmentId);
+    if (!appointment) {
+      throw new ApiError(404, "Appointment not found for this organization");
+    }
+  }
+
+  const amount = payload.amount ?? doctor?.consultation_fee;
+  if (!amount) {
+    throw new ApiError(400, "amount is required when the doctor has no consultation fee");
+  }
+
+  const created = await billingsModel.createInvoice(organizationId, { ...payload, amount });
   await invalidateBillingCaches(organizationId);
   return created;
 };
@@ -99,12 +117,40 @@ const recordPayment = async (organizationId, id, payload) => {
     throw new ApiError(400, "amount and method are required");
   }
 
+  const invoice = await billingsModel.getInvoiceById(organizationId, id);
+  if (!invoice) {
+    throw new ApiError(404, "Invoice not found");
+  }
+
+  if (invoice.status === "void") {
+    throw new ApiError(400, "Cannot record payment on a void invoice");
+  }
+
+  if (Number(payload.amount) > Number(invoice.balance_amount)) {
+    throw new ApiError(400, "Payment amount cannot exceed invoice balance");
+  }
+
   const payment = await billingsModel.addPayment(organizationId, id, payload);
   if (!payment) {
     throw new ApiError(404, "Invoice not found");
   }
   await invalidateBillingCaches(organizationId);
   return payment;
+};
+
+const markInvoicePaid = async (organizationId, id, payload) => {
+  const invoice = await billingsModel.getInvoiceById(organizationId, id);
+  if (!invoice) {
+    throw new ApiError(404, "Invoice not found");
+  }
+
+  if (invoice.status === "void") {
+    throw new ApiError(400, "Cannot record payment on a void invoice");
+  }
+
+  const result = await billingsModel.markInvoicePaid(organizationId, id, payload || {});
+  await invalidateBillingCaches(organizationId);
+  return result;
 };
 
 const deleteInvoice = async (organizationId, id) => {
@@ -146,6 +192,7 @@ module.exports = {
   updateInvoice,
   issueInvoice,
   recordPayment,
+  markInvoicePaid,
   deleteInvoice,
   generateInvoicePdf
 };

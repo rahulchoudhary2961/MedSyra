@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle, Clock, DollarSign, Download, Plus, TrendingUp } from "lucide-react";
+import { CheckCircle, Clock, Download, IndianRupee, Plus, TrendingUp } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
+import { canAccessBilling } from "@/lib/roles";
 import { Doctor, Invoice, Patient } from "@/types/api";
 
 type BillingsResponse = {
@@ -15,12 +17,21 @@ type BillingsResponse = {
       paidInvoices: number;
       pendingInvoices: number;
       overdueInvoices: number;
+      cashTotal: number;
+      upiTotal: number;
+      cardTotal: number;
     };
   };
 };
 
 type DoctorsResponse = { success: boolean; data: { items: Doctor[] } };
 type PatientsResponse = { success: boolean; data: { items: Patient[] } };
+type MeResponse = { success: boolean; data: { role: string } };
+type CreateInvoiceResponse = { success: boolean; data: Invoice };
+
+const formatRupee = (value: number) => `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const formatInvoiceMoney = (amount: number, currency?: string | null) =>
+  currency && currency !== "INR" ? `${currency} ${Number(amount || 0).toFixed(2)}` : `Rs. ${Number(amount || 0).toFixed(2)}`;
 
 const initialInvoiceForm = {
   patientId: "",
@@ -42,7 +53,7 @@ const statusClass = (status: string) => {
   if (normalized === "paid") return "bg-green-50 text-green-700";
   if (normalized === "overdue") return "bg-red-50 text-red-700";
   if (normalized === "partially_paid") return "bg-amber-50 text-amber-700";
-  if (normalized === "issued") return "bg-blue-50 text-blue-700";
+  if (normalized === "issued") return "bg-teal-50 text-teal-700";
   return "bg-gray-100 text-gray-700";
 };
 
@@ -54,7 +65,10 @@ export default function BillingsPage() {
     totalRevenue: 0,
     paidInvoices: 0,
     pendingInvoices: 0,
-    overdueInvoices: 0
+    overdueInvoices: 0,
+    cashTotal: 0,
+    upiTotal: 0,
+    cardTotal: 0
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -69,6 +83,7 @@ export default function BillingsPage() {
   const [paymentForm, setPaymentForm] = useState(initialPaymentForm);
   const [appliedSearch, setAppliedSearch] = useState("");
   const [appliedStatusFilter, setAppliedStatusFilter] = useState("");
+  const [currentRole, setCurrentRole] = useState("");
 
   const loadInvoices = useCallback(() => {
     setLoading(true);
@@ -87,7 +102,10 @@ export default function BillingsPage() {
             totalRevenue: 0,
             paidInvoices: 0,
             pendingInvoices: 0,
-            overdueInvoices: 0
+            overdueInvoices: 0,
+            cashTotal: 0,
+            upiTotal: 0,
+            cardTotal: 0
           }
         );
       })
@@ -98,7 +116,7 @@ export default function BillingsPage() {
   const loadMetadata = useCallback(() => {
     Promise.all([
       apiRequest<PatientsResponse>("/patients?limit=100", { authenticated: true }),
-      apiRequest<DoctorsResponse>("/doctors?limit=200", { authenticated: true })
+      apiRequest<DoctorsResponse>("/doctors?limit=100", { authenticated: true })
     ])
       .then(([patientsRes, doctorsRes]) => {
         setPatients(patientsRes.data.items || []);
@@ -112,8 +130,27 @@ export default function BillingsPage() {
   }, [loadMetadata]);
 
   useEffect(() => {
+    apiRequest<MeResponse>("/auth/me", { authenticated: true })
+      .then((response) => setCurrentRole(response.data.role || ""))
+      .catch(() => setCurrentRole(""));
+  }, []);
+
+  useEffect(() => {
     loadInvoices();
   }, [loadInvoices]);
+
+  useEffect(() => {
+    if (search === appliedSearch && statusFilter === appliedStatusFilter) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setAppliedSearch(search);
+      setAppliedStatusFilter(statusFilter);
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [search, statusFilter, appliedSearch, appliedStatusFilter]);
 
   const filteredInvoices = useMemo(() => {
     if (!search.trim()) return invoices;
@@ -125,23 +162,30 @@ export default function BillingsPage() {
     );
   }, [invoices, search]);
 
+  if (currentRole && !canAccessBilling(currentRole)) {
+    return <p className="text-red-600">You do not have access to billing.</p>;
+  }
+
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError("");
     try {
-      await apiRequest("/billings", {
+      const response = await apiRequest<CreateInvoiceResponse>("/billings", {
         method: "POST",
         authenticated: true,
         body: {
           patientId: invoiceForm.patientId,
           doctorId: invoiceForm.doctorId || null,
           description: invoiceForm.description.trim(),
-          amount: Number(invoiceForm.amount),
+          amount: invoiceForm.amount ? Number(invoiceForm.amount) : undefined,
           dueDate: invoiceForm.dueDate || null,
           notes: invoiceForm.notes.trim() || null
         }
       });
+
+      const createdInvoice = response.data;
+      setInvoices((previous) => [createdInvoice, ...previous.filter((invoice) => invoice.id !== createdInvoice.id)]);
 
       setShowCreate(false);
       setInvoiceForm(initialInvoiceForm);
@@ -178,6 +222,23 @@ export default function BillingsPage() {
       reference: ""
     });
     setShowPaymentModal(true);
+  };
+
+  const handleMarkPaid = async (invoice: Invoice) => {
+    setIssuingId(invoice.id);
+    setError("");
+    try {
+      await apiRequest(`/billings/${invoice.id}/mark-paid`, {
+        method: "POST",
+        authenticated: true,
+        body: { method: "cash" }
+      });
+      loadInvoices();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to mark invoice as paid");
+    } finally {
+      setIssuingId(null);
+    }
   };
 
   const handleRecordPayment = async (e: React.FormEvent) => {
@@ -241,7 +302,7 @@ export default function BillingsPage() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
         >
           <Plus className="w-4 h-4" />
           Create Invoice
@@ -253,10 +314,10 @@ export default function BillingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Total Revenue</p>
-              <p className="text-2xl mt-2 text-gray-900">${stats.totalRevenue.toLocaleString()}</p>
+              <p className="text-2xl mt-2 text-gray-900">{formatRupee(stats.totalRevenue)}</p>
             </div>
             <div className="w-12 h-12 bg-green-50 text-green-600 rounded-lg flex items-center justify-center">
-              <DollarSign className="w-6 h-6" />
+              <IndianRupee className="w-6 h-6" />
             </div>
           </div>
         </div>
@@ -266,7 +327,7 @@ export default function BillingsPage() {
               <p className="text-sm text-gray-600">Paid Invoices</p>
               <p className="text-2xl mt-2 text-gray-900">{stats.paidInvoices}</p>
             </div>
-            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 bg-teal-50 text-teal-600 rounded-lg flex items-center justify-center">
               <CheckCircle className="w-6 h-6" />
             </div>
           </div>
@@ -295,6 +356,21 @@ export default function BillingsPage() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl p-5 border border-gray-200">
+          <p className="text-sm text-gray-600">Cash Collected</p>
+          <p className="mt-2 text-xl text-gray-900">{formatRupee(stats.cashTotal)}</p>
+        </div>
+        <div className="bg-white rounded-xl p-5 border border-gray-200">
+          <p className="text-sm text-gray-600">UPI Collected</p>
+          <p className="mt-2 text-xl text-gray-900">{formatRupee(stats.upiTotal)}</p>
+        </div>
+        <div className="bg-white rounded-xl p-5 border border-gray-200">
+          <p className="text-sm text-gray-600">Card Collected</p>
+          <p className="mt-2 text-xl text-gray-900">{formatRupee(stats.cardTotal)}</p>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl p-4 border border-gray-200">
         <div className="flex flex-col sm:flex-row gap-3">
           <input
@@ -317,15 +393,6 @@ export default function BillingsPage() {
             <option value="overdue">Overdue</option>
             <option value="void">Void</option>
           </select>
-          <button
-            onClick={() => {
-              setAppliedSearch(search);
-              setAppliedStatusFilter(statusFilter);
-            }}
-            className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700"
-          >
-            Apply
-          </button>
         </div>
       </div>
 
@@ -356,13 +423,13 @@ export default function BillingsPage() {
               )}
               {filteredInvoices.map((invoice) => (
                 <tr key={invoice.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                  <td className="px-6 py-4 text-cyan-700">{invoice.invoice_number}</td>
+                  <td className="px-6 py-4 text-emerald-700">{invoice.invoice_number}</td>
                   <td className="px-6 py-4 text-gray-800">{invoice.patient_name}</td>
                   <td className="px-6 py-4 text-gray-800">
-                    {invoice.currency} {Number(invoice.total_amount).toFixed(2)}
+                    {formatInvoiceMoney(invoice.total_amount, invoice.currency)}
                   </td>
                   <td className="px-6 py-4 text-gray-800">
-                    {invoice.currency} {Number(invoice.paid_amount).toFixed(2)}
+                    {formatInvoiceMoney(invoice.paid_amount, invoice.currency)}
                   </td>
                   <td className="px-6 py-4 text-gray-600">{invoice.issue_date}</td>
                   <td className="px-6 py-4">
@@ -394,6 +461,21 @@ export default function BillingsPage() {
                           Add Payment
                         </button>
                       )}
+                      {invoice.balance_amount > 0 && invoice.status !== "void" && (
+                        <button
+                          onClick={() => handleMarkPaid(invoice)}
+                          disabled={issuingId === invoice.id}
+                          className="px-3 py-1.5 text-xs rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          Mark as Paid
+                        </button>
+                      )}
+                      <Link
+                        href={`/dashboard/patients/${invoice.patient_id}`}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                      >
+                        Open Patient
+                      </Link>
                     </div>
                   </td>
                 </tr>
@@ -404,8 +486,8 @@ export default function BillingsPage() {
       </div>
 
       {showCreate && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateInvoice} className="bg-white rounded-xl max-w-xl w-full p-6 space-y-4">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
+          <form onSubmit={handleCreateInvoice} className="bg-white rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-lg text-gray-900">Create Invoice</h2>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Patient</label>
@@ -427,7 +509,19 @@ export default function BillingsPage() {
               <label className="block text-sm text-gray-700 mb-1">Doctor (optional)</label>
               <select
                 value={invoiceForm.doctorId}
-                onChange={(e) => setInvoiceForm((p) => ({ ...p, doctorId: e.target.value }))}
+                onChange={(e) => {
+                  const nextDoctorId = e.target.value;
+                  const doctor = doctors.find((item) => item.id === nextDoctorId) || null;
+                  setInvoiceForm((p) => ({
+                    ...p,
+                    doctorId: nextDoctorId,
+                    amount:
+                      p.amount ||
+                      (doctor && doctor.consultation_fee !== null && doctor.consultation_fee !== undefined
+                        ? String(Number(doctor.consultation_fee).toFixed(2))
+                        : "")
+                  }));
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
                 <option value="">Select doctor</option>
@@ -491,7 +585,7 @@ export default function BillingsPage() {
               >
                 Cancel
               </button>
-              <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-cyan-600 text-white rounded-lg">
+              <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-emerald-600 text-white rounded-lg">
                 {isSubmitting ? "Creating..." : "Create"}
               </button>
             </div>
@@ -500,11 +594,11 @@ export default function BillingsPage() {
       )}
 
       {showPaymentModal && selectedInvoice && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleRecordPayment} className="bg-white rounded-xl max-w-md w-full p-6 space-y-4">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
+          <form onSubmit={handleRecordPayment} className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-lg text-gray-900">Record Payment</h2>
             <p className="text-sm text-gray-600">
-              Invoice: {selectedInvoice.invoice_number} | Balance: {selectedInvoice.currency} {Number(selectedInvoice.balance_amount).toFixed(2)}
+              Invoice: {selectedInvoice.invoice_number} | Balance: {formatInvoiceMoney(selectedInvoice.balance_amount, selectedInvoice.currency)}
             </p>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Amount</label>
@@ -564,3 +658,4 @@ export default function BillingsPage() {
     </div>
   );
 }
+
