@@ -2,23 +2,21 @@ const app = require("./app");
 const env = require("./config/env");
 const pool = require("./config/db");
 const { logError, logInfo, logWarn } = require("./utils/logger");
-const { getSmtpConfigStatus } = require("./services/mail.service");
+const { getMailConfigStatus } = require("./services/mail.service");
 
 const startServer = async () => {
   await pool.query("SELECT 1");
   logInfo("database_connection_ok", { nodeEnv: env.nodeEnv });
 
-  const smtpStatus = getSmtpConfigStatus();
-  if (!smtpStatus.configured) {
-    logWarn("smtp_config_incomplete", {
-      message: "SMTP email delivery is not fully configured. Lead and auth emails will fall back to logs.",
-      missing: smtpStatus.missing
+  const mailStatus = getMailConfigStatus();
+  if (!mailStatus.configured) {
+    logWarn("mail_config_incomplete", {
+      message: "Email delivery is not fully configured. Lead and auth emails will fall back to logs.",
+      missing: mailStatus.missing
     });
   } else {
-    logInfo("smtp_config_ok", {
-      host: env.smtpHost,
-      port: env.smtpPort,
-      secure: env.smtpSecure,
+    logInfo("mail_config_ok", {
+      provider: "resend",
       leadsEmailConfigured: Boolean(env.leadsEmailTo)
     });
   }

@@ -53,13 +53,8 @@ const env = {
   emailVerificationTokenMinutes: Number(process.env.EMAIL_VERIFICATION_TOKEN_MINUTES || 60),
   passwordResetTokenMinutes: Number(process.env.PASSWORD_RESET_TOKEN_MINUTES || 30),
   leadsEmailTo: process.env.LEADS_EMAIL_TO || "",
-  smtpHost: process.env.SMTP_HOST || "",
-  smtpPort: Number(process.env.SMTP_PORT || 587),
-  smtpSecure: parseBoolean(process.env.SMTP_SECURE, false),
-  smtpUser: process.env.SMTP_USER || "",
-  smtpPass: process.env.SMTP_PASS || "",
-  smtpFromEmail: process.env.SMTP_FROM_EMAIL || "",
-  smtpReplyToEmail: process.env.SMTP_REPLY_TO_EMAIL || ""
+  resendApiKey: process.env.RESEND_API_KEY || "",
+  resendFromEmail: process.env.RESEND_FROM_EMAIL || ""
 };
 
 const weakJwtSecret = env.jwtSecret.length < 32 || env.jwtSecret.toLowerCase().includes("change-this-secret");
