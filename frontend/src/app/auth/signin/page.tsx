@@ -55,28 +55,28 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-100 flex items-center justify-center p-4">
+    <div className="theme-auth-bg min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="mb-4 flex justify-center">
             <BrandLogo size={80} className="rounded-[22px] shadow-[0_0_40px_rgba(16,185,129,0.28)]" priority />
           </div>
 
-          <h1 className="text-3xl text-gray-900 mb-2">Welcome Back</h1>
-          <p className="text-gray-600">Sign in to your medsyra account</p>
+          <h1 className="text-3xl theme-heading mb-2">Welcome Back</h1>
+          <p className="theme-copy">Sign in to your medsyra account</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+        <div className="theme-surface rounded-2xl p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className="block text-sm text-gray-700 mb-2">Email Address</label>
+              <label className="block text-sm theme-copy mb-2">Email Address</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                <Mail className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg"
+                  className="theme-input w-full pl-10 pr-4 py-3 rounded-lg"
                   placeholder="doctor@hospital.com"
                   required
                 />
@@ -84,14 +84,14 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-700 mb-2">Password</label>
+              <label className="block text-sm theme-copy mb-2">Password</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
                 <input
                   type={showPassword ? "text" : "password"}
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg"
+                  className="theme-input w-full pl-10 pr-12 py-3 rounded-lg"
                   placeholder="Enter your password"
                   required
                 />
@@ -101,9 +101,9 @@ export default function LoginPage() {
                   className="absolute right-3 top-3"
                 >
                   {showPassword ? (
-                    <EyeOff className="w-5 h-5 text-gray-400" />
+                    <EyeOff className="w-5 h-5 text-slate-400" />
                   ) : (
-                    <Eye className="w-5 h-5 text-gray-400" />
+                    <Eye className="w-5 h-5 text-slate-400" />
                   )}
                 </button>
               </div>
@@ -117,7 +117,7 @@ export default function LoginPage() {
                   onChange={(e) => setFormData({ ...formData, rememberMe: e.target.checked })}
                   className="mr-2"
                 />
-                <span className="text-sm text-gray-600">Remember me</span>
+                <span className="text-sm theme-copy">Remember me</span>
               </label>
 
               <Link href="/auth/forgot-password" className="text-sm text-emerald-600 hover:text-emerald-700">
@@ -128,7 +128,7 @@ export default function LoginPage() {
             {errorMessage && (
               <div className="space-y-2">
                 <p className="text-sm text-red-600">{errorMessage}</p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs theme-muted">
                   If you have not verified your email yet, go to {" "}
                   <Link href="/auth/verify-email" className="text-emerald-600">Verify Email</Link>.
                 </p>
@@ -138,13 +138,13 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"
+              className="theme-button-primary w-full py-3 rounded-lg disabled:opacity-60"
             >
               {isSubmitting ? "Signing In..." : "Sign In"}
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-600 mt-6">
+          <p className="text-center text-sm theme-copy mt-6">
             Don&apos;t have an account?{" "}
             <Link href="/auth/signup" className="text-emerald-600 hover:text-emerald-700">
               Sign Up
@@ -152,7 +152,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="text-center text-sm text-gray-500 mt-6">
+        <p className="text-center text-sm theme-muted mt-6">
           By signing in, you agree to our <a className="text-emerald-600">Terms</a> and{" "}
           <a className="text-emerald-600">Privacy Policy</a>
         </p>

@@ -43,14 +43,14 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+    <div className="theme-auth-bg min-h-screen flex items-center justify-center p-4">
+      <div className="theme-surface w-full max-w-md rounded-2xl p-8">
         <div className="text-center mb-6">
           <div className="mb-4 flex justify-center">
             <BrandLogo size={72} className="rounded-[20px] shadow-[0_0_36px_rgba(16,185,129,0.24)]" priority />
           </div>
-          <h1 className="text-2xl text-gray-900">Set New Password</h1>
-          <p className="text-gray-600 mt-1 text-sm">Enter email, reset token and a new password.</p>
+          <h1 className="text-2xl theme-heading">Set New Password</h1>
+          <p className="theme-copy mt-1 text-sm">Enter email, reset token and a new password.</p>
         </div>
 
         <form onSubmit={submit} className="space-y-4">
@@ -60,7 +60,7 @@ export default function ResetPasswordPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             placeholder="you@example.com"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+            className="theme-input w-full px-4 py-3 rounded-lg"
           />
           <input
             type="text"
@@ -68,7 +68,7 @@ export default function ResetPasswordPage() {
             onChange={(e) => setToken(e.target.value)}
             required
             placeholder="Reset token"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+            className="theme-input w-full px-4 py-3 rounded-lg"
           />
           <div className="relative">
             <input
@@ -77,14 +77,14 @@ export default function ResetPasswordPage() {
               onChange={(e) => setNewPassword(e.target.value)}
               required
               placeholder="New password"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg pr-10"
+              className="theme-input w-full px-4 py-3 rounded-lg pr-10"
             />
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
               className="absolute right-3 top-3"
             >
-              {showPassword ? <EyeOff className="w-5 h-5 text-gray-400" /> : <Eye className="w-5 h-5 text-gray-400" />}
+              {showPassword ? <EyeOff className="w-5 h-5 text-slate-400" /> : <Eye className="w-5 h-5 text-slate-400" />}
             </button>
           </div>
 
@@ -94,13 +94,13 @@ export default function ResetPasswordPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"
+            className="theme-button-primary w-full py-3 rounded-lg disabled:opacity-60"
           >
             {loading ? "Resetting..." : "Reset Password"}
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-600 mt-6">
+        <p className="text-center text-sm theme-copy mt-6">
           Back to <Link href="/auth/signin" className="text-emerald-600">Sign In</Link>
         </p>
       </div>

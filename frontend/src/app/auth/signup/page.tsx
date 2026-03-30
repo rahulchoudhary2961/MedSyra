@@ -79,42 +79,42 @@ export default function SignUp() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-100 flex items-center justify-center p-4 py-12">
+    <div className="theme-auth-bg min-h-screen flex items-center justify-center p-4 py-12">
       <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
           <div className="mb-4 flex justify-center">
             <BrandLogo size={80} className="rounded-[22px] shadow-[0_0_40px_rgba(16,185,129,0.28)]" priority />
           </div>
-          <h1 className="text-3xl text-gray-900 mb-2">Create Your Account</h1>
-          <p className="text-gray-600">Join medsyra to manage your practice efficiently</p>
+          <h1 className="text-3xl theme-heading mb-2">Create Your Account</h1>
+          <p className="theme-copy">Join medsyra to manage your practice efficiently</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+        <div className="theme-surface rounded-2xl p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-700 mb-2">Full Name</label>
+                <label className="block text-sm theme-copy mb-2">Full Name</label>
                 <div className="relative">
-                  <User className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                  <User className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
                   <input
                     type="text"
                     value={formData.fullName}
                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    className="w-full pl-10 pr-4 py-3 border rounded-lg"
+                    className="theme-input w-full pl-10 pr-4 py-3 rounded-lg"
                     placeholder="Dr. John"
                     required
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-gray-700 mb-2">Email</label>
+                <label className="block text-sm theme-copy mb-2">Email</label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                  <Mail className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
                   <input
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full pl-10 pr-4 py-3 border rounded-lg"
+                    className="theme-input w-full pl-10 pr-4 py-3 rounded-lg"
                     placeholder="john@gmail.com"
                     required
                   />
@@ -124,28 +124,28 @@ export default function SignUp() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-700 mb-2">Phone Number</label>
+                <label className="block text-sm theme-copy mb-2">Phone Number</label>
                 <div className="relative">
-                  <Phone className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                  <Phone className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
                   <input
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full pl-10 pr-4 py-3 border rounded-lg"
+                    className="theme-input w-full pl-10 pr-4 py-3 rounded-lg"
                     placeholder="+91 9876543210"
                     required
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-gray-700 mb-2">Hospital / Clinic Name</label>
+                <label className="block text-sm theme-copy mb-2">Hospital / Clinic Name</label>
                 <div className="relative">
-                  <Building2 className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                  <Building2 className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
                   <input
                     type="text"
                     value={formData.hospitalName}
                     onChange={(e) => setFormData({ ...formData, hospitalName: e.target.value })}
-                    className="w-full pl-10 pr-4 py-3 border rounded-lg"
+                    className="theme-input w-full pl-10 pr-4 py-3 rounded-lg"
                     placeholder="City General Hospital"
                     required
                   />
@@ -154,13 +154,15 @@ export default function SignUp() {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-700 mb-3">Select Your Role</label>
+              <label className="block text-sm theme-copy mb-3">Select Your Role</label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {roles.map((role) => (
                   <label
                     key={role.id}
                     className={`flex items-center gap-3 p-4 border rounded-lg cursor-pointer ${
-                      formData.role === role.id ? "border-emerald-500 bg-emerald-50" : "border-gray-200"
+                      formData.role === role.id
+                        ? "border-emerald-500 bg-emerald-50 text-slate-900"
+                        : "border-slate-200 bg-white/70 text-slate-900"
                     }`}
                   >
                     <input
@@ -171,8 +173,8 @@ export default function SignUp() {
                       onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                       required
                     />
-                    <role.icon className="w-5 h-5" />
-                    <span className="text-sm">{role.label}</span>
+                    <role.icon className="w-5 h-5 text-slate-700" />
+                    <span className="text-sm text-slate-900">{role.label}</span>
                   </label>
                 ))}
               </div>
@@ -180,40 +182,40 @@ export default function SignUp() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-700 mb-2">Password</label>
+                <label className="block text-sm theme-copy mb-2">Password</label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                  <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
                   <input
                     type={showPassword ? "text" : "password"}
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full pl-10 pr-10 py-3 border rounded-lg"
+                    className="theme-input w-full pl-10 pr-10 py-3 rounded-lg"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3"
+                    className="absolute right-3 top-3 text-slate-500"
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-gray-700 mb-2">Confirm Password</label>
+                <label className="block text-sm theme-copy mb-2">Confirm Password</label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                  <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
                   <input
                     type={showConfirmPassword ? "text" : "password"}
                     value={formData.confirmPassword}
                     onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                    className="w-full pl-10 pr-10 py-3 border rounded-lg"
+                    className="theme-input w-full pl-10 pr-10 py-3 rounded-lg"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-3"
+                    className="absolute right-3 top-3 text-slate-500"
                   >
                     {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
@@ -221,7 +223,7 @@ export default function SignUp() {
               </div>
             </div>
 
-            <label className="flex items-center text-sm text-gray-600">
+            <label className="flex items-center text-sm theme-copy">
               <input
                 type="checkbox"
                 checked={formData.agreeToTerms}
@@ -229,7 +231,7 @@ export default function SignUp() {
                 className="mr-2"
                 required
               />
-              <span className="ml-2 text-sm text-gray-600">
+              <span className="ml-2 text-sm theme-copy">
                 I agree to the <a href="#" className="text-emerald-600 hover:text-emerald-700">Terms of Service</a>
                 {" "}and{" "}
                 <a href="#" className="text-emerald-600 hover:text-emerald-700">Privacy Policy</a>
@@ -242,13 +244,13 @@ export default function SignUp() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"
+              className="theme-button-primary w-full py-3 rounded-lg disabled:opacity-60"
             >
               {isSubmitting ? "Creating Account..." : "Create Account"}
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-600 mt-6">
+          <p className="text-center text-sm theme-copy mt-6">
             Already have an account?{" "}
             <Link href="/auth/signin" className="text-emerald-600 hover:text-emerald-700">
               Sign in

@@ -6,6 +6,7 @@ const appointmentsRoutes = require("./appointments.routes");
 const medicalRecordsRoutes = require("./medical-records.routes");
 const billingsRoutes = require("./billings.routes");
 const dashboardRoutes = require("./dashboard.routes");
+const leadsRoutes = require("./leads.routes");
 const requireAuth = require("../middlewares/require-auth");
 const {
   protectedReadLimiter,
@@ -16,6 +17,7 @@ const {
 const router = express.Router();
 
 router.use("/auth", authRoutes);
+router.use("/leads", leadsRoutes);
 router.use("/patients", requireAuth, protectedReadLimiter, protectedWriteLimiter, patientsRoutes);
 router.use("/doctors", requireAuth, protectedReadLimiter, protectedWriteLimiter, doctorsRoutes);
 router.use("/appointments", requireAuth, protectedReadLimiter, protectedWriteLimiter, appointmentsRoutes);

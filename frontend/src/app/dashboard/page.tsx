@@ -223,7 +223,7 @@ export default function Dashboard() {
   };
 
   if (loading) {
-    return <p className="text-gray-600">Loading dashboard...</p>;
+    return <p className="theme-copy">Loading dashboard...</p>;
   }
 
   if (error) {
@@ -233,8 +233,8 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-gray-900 space-y-1">Dashboard</h1>
-        <p className="text-gray-600 mt-1">Overview of your clinic operations</p>
+        <h1 className="theme-heading space-y-1">Dashboard</h1>
+        <p className="theme-copy mt-1">Overview of your clinic operations</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -256,27 +256,27 @@ export default function Dashboard() {
 
       {viewPatient && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
-          <div className="bg-white rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl text-gray-900">Patient Details</h2>
-              <p className="text-sm text-gray-600 mt-1">{viewPatient.full_name}</p>
+          <div className="theme-surface-strong rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200">
+              <h2 className="text-xl theme-heading">Patient Details</h2>
+              <p className="text-sm theme-copy mt-1">{viewPatient.full_name}</p>
             </div>
             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <p><span className="text-gray-500">Age:</span> {viewPatient.age ?? "-"}</p>
-              <p><span className="text-gray-500">Gender:</span> {viewPatient.gender || "-"}</p>
-              <p><span className="text-gray-500">Phone:</span> {viewPatient.phone || "-"}</p>
-              <p><span className="text-gray-500">Email:</span> {viewPatient.email || "-"}</p>
-              <p><span className="text-gray-500">Blood Type:</span> {viewPatient.blood_type || "-"}</p>
-              <p><span className="text-gray-500">Emergency Contact:</span> {viewPatient.emergency_contact || "-"}</p>
-              <p><span className="text-gray-500">Status:</span> {viewPatient.status || "-"}</p>
-              <p><span className="text-gray-500">Last Visit:</span> {formatLastVisitDate(viewPatient.last_visit_at)}</p>
-              <p className="sm:col-span-2"><span className="text-gray-500">Address:</span> {viewPatient.address || "-"}</p>
+              <p><span className="theme-muted">Age:</span> {viewPatient.age ?? "-"}</p>
+              <p><span className="theme-muted">Gender:</span> {viewPatient.gender || "-"}</p>
+              <p><span className="theme-muted">Phone:</span> {viewPatient.phone || "-"}</p>
+              <p><span className="theme-muted">Email:</span> {viewPatient.email || "-"}</p>
+              <p><span className="theme-muted">Blood Type:</span> {viewPatient.blood_type || "-"}</p>
+              <p><span className="theme-muted">Emergency Contact:</span> {viewPatient.emergency_contact || "-"}</p>
+              <p><span className="theme-muted">Status:</span> {viewPatient.status || "-"}</p>
+              <p><span className="theme-muted">Last Visit:</span> {formatLastVisitDate(viewPatient.last_visit_at)}</p>
+              <p className="sm:col-span-2"><span className="theme-muted">Address:</span> {viewPatient.address || "-"}</p>
             </div>
-            <div className="p-6 border-t border-gray-200 flex justify-end">
+            <div className="p-6 border-t border-slate-200 flex justify-end">
               <button
                 type="button"
                 onClick={() => setViewPatient(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="theme-button-secondary px-4 py-2 rounded-lg"
               >
                 Close
               </button>
@@ -287,11 +287,11 @@ export default function Dashboard() {
 
       {editingPatient && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="theme-surface-strong rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleUpdatePatient}>
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-xl text-gray-900">Edit Patient</h2>
-                <p className="text-sm text-gray-600 mt-1">Update patient information below</p>
+              <div className="p-6 border-b border-slate-200">
+                <h2 className="text-xl theme-heading">Edit Patient</h2>
+                <p className="text-sm theme-copy mt-1">Update patient information below</p>
               </div>
 
               <div className="p-6 space-y-4">
@@ -303,17 +303,17 @@ export default function Dashboard() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm text-gray-700 mb-2">Full Name</label>
+                    <label className="block text-sm theme-copy mb-2">Full Name</label>
                     <input
                       type="text"
                       value={patientForm.fullName}
                       onChange={(e) => setPatientForm({ ...patientForm, fullName: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      className="theme-input w-full px-4 py-2 rounded-lg"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-700 mb-2">Age</label>
+                    <label className="block text-sm theme-copy mb-2">Age</label>
                     <input
                       type="text"
                       inputMode="numeric"
@@ -322,15 +322,15 @@ export default function Dashboard() {
                       onChange={(e) =>
                         setPatientForm({ ...patientForm, age: e.target.value.replace(/\D/g, "").slice(0, 3) })
                       }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      className="theme-input w-full px-4 py-2 rounded-lg"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-700 mb-2">Gender</label>
+                    <label className="block text-sm theme-copy mb-2">Gender</label>
                     <select
                       value={patientForm.gender}
                       onChange={(e) => setPatientForm({ ...patientForm, gender: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      className="theme-input w-full px-4 py-2 rounded-lg"
                       required
                     >
                       <option value="">Select gender</option>
@@ -340,7 +340,7 @@ export default function Dashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-700 mb-2">Phone</label>
+                    <label className="block text-sm theme-copy mb-2">Phone</label>
                     <input
                       type="text"
                       value={patientForm.phone}
@@ -351,30 +351,30 @@ export default function Dashboard() {
                       pattern="\d{10}"
                       minLength={10}
                       maxLength={10}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      className="theme-input w-full px-4 py-2 rounded-lg"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-700 mb-2">Email</label>
+                    <label className="block text-sm theme-copy mb-2">Email</label>
                     <input
                       type="email"
                       value={patientForm.email}
                       onChange={(e) => setPatientForm({ ...patientForm, email: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      className="theme-input w-full px-4 py-2 rounded-lg"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-700 mb-2">Blood Type</label>
+                    <label className="block text-sm theme-copy mb-2">Blood Type</label>
                     <input
                       type="text"
                       value={patientForm.bloodType}
                       onChange={(e) => setPatientForm({ ...patientForm, bloodType: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      className="theme-input w-full px-4 py-2 rounded-lg"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-700 mb-2">Emergency Contact</label>
+                    <label className="block text-sm theme-copy mb-2">Emergency Contact</label>
                     <input
                       type="text"
                       value={patientForm.emergencyContact}
@@ -388,23 +388,23 @@ export default function Dashboard() {
                       pattern="\d{10}"
                       minLength={10}
                       maxLength={10}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      className="theme-input w-full px-4 py-2 rounded-lg"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-700 mb-2">Address</label>
+                  <label className="block text-sm theme-copy mb-2">Address</label>
                   <textarea
                     rows={3}
                     value={patientForm.address}
                     onChange={(e) => setPatientForm({ ...patientForm, address: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    className="theme-input w-full px-4 py-2 rounded-lg"
                   />
                 </div>
               </div>
 
-              <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <div className="p-6 border-t border-slate-200 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -412,14 +412,14 @@ export default function Dashboard() {
                     setPatientForm(initialPatientForm);
                     setPatientFormError("");
                   }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="theme-button-secondary px-4 py-2 rounded-lg"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isUpdatingPatient}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"
+                  className="theme-button-primary px-4 py-2 rounded-lg disabled:opacity-60"
                 >
                   {isUpdatingPatient ? "Saving..." : "Save Changes"}
                 </button>

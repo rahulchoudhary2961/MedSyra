@@ -33,6 +33,13 @@ const signupLimiter = createRateLimiter({
   keyGenerator: byIp("signup")
 });
 
+const leadCaptureLimiter = createRateLimiter({
+  windowMs: env.signupRateLimitWindowMs,
+  max: env.signupRateLimitMax,
+  message: "Too many demo requests. Please try again later.",
+  keyGenerator: byIp("lead-capture")
+});
+
 const signinLimiter = createRateLimiter({
   windowMs: env.loginRateLimitWindowMs,
   max: env.loginRateLimitMax,
@@ -79,6 +86,7 @@ const aiGenerationLimiter = applyToMethods(
 
 module.exports = {
   globalApiLimiter,
+  leadCaptureLimiter,
   signupLimiter,
   signinLimiter,
   recoveryLimiter,

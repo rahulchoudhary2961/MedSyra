@@ -1,21 +1,531 @@
-
 "use client";
 
-import { useEffect } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ArrowRight,
+  CalendarDays,
+  CreditCard,
+  ClipboardList,
+  LayoutDashboard,
+  CheckCircle2,
+} from "lucide-react";
+import BrandLogo from "./components/BrandLogo";
 import { getAuthToken } from "@/lib/auth";
+import { apiRequest } from "@/lib/api";
+
+const solutionItems = [
+  "Appointments",
+  "Billing",
+  "Patient records",
+  "Reports",
+];
+
+const featureSections = [
+  {
+    title: "Appointments",
+    icon: CalendarDays,
+    points: [
+      "Book appointments",
+      "Add walk-in patients",
+      "View daily schedule",
+    ],
+  },
+  {
+    title: "Billing",
+    icon: CreditCard,
+    points: [
+      "Generate invoices",
+      "Track payments",
+      "See pending dues",
+    ],
+  },
+  {
+    title: "Patient History",
+    icon: ClipboardList,
+    points: [
+      "View past visits",
+      "Access records",
+      "Track patient details",
+    ],
+  },
+  {
+    title: "Dashboard",
+    icon: LayoutDashboard,
+    points: [
+      "Today appointments",
+      "Today revenue",
+      "Pending payments",
+      "Clinic reports",
+    ],
+  },
+];
+
+const flowSteps = [
+  "Add patient",
+  "Book appointment / walk-in",
+  "Complete consultation",
+  "Generate bill",
+  "View history",
+];
+
+const reasons = [
+  "Easy to use",
+  "No training required",
+  "Saves time",
+  "Works on any device",
+];
 
 export default function Home() {
   const router = useRouter();
+  const [isReady, setIsReady] = useState(false);
+  const [leadForm, setLeadForm] = useState({
+    fullName: "",
+    email: "",
+    phone: "",
+    clinicName: "",
+    city: "",
+    message: ""
+  });
+  const [isSubmittingLead, setIsSubmittingLead] = useState(false);
+  const [leadSuccess, setLeadSuccess] = useState("");
+  const [leadError, setLeadError] = useState("");
 
   useEffect(() => {
     const token = getAuthToken();
-    router.replace(token ? "/dashboard" : "/auth/signin");
+
+    if (token) {
+      router.replace("/dashboard");
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      setIsReady(true);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
   }, [router]);
 
+  if (!isReady) {
+    return (
+      <div className="theme-auth-bg min-h-screen flex items-center justify-center px-6 theme-copy">
+        Opening your workspace...
+      </div>
+    );
+  }
+
+  const submitLead = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLeadError("");
+    setLeadSuccess("");
+    setIsSubmittingLead(true);
+
+    try {
+      const response = await apiRequest<{ success: boolean; message: string }>("/leads", {
+        method: "POST",
+        body: leadForm
+      });
+      setLeadSuccess(response.message);
+      setLeadForm({
+        fullName: "",
+        email: "",
+        phone: "",
+        clinicName: "",
+        city: "",
+        message: ""
+      });
+    } catch (error) {
+      setLeadError(error instanceof Error ? error.message : "Unable to send your details right now");
+    } finally {
+      setIsSubmittingLead(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center text-gray-600">
-      Redirecting...
-    </div>
+    <main className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4fbf8_0%,#ffffff_38%,#eef6f2_100%)] text-slate-900">
+      <section className="relative isolate">
+        <div className="absolute inset-x-0 top-0 -z-10 h-[34rem] bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_28%)]" />
+        <div className="mx-auto w-full max-w-7xl px-6 pb-16 pt-6 lg:px-10">
+          <header className="animate-fade-in flex items-center justify-between py-4">
+            <div className="flex items-center gap-3">
+              <BrandLogo size={48} className="rounded-2xl shadow-[0_14px_40px_rgba(16,185,129,0.18)]" priority />
+              <div>
+                <p className="text-lg font-semibold tracking-[0.18em] text-emerald-700 uppercase">MedSyra</p>
+                <p className="text-sm text-slate-600">Clinic management software for India</p>
+              </div>
+            </div>
+
+            <nav className="hidden items-center gap-3 md:flex">
+              <Link
+                href="/auth/signin"
+                className="rounded-full border border-emerald-200 bg-white/85 px-5 py-2 text-sm font-medium text-slate-700 transition hover:border-emerald-300 hover:text-emerald-700"
+              >
+                Sign In
+              </Link>
+              <Link
+                href="#demo-form"
+                className="rounded-full bg-slate-950 px-5 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
+              >
+                Book Free Demo
+              </Link>
+            </nav>
+          </header>
+
+          <div className="grid items-center gap-16 py-14 lg:min-h-[calc(100vh-6rem)] lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="max-w-3xl">
+              <div className="animate-fade-up mb-6 inline-flex items-center rounded-full border border-emerald-200 bg-white/80 px-4 py-2 text-sm text-emerald-800 shadow-sm backdrop-blur">
+                For doctors, clinic owners, and small hospitals
+              </div>
+              <h1 className="animate-fade-up animation-delay-100 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.04em] text-slate-950 md:text-6xl lg:text-7xl">
+                Run your clinic smoothly, without registers or manual work
+              </h1>
+              <p className="animate-fade-up animation-delay-200 mt-6 max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
+                Manage appointments, billing, patient records, and reports in one simple system.
+              </p>
+
+              <div className="animate-fade-up animation-delay-300 mt-10 flex flex-col gap-4 sm:flex-row">
+                <Link
+                  href="#demo-form"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-7 py-4 text-base font-semibold text-white transition hover:bg-emerald-700"
+                >
+                  Book Free Demo
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <Link
+                  href="#demo-form"
+                  className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-7 py-4 text-base font-semibold text-slate-800 transition hover:border-emerald-300 hover:text-emerald-700"
+                >
+                  Start Free Trial
+                </Link>
+              </div>
+
+              <div className="animate-fade-up animation-delay-400 mt-8 flex flex-wrap gap-3 text-sm text-slate-600">
+                <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Easy for doctors and reception</div>
+                <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Works on laptop and mobile</div>
+                <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Built for daily clinic work</div>
+              </div>
+            </div>
+
+            <div className="animate-slide-in-right animation-delay-200 relative">
+              <div className="animate-pulse-soft absolute -left-6 top-12 hidden h-24 w-24 rounded-full bg-emerald-200/50 blur-2xl lg:block" />
+              <div className="animate-float-soft rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_30px_120px_rgba(15,23,42,0.12)] backdrop-blur">
+                <div className="rounded-[1.5rem] bg-slate-950 p-6 text-white">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                    <div>
+                      <p className="text-sm uppercase tracking-[0.24em] text-emerald-300">Clinic dashboard</p>
+                      <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">See today clearly</h2>
+                    </div>
+                    <div className="rounded-2xl bg-white/10 px-3 py-2 text-right">
+                      <p className="text-xs text-slate-300">Today</p>
+                      <p className="text-lg font-semibold">18 patients</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 grid gap-4 md:grid-cols-2">
+                    <div className="hover-lift rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <p className="text-sm text-slate-300">Today appointments</p>
+                      <p className="mt-2 text-3xl font-semibold text-white">24</p>
+                    </div>
+                    <div className="hover-lift rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <p className="text-sm text-slate-300">Today revenue</p>
+                      <p className="mt-2 text-3xl font-semibold text-white">Rs. 18,500</p>
+                    </div>
+                    <div className="hover-lift rounded-2xl border border-white/10 bg-white/5 p-4 md:col-span-2">
+                      <div className="flex items-start gap-4">
+                        <div className="rounded-2xl bg-emerald-400/15 p-3 text-emerald-300">
+                          <ClipboardList className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-base font-medium text-white">Pending payments</p>
+                          <p className="mt-2 text-sm leading-6 text-slate-300">
+                            6 bills need follow-up today.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-5xl px-6 py-18 lg:px-10">
+        <div className="animate-fade-up mx-auto max-w-3xl text-center">
+          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Problem</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
+            Common clinic problems, every day
+          </h2>
+          <div className="mt-8 space-y-3 text-lg text-slate-600">
+            <p>Managing patients on paper or in registers?</p>
+            <p>Losing track of payments and follow-ups?</p>
+            <p>Doing too much work manually every day?</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-6 pb-20 lg:px-10">
+        <div className="animate-fade-up rounded-[2rem] bg-slate-950 px-8 py-12 text-white md:px-12">
+          <p className="text-sm uppercase tracking-[0.24em] text-emerald-300">Solution</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">
+            One place to handle the full clinic workflow
+          </h2>
+          <p className="mt-4 max-w-2xl text-base leading-8 text-slate-300">
+            MedSyra keeps appointments, billing, patient records, and reports together so your team can work faster and stay organized.
+          </p>
+          <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {solutionItems.map((item) => (
+              <div key={item} className="hover-lift rounded-2xl border border-white/10 bg-white/5 px-5 py-5">
+                <p className="text-lg font-medium">{item}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-10">
+        <div className="animate-fade-up mx-auto max-w-3xl text-center">
+          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Core features</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
+            Simple tools your clinic will actually use
+          </h2>
+        </div>
+        <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+          {featureSections.map((section, index) => (
+            <div
+              key={section.title}
+              className="animate-fade-up hover-lift rounded-[1.75rem] border border-slate-200 bg-white p-7 shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
+              style={{ animationDelay: `${index * 0.08 + 0.12}s` }}
+            >
+              <div className="inline-flex rounded-2xl bg-emerald-50 p-3 text-emerald-700">
+                <section.icon className="h-5 w-5" />
+              </div>
+              <h3 className="mt-5 text-xl font-semibold tracking-[-0.03em] text-slate-950">{section.title}</h3>
+              <ul className="mt-4 space-y-3">
+                {section.points.map((point) => (
+                  <li key={point} className="flex items-start gap-2 text-sm leading-7 text-slate-600">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-6 pb-20 lg:px-10">
+        <div className="animate-fade-up mx-auto max-w-3xl text-center">
+          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">How it works</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
+            A simple flow from patient entry to billing
+          </h2>
+        </div>
+        <div className="mt-12 grid gap-4 md:grid-cols-5">
+          {flowSteps.map((step, index) => (
+            <div
+              key={step}
+              className="animate-fade-up hover-lift relative rounded-[1.5rem] border border-slate-200 bg-white p-6 text-center shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
+              style={{ animationDelay: `${index * 0.07 + 0.12}s` }}
+            >
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-sm font-semibold text-emerald-700">
+                {index + 1}
+              </div>
+              <p className="mt-4 text-sm font-medium leading-6 text-slate-700">{step}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-6 pb-20 lg:px-10">
+        <div className="animate-fade-up mx-auto max-w-3xl text-center">
+          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Why choose this</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
+            Made to reduce clinic stress, not add to it
+          </h2>
+        </div>
+        <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+          {reasons.map((reason, index) => (
+            <div
+              key={reason}
+              className="animate-fade-up hover-lift rounded-[1.75rem] border border-slate-200 bg-white p-7 shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
+              style={{ animationDelay: `${index * 0.08 + 0.1}s` }}
+            >
+              <div className="inline-flex rounded-2xl bg-emerald-50 p-3 text-emerald-700">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+              <h3 className="mt-5 text-xl font-semibold tracking-[-0.03em] text-slate-950">{reason}</h3>
+              <p className="mt-3 text-sm leading-7 text-slate-600">
+                {reason === "Easy to use" && "Clean screens and simple actions for busy clinic staff."}
+                {reason === "No training required" && "Your team can start using it without long onboarding."}
+                {reason === "Saves time" && "Reduce repetitive front-desk work and manual tracking."}
+                {reason === "Works on any device" && "Use it on laptop, desktop, or mobile during the day."}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-10">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="animate-fade-up hover-lift rounded-[2rem] border border-emerald-100 bg-emerald-50 p-8">
+            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Trust</p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950">
+              Built for clinics and small hospitals
+            </h2>
+            <p className="mt-4 text-base leading-8 text-slate-600">
+              Designed for daily use by doctors, reception, and staff.
+            </p>
+          </div>
+          <div className="animate-fade-up hover-lift animation-delay-150 rounded-[2rem] border border-slate-200 bg-white p-8">
+            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Pricing</p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950">
+              Start with a free trial
+            </h2>
+            <p className="mt-4 text-base leading-8 text-slate-600">
+              Free trial available with a simple monthly plan for growing clinics.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 pb-24 lg:px-10">
+        <div className="animate-fade-up rounded-[2rem] bg-slate-950 px-8 py-12 text-white md:px-12">
+          <p className="text-sm uppercase tracking-[0.24em] text-emerald-300">Get started</p>
+          <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-2xl">
+              <h2 className="text-3xl font-semibold tracking-[-0.04em] md:text-4xl">
+                Make your clinic easier to manage
+              </h2>
+              <p className="mt-4 text-base leading-8 text-slate-300">
+                Book a free demo or start your free trial today.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="#demo-form"
+                className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
+              >
+                Book a Free Demo
+              </Link>
+              <Link
+                href="#demo-form"
+                className="inline-flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white transition hover:border-emerald-300 hover:text-emerald-300"
+              >
+                Start Free Trial
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="demo-form" className="mx-auto max-w-6xl scroll-mt-24 px-6 pb-28 lg:px-10">
+        <div className="animate-fade-up grid gap-8 rounded-[2rem] border border-slate-200 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.06)] lg:grid-cols-[0.9fr_1.1fr] md:p-10">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Request a callback</p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-4xl">
+              Share your clinic details and we will reach out to you
+            </h2>
+            <p className="mt-4 text-base leading-8 text-slate-600">
+              Fill in your basic details below. We will contact you on email or phone to schedule a demo.
+            </p>
+            <div className="mt-8 space-y-3 text-sm text-slate-600">
+              <p>Best for doctors, clinic owners, and small hospitals.</p>
+              <p>Use this if you want a guided demo before starting the trial.</p>
+            </div>
+          </div>
+
+          <form onSubmit={submitLead} className="grid gap-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm text-slate-700">Full Name</label>
+                <input
+                  type="text"
+                  value={leadForm.fullName}
+                  onChange={(e) => setLeadForm((current) => ({ ...current, fullName: e.target.value }))}
+                  className="theme-input w-full rounded-xl px-4 py-3"
+                  placeholder="Dr. Amit Sharma"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm text-slate-700">Clinic / Hospital Name</label>
+                <input
+                  type="text"
+                  value={leadForm.clinicName}
+                  onChange={(e) => setLeadForm((current) => ({ ...current, clinicName: e.target.value }))}
+                  className="theme-input w-full rounded-xl px-4 py-3"
+                  placeholder="Sharma Care Clinic"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm text-slate-700">Email</label>
+                <input
+                  type="email"
+                  value={leadForm.email}
+                  onChange={(e) => setLeadForm((current) => ({ ...current, email: e.target.value }))}
+                  className="theme-input w-full rounded-xl px-4 py-3"
+                  placeholder="doctor@clinic.com"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm text-slate-700">Phone Number</label>
+                <input
+                  type="tel"
+                  value={leadForm.phone}
+                  onChange={(e) => setLeadForm((current) => ({ ...current, phone: e.target.value }))}
+                  className="theme-input w-full rounded-xl px-4 py-3"
+                  placeholder="+91 9876543210"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm text-slate-700">City</label>
+                <input
+                  type="text"
+                  value={leadForm.city}
+                  onChange={(e) => setLeadForm((current) => ({ ...current, city: e.target.value }))}
+                  className="theme-input w-full rounded-xl px-4 py-3"
+                  placeholder="Mumbai"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  disabled={isSubmittingLead}
+                  className="theme-button-primary w-full rounded-xl px-6 py-3 text-sm font-semibold disabled:opacity-60"
+                >
+                  {isSubmittingLead ? "Sending..." : "Send My Details"}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm text-slate-700">Message</label>
+              <textarea
+                rows={4}
+                value={leadForm.message}
+                onChange={(e) => setLeadForm((current) => ({ ...current, message: e.target.value }))}
+                className="theme-input w-full rounded-xl px-4 py-3"
+                placeholder="Tell us a little about your clinic and what you need help with."
+              />
+            </div>
+
+            {leadSuccess && <p className="text-sm text-emerald-700">{leadSuccess}</p>}
+            {leadError && <p className="text-sm text-red-600">{leadError}</p>}
+          </form>
+        </div>
+      </section>
+    </main>
   );
 }

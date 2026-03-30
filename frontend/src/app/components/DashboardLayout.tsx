@@ -231,14 +231,14 @@ export default function DashboardLayout({
 
   if (isCheckingAuth) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-700">
+      <div className="theme-app-bg min-h-screen flex items-center justify-center px-6 theme-copy">
         Checking session...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="theme-app-bg min-h-screen">
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
@@ -247,15 +247,15 @@ export default function DashboardLayout({
       )}
 
       <aside
-        className={`fixed top-0 left-0 h-full bg-white border-r border-gray-200 w-64 z-50 transition-transform duration-300 ${
+        className={`theme-sidebar fixed top-0 left-0 h-full w-64 z-50 transition-transform duration-300 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
         <div className="flex flex-col h-full">
-          <div className="h-16 flex items-center px-6 border-b border-gray-200">
+          <div className="h-16 flex items-center px-6 border-b border-slate-800">
             <div className="flex items-center gap-2">
               <BrandLogo size={34} className="rounded-xl shadow-[0_0_24px_rgba(16,185,129,0.28)]" priority />
-              <span className="font-semibold text-gray-900">medsyra</span>
+              <span className="font-semibold text-white">medsyra</span>
             </div>
           </div>
 
@@ -269,7 +269,7 @@ export default function DashboardLayout({
                     <Link
                       href={item.path}
                       className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                        active ? "bg-emerald-50 text-emerald-700" : "text-gray-700 hover:bg-gray-100"
+                        active ? "bg-emerald-500/14 text-emerald-300" : "text-slate-300 hover:bg-white/6 hover:text-white"
                       }`}
                       onClick={() => setSidebarOpen(false)}
                     >
@@ -282,7 +282,7 @@ export default function DashboardLayout({
             </ul>
           </nav>
 
-          <div className="p-4 border-t border-gray-200 space-y-3">
+          <div className="p-4 border-t border-slate-800 space-y-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white">
                 {(currentUser?.full_name || "U")
@@ -293,13 +293,13 @@ export default function DashboardLayout({
                   .toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-900 truncate">{currentUser?.full_name || "User"}</p>
-                <p className="text-xs text-gray-500 truncate">{currentUser?.role || "Staff"}</p>
+                <p className="text-sm text-white truncate">{currentUser?.full_name || "User"}</p>
+                <p className="text-xs text-slate-400 truncate">{currentUser?.role || "Staff"}</p>
               </div>
             </div>
             <button
               onClick={handleLogout}
-              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-100"
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-700 bg-white/4 text-sm text-slate-200 hover:bg-white/8 hover:text-white"
             >
               <LogOut className="w-4 h-4" />
               Logout
@@ -309,20 +309,20 @@ export default function DashboardLayout({
       </aside>
 
       <div className="lg:ml-64">
-        <header className="h-16 bg-white border-b border-gray-200 sticky top-0 z-30">
+        <header className="theme-topbar h-16 sticky top-0 z-30">
           <div className="h-full px-4 sm:px-6 lg:px-8 flex items-center justify-between">
             <div className="flex items-center gap-4 flex-1 min-w-0">
               <button
                 onClick={() => setSidebarOpen((prev) => !prev)}
-                className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
+                className="lg:hidden p-2 rounded-lg hover:bg-white/80"
                 aria-label="Open menu"
               >
                 <Menu className="w-5 h-5" />
               </button>
 
               <div ref={searchRef} className="relative hidden sm:block flex-1 max-w-md">
-                <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2">
-                  <Search className="w-4 h-4 text-gray-500" />
+                <div className="theme-surface flex items-center gap-2 rounded-lg px-4 py-2">
+                  <Search className="w-4 h-4 theme-muted" />
                   <input
                     type="text"
                     value={headerSearch}
@@ -339,19 +339,19 @@ export default function DashboardLayout({
                       }
                     }}
                     placeholder="Search patients, doctors..."
-                    className="bg-transparent border-none outline-none flex-1 text-sm"
+                    className="bg-transparent border-none outline-none flex-1 text-sm theme-heading"
                   />
                 </div>
 
                 {showSearchResults && (headerSearch.trim().length >= 2 || isSearching) && (
-                  <div className="absolute left-0 right-0 top-full mt-2 rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden z-40">
+                  <div className="theme-surface-strong absolute left-0 right-0 top-full mt-2 rounded-xl overflow-hidden z-40">
                     {isSearching ? (
-                      <div className="px-4 py-3 text-sm text-gray-500">Searching...</div>
+                      <div className="px-4 py-3 text-sm theme-muted">Searching...</div>
                     ) : (
                       <div className="max-h-80 overflow-y-auto">
-                        <div className="border-b border-gray-100 px-4 py-2 text-xs uppercase tracking-wide text-gray-400">Patients</div>
+                        <div className="border-b border-slate-100 px-4 py-2 text-xs uppercase tracking-wide text-slate-400">Patients</div>
                         {searchResults.patients.length === 0 ? (
-                          <div className="px-4 py-3 text-sm text-gray-500">No patient matches</div>
+                          <div className="px-4 py-3 text-sm theme-muted">No patient matches</div>
                         ) : (
                           searchResults.patients.map((patient) => (
                             <button
@@ -361,19 +361,19 @@ export default function DashboardLayout({
                                 setShowSearchResults(false);
                                 router.push(`/dashboard/patients/${patient.id}`);
                               }}
-                              className="block w-full border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50"
+                              className="block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-emerald-50/60"
                             >
-                              <p className="text-sm text-gray-900">{patient.full_name}</p>
-                              <p className="text-xs text-gray-500">{patient.phone}</p>
+                              <p className="text-sm theme-heading">{patient.full_name}</p>
+                              <p className="text-xs theme-muted">{patient.phone}</p>
                             </button>
                           ))
                         )}
 
                         {(isFullAccessRole(currentUser?.role) || isReceptionRole(currentUser?.role)) && (
                           <>
-                            <div className="border-b border-t border-gray-100 px-4 py-2 text-xs uppercase tracking-wide text-gray-400">Doctors</div>
+                            <div className="border-b border-t border-slate-100 px-4 py-2 text-xs uppercase tracking-wide text-slate-400">Doctors</div>
                             {searchResults.doctors.length === 0 ? (
-                              <div className="px-4 py-3 text-sm text-gray-500">No doctor matches</div>
+                              <div className="px-4 py-3 text-sm theme-muted">No doctor matches</div>
                             ) : (
                               searchResults.doctors.map((doctor) => (
                                 <button
@@ -383,10 +383,10 @@ export default function DashboardLayout({
                                     setShowSearchResults(false);
                                     router.push(`/dashboard/doctors?q=${encodeURIComponent(doctor.full_name)}`);
                                   }}
-                                  className="block w-full border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50 last:border-b-0"
+                                  className="block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-emerald-50/60 last:border-b-0"
                                 >
-                                  <p className="text-sm text-gray-900">{doctor.full_name}</p>
-                                  <p className="text-xs text-gray-500">{doctor.specialty}</p>
+                                  <p className="text-sm theme-heading">{doctor.full_name}</p>
+                                  <p className="text-xs theme-muted">{doctor.specialty}</p>
                                 </button>
                               ))
                             )}
@@ -411,29 +411,29 @@ export default function DashboardLayout({
               <button
                 type="button"
                 onClick={openNotifications}
-                className="p-2 rounded-lg hover:bg-gray-100 relative"
+                className="p-2 rounded-lg hover:bg-white/80 relative"
                 aria-label="Notifications"
               >
-                <Bell className="w-5 h-5 text-gray-600" />
+                <Bell className="w-5 h-5 theme-copy" />
                 {recentActivity.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />}
               </button>
               {notificationsOpen && (
-                <div className="absolute right-12 top-full mt-2 w-80 rounded-xl border border-gray-200 bg-white shadow-lg z-40 overflow-hidden">
-                  <div className="border-b border-gray-100 px-4 py-3">
-                    <p className="text-sm text-gray-900">Notifications</p>
-                    <p className="text-xs text-gray-500">Recent activity from your clinic</p>
+                <div className="theme-surface-strong absolute right-12 top-full mt-2 w-80 rounded-xl z-40 overflow-hidden">
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <p className="text-sm theme-heading">Notifications</p>
+                    <p className="text-xs theme-muted">Recent activity from your clinic</p>
                   </div>
                   {notificationsLoading ? (
-                    <div className="px-4 py-4 text-sm text-gray-500">Loading notifications...</div>
+                    <div className="px-4 py-4 text-sm theme-muted">Loading notifications...</div>
                   ) : recentActivity.length === 0 ? (
-                    <div className="px-4 py-4 text-sm text-gray-500">No recent activity yet.</div>
+                    <div className="px-4 py-4 text-sm theme-muted">No recent activity yet.</div>
                   ) : (
                     <div className="max-h-80 overflow-y-auto">
                       {recentActivity.map((item) => (
-                        <div key={item.id} className="border-b border-gray-100 px-4 py-3 last:border-b-0">
-                          <p className="text-sm text-gray-900">{item.title}</p>
-                          {item.entity_name && <p className="mt-1 text-xs text-gray-600">{item.entity_name}</p>}
-                          <p className="mt-1 text-xs text-gray-400">{new Date(item.event_time).toLocaleString()}</p>
+                        <div key={item.id} className="border-b border-slate-100 px-4 py-3 last:border-b-0">
+                          <p className="text-sm theme-heading">{item.title}</p>
+                          {item.entity_name && <p className="mt-1 text-xs theme-copy">{item.entity_name}</p>}
+                          <p className="mt-1 text-xs text-slate-400">{new Date(item.event_time).toLocaleString()}</p>
                         </div>
                       ))}
                     </div>

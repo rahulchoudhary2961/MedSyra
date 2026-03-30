@@ -343,6 +343,19 @@ const dashboardSchemas = {
   }
 };
 
+const publicSchemas = {
+  submitLeadBody: {
+    fields: {
+      fullName: stringRule({ minLength: 2, maxLength: 100, pattern: /^[a-zA-Z\s.'-]+$/ }),
+      email: emailRule(),
+      phone: phoneRule(),
+      clinicName: stringRule({ minLength: 2, maxLength: 120 }),
+      city: optional(stringRule({ minLength: 2, maxLength: 80 })),
+      message: optional(stringRule({ minLength: 2, maxLength: 500 }))
+    }
+  }
+};
+
 module.exports = {
   authSchemas,
   patientsSchemas,
@@ -350,5 +363,6 @@ module.exports = {
   appointmentsSchemas,
   medicalRecordsSchemas,
   billingsSchemas,
-  dashboardSchemas
+  dashboardSchemas,
+  publicSchemas
 };

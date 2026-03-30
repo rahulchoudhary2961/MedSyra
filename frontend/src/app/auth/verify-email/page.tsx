@@ -69,14 +69,14 @@ export default function VerifyEmailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+    <div className="theme-auth-bg min-h-screen flex items-center justify-center p-4">
+      <div className="theme-surface w-full max-w-md rounded-2xl p-8">
         <div className="text-center mb-6">
           <div className="mb-4 flex justify-center">
             <BrandLogo size={72} className="rounded-[20px] shadow-[0_0_36px_rgba(16,185,129,0.24)]" priority />
           </div>
-          <h1 className="text-2xl text-gray-900">Verify Email</h1>
-          <p className="text-gray-600 mt-1 text-sm">Enter your email and verification token.</p>
+          <h1 className="text-2xl theme-heading">Verify Email</h1>
+          <p className="theme-copy mt-1 text-sm">Enter your email and verification token.</p>
         </div>
 
         <form onSubmit={submit} className="space-y-4">
@@ -86,7 +86,7 @@ export default function VerifyEmailPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             placeholder="you@example.com"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+            className="theme-input w-full px-4 py-3 rounded-lg"
           />
           <input
             type="text"
@@ -94,7 +94,7 @@ export default function VerifyEmailPage() {
             onChange={(e) => setToken(e.target.value)}
             required
             placeholder="Verification token"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+            className="theme-input w-full px-4 py-3 rounded-lg"
           />
 
           {message && <p className="text-sm text-green-600">{message}</p>}
@@ -103,7 +103,7 @@ export default function VerifyEmailPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"
+            className="theme-button-primary w-full py-3 rounded-lg disabled:opacity-60"
           >
             {loading ? "Verifying..." : "Verify Email"}
           </button>
@@ -112,13 +112,13 @@ export default function VerifyEmailPage() {
             type="button"
             onClick={resend}
             disabled={resending}
-            className="w-full py-3 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-60"
+            className="theme-button-secondary w-full py-3 rounded-lg disabled:opacity-60"
           >
             {resending ? "Resending..." : "Resend Token"}
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-600 mt-6">
+        <p className="text-center text-sm theme-copy mt-6">
           Continue to <Link href="/auth/signin" className="text-emerald-600">Sign In</Link>
         </p>
       </div>
