@@ -87,6 +87,9 @@ CREATE TABLE IF NOT EXISTS appointments (
   duration_minutes INT NOT NULL DEFAULT 15,
   planned_procedures TEXT,
   notes TEXT,
+  reminder_3d_sent_at TIMESTAMPTZ,
+  reminder_1d_sent_at TIMESTAMPTZ,
+  reminder_same_day_sent_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT appointments_status_check CHECK (status IN ('pending', 'confirmed', 'cancelled', 'completed', 'checked-in', 'no-show'))
@@ -107,13 +110,20 @@ CREATE TABLE IF NOT EXISTS medical_records (
   symptoms TEXT,
   diagnosis TEXT,
   prescription TEXT,
+  follow_up_date DATE,
+  follow_up_reminder_status TEXT NOT NULL DEFAULT 'pending',
+  follow_up_reminder_sent_at TIMESTAMPTZ,
+  follow_up_reminder_error TEXT,
+  follow_up_reminder_last_attempt_at TIMESTAMPTZ,
   notes TEXT,
   file_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT medical_records_follow_up_reminder_status_check CHECK (follow_up_reminder_status IN ('pending', 'sent', 'failed', 'skipped'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_medical_records_org_date ON medical_records (organization_id, record_date);
+CREATE INDEX IF NOT EXISTS idx_medical_records_org_follow_up_date ON medical_records (organization_id, follow_up_date) WHERE follow_up_date IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS activity_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

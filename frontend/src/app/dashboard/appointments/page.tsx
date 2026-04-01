@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { ApiRequestError, apiRequest } from "@/lib/api";
 import { canManageAppointments } from "@/lib/roles";
@@ -50,6 +50,7 @@ type MeResponse = {
   success: boolean;
   data: {
     role: string;
+    organization_name?: string;
   };
 };
 
@@ -57,6 +58,20 @@ type MedicalRecordsResponse = {
   success: boolean;
   data: {
     items: MedicalRecord[];
+  };
+};
+
+type AppointmentReminderResponse = {
+  success: boolean;
+  data: {
+    appointment: Appointment;
+    reminder: {
+      stage: string;
+      label: string;
+      tracked: boolean;
+      whatsappUrl: string;
+      message: string;
+    };
   };
 };
 
@@ -99,6 +114,7 @@ type ConsultationForm = {
   symptoms: string;
   diagnosis: string;
   prescription: string;
+  followUpInDays: string;
   notes: string;
 };
 
@@ -165,6 +181,7 @@ const initialConsultationForm: ConsultationForm = {
   symptoms: "",
   diagnosis: "",
   prescription: "",
+  followUpInDays: "",
   notes: ""
 };
 
@@ -445,6 +462,46 @@ const getInvoiceDisplayStatus = (appointment: Appointment) => {
   return (appointment.invoice_status || "").toLowerCase() === "paid" ? "Paid" : "Unpaid";
 };
 
+const diffDaysFromDateKey = (dateKey: string, baseDateKey: string) => {
+  const target = parseDate(dateKey);
+  const base = parseDate(baseDateKey);
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.round((target.getTime() - base.getTime()) / msPerDay);
+};
+
+const getAppointmentReminderWindow = (appointmentDate: string) => {
+  const today = toDateKey(new Date());
+  const dayDelta = diffDaysFromDateKey(toAppointmentDateKey(appointmentDate), today);
+
+  if (dayDelta < 0) {
+    return { key: "past", label: "Past appointment" };
+  }
+  if (dayDelta === 0) {
+    return { key: "same_day", label: "Today reminder" };
+  }
+  if (dayDelta === 1) {
+    return { key: "one_day", label: "Tomorrow reminder" };
+  }
+  if (dayDelta === 3) {
+    return { key: "three_day", label: "3-day reminder" };
+  }
+
+  return { key: "manual_preview", label: "Manual reminder" };
+};
+
+const formatTimestamp = (value?: string | null) => {
+  if (!value) {
+    return "-";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString();
+};
+
 const sortAppointments = (items: Appointment[]) =>
   [...items].sort((a, b) => {
     const dateDiff = toAppointmentDateKey(a.appointment_date).localeCompare(toAppointmentDateKey(b.appointment_date));
@@ -456,6 +513,8 @@ const sortAppointments = (items: Appointment[]) =>
 
 export default function AppointmentsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const patientFilterId = searchParams.get("patientId") || "";
   const today = useMemo(() => new Date(), []);
   const todayKey = toDateKey(today);
   const [viewMode, setViewMode] = useState<ViewMode>("day");
@@ -488,6 +547,7 @@ export default function AppointmentsPage() {
   const [isConsultationSubmitting, setIsConsultationSubmitting] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const [currentRole, setCurrentRole] = useState("");
+  const [organizationName, setOrganizationName] = useState("ABC Clinic");
   const [patientSearch, setPatientSearch] = useState("");
   const [showInlinePatientForm, setShowInlinePatientForm] = useState(false);
   const [inlinePatientForm, setInlinePatientForm] = useState(initialInlinePatientForm);
@@ -498,6 +558,8 @@ export default function AppointmentsPage() {
   const [walkInForm, setWalkInForm] = useState(initialWalkInForm);
   const [invoiceForm, setInvoiceForm] = useState<InvoiceDraftForm>(initialInvoiceDraft);
   const [consultationForm, setConsultationForm] = useState<ConsultationForm>(initialConsultationForm);
+  const [isSendingReminder, setIsSendingReminder] = useState(false);
+  const [isSendingAppointmentReminder, setIsSendingAppointmentReminder] = useState(false);
 
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
@@ -507,6 +569,9 @@ export default function AppointmentsPage() {
       const firstPageParams = new URLSearchParams();
       firstPageParams.set("limit", "100");
       firstPageParams.set("year", String(selectedYear));
+      if (patientFilterId) {
+        firstPageParams.set("patientId", patientFilterId);
+      }
 
       const firstResponse = await apiRequest<AppointmentsResponse>(`/appointments?${firstPageParams.toString()}`, {
         authenticated: true
@@ -530,7 +595,7 @@ export default function AppointmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedYear]);
+  }, [patientFilterId, selectedYear]);
 
   const fetchDoctors = useCallback(async () => {
     try {
@@ -558,8 +623,10 @@ export default function AppointmentsPage() {
     try {
       const response = await apiRequest<MeResponse>("/auth/me", { authenticated: true });
       setCurrentRole(response.data.role || "");
+      setOrganizationName(response.data.organization_name || "ABC Clinic");
     } catch {
       setCurrentRole("");
+      setOrganizationName("ABC Clinic");
     }
   }, []);
 
@@ -648,6 +715,10 @@ export default function AppointmentsPage() {
     return visibleAppointments.filter((appointment) => appointment.doctor_id === selectedDoctor);
   }, [appointments, pendingDeletedIds, selectedDoctor]);
   const canManageCalendar = canManageAppointments(currentRole);
+  const selectedPatientFilter = useMemo(
+    () => patients.find((patient) => patient.id === patientFilterId) || null,
+    [patientFilterId, patients]
+  );
   const filteredPatients = useMemo(() => {
     const query = patientSearch.trim().toLowerCase();
     if (!query) {
@@ -816,13 +887,18 @@ export default function AppointmentsPage() {
   };
 
   const openCreate = (date?: string, time?: string) => {
+    const selectedPatient = patients.find((item) => item.id === patientFilterId) || null;
     setEditingAppointmentId(null);
-    setPatientSearch("");
+    setPatientSearch(selectedPatient?.full_name || "");
     setShowInlinePatientForm(false);
     setInlinePatientForm(initialInlinePatientForm);
     setAppointmentFormError("");
     setForm({
       ...initialForm,
+      patientId: selectedPatient?.id || patientFilterId,
+      patientName: selectedPatient?.full_name || "",
+      mobileNumber: selectedPatient?.phone || "",
+      email: selectedPatient?.email || "",
       appointmentDate: date || selectedDay || todayKey,
       appointmentTime: time || "",
       doctorId: selectedDoctor !== "all" ? selectedDoctor : ""
@@ -883,6 +959,18 @@ export default function AppointmentsPage() {
         symptoms: matchingRecord.symptoms || "",
         diagnosis: matchingRecord.diagnosis || "",
         prescription: matchingRecord.prescription || "",
+        followUpInDays:
+          matchingRecord.follow_up_date
+            ? String(
+                Math.max(
+                  diffDaysFromDateKey(
+                    matchingRecord.follow_up_date,
+                    toAppointmentDateKey(selectedAppointment.appointment_date)
+                  ),
+                  1
+                )
+              )
+            : "",
         notes: matchingRecord.notes || selectedAppointment.notes || ""
       });
       return;
@@ -892,6 +980,7 @@ export default function AppointmentsPage() {
       symptoms: "",
       diagnosis: "",
       prescription: "",
+      followUpInDays: "",
       notes: selectedAppointment.notes || ""
     });
 
@@ -909,6 +998,15 @@ export default function AppointmentsPage() {
           symptoms: record.symptoms || "",
           diagnosis: record.diagnosis || "",
           prescription: record.prescription || "",
+          followUpInDays:
+            record.follow_up_date
+              ? String(
+                  Math.max(
+                    diffDaysFromDateKey(record.follow_up_date, toAppointmentDateKey(selectedAppointment.appointment_date)),
+                    1
+                  )
+                )
+              : "",
           notes: record.notes || selectedAppointment.notes || ""
         });
       })
@@ -1310,6 +1408,7 @@ export default function AppointmentsPage() {
             symptoms: consultationForm.symptoms.trim() || null,
             diagnosis: consultationForm.diagnosis.trim() || null,
             prescription: consultationForm.prescription.trim() || null,
+            followUpInDays: consultationForm.followUpInDays ? Number(consultationForm.followUpInDays) : null,
             notes: consultationForm.notes.trim() || null
           }
         }
@@ -1329,6 +1428,18 @@ export default function AppointmentsPage() {
         symptoms: updatedRecord.symptoms || "",
         diagnosis: updatedRecord.diagnosis || "",
         prescription: updatedRecord.prescription || "",
+        followUpInDays:
+          updatedRecord.follow_up_date
+            ? String(
+                Math.max(
+                  diffDaysFromDateKey(
+                    updatedRecord.follow_up_date,
+                    toAppointmentDateKey(updatedAppointment.appointment_date)
+                  ),
+                  1
+                )
+              )
+            : "",
         notes: updatedRecord.notes || updatedAppointment.notes || ""
       });
       setShowConsultationModal(false);
@@ -1342,6 +1453,80 @@ export default function AppointmentsPage() {
       setToast({ type: "error", message });
     } finally {
       setIsConsultationSubmitting(false);
+    }
+  };
+
+  const sendFollowUpReminder = async () => {
+    if (!selectedConsultationRecord?.follow_up_date || !selectedAppointment) {
+      return;
+    }
+
+    const phoneDigits = String(selectedAppointment.mobile_number || "").replace(/\D/g, "");
+    if (phoneDigits.length < 10) {
+      setToast({
+        type: "error",
+        message: "Patient phone number is missing or invalid for WhatsApp"
+      });
+      return;
+    }
+
+    const firstName = (selectedAppointment.patient_name || selectedAppointment.title || "Patient").split(" ")[0];
+    const doctorName = selectedAppointment.doctor_name || "Doctor";
+    const message = [
+      `Hello ${firstName},`,
+      `This is a reminder for your follow-up visit at ${organizationName}.`,
+      "Please visit today or tomorrow.",
+      "",
+      `- ${doctorName}`
+    ].join("\n");
+
+    const recipient = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
+    const whatsappUrl = `https://wa.me/${recipient}?text=${encodeURIComponent(message)}`;
+
+    setIsSendingReminder(true);
+    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+    setToast({ type: "success", message: "Opened WhatsApp reminder" });
+    setTimeout(() => setIsSendingReminder(false), 300);
+  };
+
+  const sendAppointmentReminder = async () => {
+    if (!selectedAppointment) {
+      return;
+    }
+
+    setIsSendingAppointmentReminder(true);
+
+    try {
+      const response = await apiRequest<AppointmentReminderResponse>(`/appointments/${selectedAppointment.id}/send-reminder`, {
+        method: "POST",
+        authenticated: true,
+        body: {}
+      });
+
+      const updatedAppointment = response.data.appointment;
+      const reminder = response.data.reminder;
+
+      setAppointments((prev) =>
+        prev.map((item) => (item.id === updatedAppointment.id ? { ...item, ...updatedAppointment } : item))
+      );
+      setSelectedAppointment((prev) =>
+        prev && prev.id === updatedAppointment.id ? { ...prev, ...updatedAppointment } : prev
+      );
+
+      window.open(reminder.whatsappUrl, "_blank", "noopener,noreferrer");
+      setToast({
+        type: "success",
+        message: reminder.tracked
+          ? `${reminder.label} opened in WhatsApp`
+          : "Manual appointment reminder opened in WhatsApp"
+      });
+    } catch (err) {
+      setToast({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to open appointment reminder"
+      });
+    } finally {
+      setIsSendingAppointmentReminder(false);
     }
   };
 
@@ -1469,6 +1654,23 @@ export default function AppointmentsPage() {
           </div>
         </div>
 
+        {patientFilterId && (
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Patient Filter</p>
+              <p className="mt-1 text-sm text-emerald-900">
+                Showing appointments for {selectedPatientFilter?.full_name || "the selected patient"}.
+              </p>
+            </div>
+            <Link
+              href="/dashboard/appointments"
+              className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-100"
+            >
+              Clear Filter
+            </Link>
+          </div>
+        )}
+
         <div className="mt-6 grid gap-3 md:grid-cols-4">
           <label className="space-y-2">
             <span className="text-sm text-gray-700">Year</span>
@@ -1547,6 +1749,11 @@ export default function AppointmentsPage() {
                 <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
                   Doctor: {selectedDoctorLabel}
                 </span>
+                {patientFilterId && (
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                    Patient: {selectedPatientFilter?.full_name || "Selected patient"}
+                  </span>
+                )}
                 {selectedFilterDoctor?.work_start_time && selectedFilterDoctor?.work_end_time && (
                   <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
                     Hours: {selectedFilterDoctor.work_start_time.slice(0, 5)}-{selectedFilterDoctor.work_end_time.slice(0, 5)}
@@ -2413,6 +2620,24 @@ export default function AppointmentsPage() {
                 />
               </label>
 
+              <label className="block space-y-2">
+                <span className="text-sm text-gray-700">Follow-up in days</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={consultationForm.followUpInDays}
+                  onChange={(e) =>
+                    setConsultationForm((prev) => ({
+                      ...prev,
+                      followUpInDays: e.target.value.replace(/\D/g, "").slice(0, 3)
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  placeholder="3"
+                />
+              </label>
+
               <label className="block space-y-2 md:col-span-2">
                 <span className="text-sm text-gray-700">Clinical Notes</span>
                 <textarea
@@ -2463,6 +2688,60 @@ export default function AppointmentsPage() {
             </div>
 
             <div className="space-y-4 p-6">
+              {(() => {
+                const reminderWindow = getAppointmentReminderWindow(selectedAppointment.appointment_date);
+                const canSendAppointmentReminder = !["completed", "cancelled", "no-show"].includes(
+                  (selectedAppointment.status || "").toLowerCase()
+                );
+
+                if (!canSendAppointmentReminder) {
+                  return null;
+                }
+
+                return (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.14em] text-sky-700">Appointment Reminder</p>
+                        <p className="mt-1 text-sm text-sky-900">
+                          Use WhatsApp for 3-day, 1-day, same-day, or manual appointment reminders.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void sendAppointmentReminder()}
+                        disabled={isSendingAppointmentReminder}
+                        className="rounded-lg border border-sky-200 bg-white px-4 py-2 text-sm text-sky-700 hover:bg-sky-100 disabled:opacity-60"
+                      >
+                        {isSendingAppointmentReminder ? "Opening..." : "Send Appointment Reminder"}
+                      </button>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div>
+                        <p className="text-xs text-sky-700">Current Window</p>
+                        <p className="mt-1 text-sm text-sky-950">{reminderWindow.label}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-sky-700">Patient Phone</p>
+                        <p className="mt-1 text-sm text-sky-950">{selectedAppointment.mobile_number || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-sky-700">3-Day Sent</p>
+                        <p className="mt-1 text-sm text-sky-950">{formatTimestamp(selectedAppointment.reminder_3d_sent_at)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-sky-700">1-Day Sent</p>
+                        <p className="mt-1 text-sm text-sky-950">{formatTimestamp(selectedAppointment.reminder_1d_sent_at)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-sky-700">Same-Day Sent</p>
+                        <p className="mt-1 text-sm text-sky-950">{formatTimestamp(selectedAppointment.reminder_same_day_sent_at)}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-xl bg-gray-50 p-4">
                   <p className="text-xs uppercase tracking-[0.14em] text-gray-500">When</p>
@@ -2522,7 +2801,27 @@ export default function AppointmentsPage() {
                       <p className="text-xs text-emerald-700">Prescription</p>
                       <p className="mt-1 text-sm text-emerald-950 whitespace-pre-wrap">{selectedConsultationRecord.prescription || "-"}</p>
                     </div>
+                    <div>
+                      <p className="text-xs text-emerald-700">Follow-up Date</p>
+                      <p className="mt-1 text-sm text-emerald-950">{selectedConsultationRecord.follow_up_date || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-emerald-700">Reminder Status</p>
+                      <p className="mt-1 text-sm text-emerald-950">{selectedConsultationRecord.follow_up_reminder_status || "pending"}</p>
+                    </div>
                   </div>
+                  {selectedConsultationRecord.follow_up_date && (
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => void sendFollowUpReminder()}
+                        disabled={isSendingReminder}
+                        className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                      >
+                        {isSendingReminder ? "Opening..." : "Send Reminder"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2652,4 +2951,3 @@ export default function AppointmentsPage() {
     </div>
   );
 }
-

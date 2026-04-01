@@ -26,6 +26,15 @@ const uploadMedicalRecordAttachment = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, message: "Attachment uploaded", data });
 });
 
+const sendFollowUpReminder = asyncHandler(async (req, res) => {
+  const data = await medicalRecordsService.sendMedicalRecordFollowUpReminder(
+    req.user.organizationId,
+    req.params.id,
+    req.user
+  );
+  res.json({ success: true, message: "WhatsApp reminder sent", data });
+});
+
 const deleteMedicalRecord = asyncHandler(async (req, res) => {
   await medicalRecordsService.deleteMedicalRecord(req.user.organizationId, req.params.id);
   res.json({ success: true, message: "Medical record deleted" });
@@ -37,5 +46,6 @@ module.exports = {
   getMedicalRecord,
   updateMedicalRecord,
   uploadMedicalRecordAttachment,
+  sendFollowUpReminder,
   deleteMedicalRecord
 };

@@ -221,11 +221,16 @@ const appointmentsSchemas = {
       symptoms: optional(stringRule({ maxLength: 2000 })),
       diagnosis: optional(stringRule({ maxLength: 2000 })),
       prescription: optional(stringRule({ maxLength: 2000 })),
-      notes: optional(stringRule({ maxLength: 2000 }))
+      notes: optional(stringRule({ maxLength: 2000 })),
+      followUpDate: optional(dateRule()),
+      followUpInDays: optional(integerRule({ min: 1, max: 365, coerceString: true }))
     },
     requireAtLeastOne: true
   },
   idParams: idParamsSchema,
+  sendReminderBody: {
+    fields: {}
+  },
   bulkCancelBody: {
     fields: {
       appointmentDate: dateRule(),
@@ -271,12 +276,16 @@ const medicalRecordsSchemas = {
       symptoms: optional(stringRule({ maxLength: 2000 })),
       diagnosis: optional(stringRule({ maxLength: 2000 })),
       prescription: optional(stringRule({ maxLength: 2000 })),
+      followUpDate: optional(dateRule()),
       notes: optional(stringRule({ maxLength: 2000 })),
       fileUrl: optional(medicalRecordFileUrlRule)
     },
     requireAtLeastOne: true
   },
-  idParams: idParamsSchema
+  idParams: idParamsSchema,
+  sendFollowUpReminderBody: {
+    fields: {}
+  }
 };
 
 const billingsSchemas = {
@@ -343,6 +352,15 @@ const dashboardSchemas = {
   }
 };
 
+const aiSchemas = {
+  askAssistantBody: {
+    fields: {
+      message: stringRule({ minLength: 2, maxLength: 4000, safe: false }),
+      patientId: optional(uuidRule())
+    }
+  }
+};
+
 const publicSchemas = {
   submitLeadBody: {
     fields: {
@@ -364,5 +382,6 @@ module.exports = {
   medicalRecordsSchemas,
   billingsSchemas,
   dashboardSchemas,
+  aiSchemas,
   publicSchemas
 };

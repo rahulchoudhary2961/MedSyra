@@ -123,7 +123,9 @@ const getPatientProfile = async (organizationId, id) => {
       a.id,
       a.appointment_date::text AS appointment_date,
       a.appointment_time,
+      a.category,
       a.status,
+      a.planned_procedures,
       a.notes,
       a.doctor_id,
       d.full_name AS doctor_name
@@ -134,6 +136,27 @@ const getPatientProfile = async (organizationId, id) => {
     WHERE a.organization_id = $1
       AND a.patient_id = $2
     ORDER BY a.appointment_date DESC, a.appointment_time DESC
+    `,
+    [organizationId, id]
+  );
+  const medicalRecordsPromise = pool.query(
+    `
+    SELECT
+      mr.id,
+      mr.appointment_id,
+      mr.record_date::text AS record_date,
+      mr.record_type,
+      mr.status,
+      mr.diagnosis,
+      mr.prescription,
+      mr.follow_up_date,
+      mr.follow_up_reminder_status,
+      mr.follow_up_reminder_sent_at,
+      mr.notes
+    FROM medical_records mr
+    WHERE mr.organization_id = $1
+      AND mr.patient_id = $2
+    ORDER BY mr.record_date DESC, mr.created_at DESC
     `,
     [organizationId, id]
   );
@@ -174,9 +197,10 @@ const getPatientProfile = async (organizationId, id) => {
     [organizationId, id]
   );
 
-  const [patient, appointmentsRes, invoicesRes, summaryRes] = await Promise.all([
+  const [patient, appointmentsRes, medicalRecordsRes, invoicesRes, summaryRes] = await Promise.all([
     patientPromise,
     appointmentsPromise,
+    medicalRecordsPromise,
     invoicesPromise,
     summaryPromise
   ]);
@@ -184,6 +208,7 @@ const getPatientProfile = async (organizationId, id) => {
   return {
     patient,
     visits: appointmentsRes.rows,
+    medicalRecords: medicalRecordsRes.rows,
     invoices: invoicesRes.rows,
     summary: summaryRes.rows[0] || {
       total_visits: 0,

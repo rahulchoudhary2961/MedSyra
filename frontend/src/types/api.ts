@@ -1,6 +1,7 @@
 export interface AuthUser {
   id: string;
   organization_id: string;
+  organization_name?: string;
   full_name: string;
   email: string;
   phone: string;
@@ -61,6 +62,9 @@ export interface Appointment {
   duration_minutes: number;
   planned_procedures: string | null;
   notes: string | null;
+  reminder_3d_sent_at?: string | null;
+  reminder_1d_sent_at?: string | null;
+  reminder_same_day_sent_at?: string | null;
   invoice_id?: string | null;
   invoice_status?: string | null;
 }
@@ -78,6 +82,11 @@ export interface MedicalRecord {
   symptoms?: string | null;
   diagnosis?: string | null;
   prescription?: string | null;
+  follow_up_date?: string | null;
+  follow_up_reminder_status?: string | null;
+  follow_up_reminder_sent_at?: string | null;
+  follow_up_reminder_error?: string | null;
+  follow_up_reminder_last_attempt_at?: string | null;
   notes: string | null;
   file_url?: string | null;
   created_at?: string;
@@ -125,4 +134,9 @@ export interface InvoiceItem {
   quantity: number;
   unit_price: number;
   total_amount: number;
+}
+
+export interface SmartSummaryItem {
+  label: string;
+  value: string;
 }

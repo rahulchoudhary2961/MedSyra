@@ -30,6 +30,12 @@ router.post(
   validateRequest({ params: appointmentsSchemas.idParams, body: appointmentsSchemas.completeConsultationBody }),
   controller.completeConsultation
 );
+router.post(
+  "/:id/send-reminder",
+  authorizeRoles("full_access", "reception_access", "doctor"),
+  validateRequest({ params: appointmentsSchemas.idParams, body: appointmentsSchemas.sendReminderBody }),
+  controller.sendAppointmentReminder
+);
 router.patch(
   "/:id",
   authorizeRoles("full_access", "reception_access", "doctor"),

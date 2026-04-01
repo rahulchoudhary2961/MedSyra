@@ -9,7 +9,8 @@
     "migrate": "node src/scripts/migrate.js",
     "seed": "node src/scripts/seed.js",
     "db:reset": "node src/scripts/reset-db.js",
-    "lint": "node src/scripts/lint.js"
+    "lint": "node src/scripts/lint.js",
+    "reminders:send": "node src/scripts/send-follow-up-reminders.js"
   },
   "keywords": [
     "healthcare",

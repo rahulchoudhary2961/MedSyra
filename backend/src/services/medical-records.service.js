@@ -4,10 +4,46 @@ const patientsModel = require("../models/patients.model");
 const doctorsModel = require("../models/doctors.model");
 const cache = require("../utils/cache");
 const { saveMedicalRecordAttachment } = require("../utils/file-storage");
+const { sendFollowUpReminder } = require("./whatsapp-reminder.service");
 
 const listCachePrefix = (organizationId) => `medical-records:list:${organizationId}:`;
 const invalidateMedicalRecordCaches = async (organizationId) => {
-  await cache.invalidateByPrefix(listCachePrefix(organizationId));
+  await Promise.all([
+    cache.invalidateByPrefix(listCachePrefix(organizationId)),
+    cache.invalidateByPrefix(`dashboard:summary:${organizationId}`),
+    cache.invalidateByPrefix(`dashboard:reports:${organizationId}`)
+  ]);
+};
+
+const toDateKey = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("-");
+};
+
+const deriveFollowUpDate = (payload, baseDateValue) => {
+  if (payload.followUpDate) {
+    return payload.followUpDate;
+  }
+
+  if (!payload.followUpInDays) {
+    return undefined;
+  }
+
+  const baseDate = new Date(`${baseDateValue}T00:00:00Z`);
+  if (Number.isNaN(baseDate.getTime())) {
+    return undefined;
+  }
+
+  baseDate.setUTCDate(baseDate.getUTCDate() + Number(payload.followUpInDays));
+  return toDateKey(baseDate);
 };
 
 const listMedicalRecords = async (organizationId, query, actor = null) => {
@@ -64,7 +100,8 @@ const createMedicalRecord = async (organizationId, payload, actor = null) => {
   const allowedDoctorId = await ensureMedicalRecordAccess(organizationId, actor, payload.doctorId);
   const normalizedPayload = {
     ...payload,
-    doctorId: allowedDoctorId || payload.doctorId
+    doctorId: allowedDoctorId || payload.doctorId,
+    followUpDate: deriveFollowUpDate(payload, payload.recordDate)
   };
 
   const [patient, doctor] = await Promise.all([
@@ -120,13 +157,18 @@ const updateMedicalRecord = async (organizationId, id, payload, actor = null) =>
         symptoms: payload.symptoms,
         diagnosis: payload.diagnosis,
         prescription: payload.prescription,
+        followUpDate: payload.followUpDate,
         notes: payload.notes,
         status: payload.status
       }
     : {
         ...payload,
-        doctorId: allowedDoctorId || payload.doctorId
+      doctorId: allowedDoctorId || payload.doctorId
       };
+
+  if (!("followUpDate" in normalizedPayload) && "followUpInDays" in payload) {
+    normalizedPayload.followUpDate = deriveFollowUpDate(payload, current.record_date);
+  }
 
   if (normalizedPayload.patientId || normalizedPayload.doctorId) {
     const [patient, doctor] = await Promise.all([
@@ -193,6 +235,10 @@ const upsertAppointmentConsultationRecord = async (organizationId, payload) => {
       symptoms: payload.symptoms,
       diagnosis: payload.diagnosis,
       prescription: payload.prescription,
+      followUpDate:
+        payload.followUpDate !== undefined
+          ? payload.followUpDate
+          : deriveFollowUpDate(payload, payload.recordDate || existing.record_date) ?? existing.follow_up_date,
       notes: payload.notes
     });
     await invalidateMedicalRecordCaches(organizationId);
@@ -204,6 +250,81 @@ const upsertAppointmentConsultationRecord = async (organizationId, payload) => {
   return created;
 };
 
+const sendMedicalRecordFollowUpReminder = async (organizationId, id, actor = null) => {
+  const record = await getMedicalRecordById(organizationId, id, actor);
+  const reminderContext = await medicalRecordsRepository.getMedicalRecordReminderContext(organizationId, id);
+  if (!reminderContext) {
+    throw new ApiError(404, "Medical record reminder context not found");
+  }
+
+  if (!record.follow_up_date) {
+    throw new ApiError(400, "No follow-up date saved for this medical record");
+  }
+
+  const result = await sendFollowUpReminder({
+    patientPhone: reminderContext.patient_phone,
+    patientName: reminderContext.patient_name,
+    clinicName: reminderContext.clinic_name,
+    doctorName: record.doctor_name || "Doctor"
+  });
+
+  const updated = await medicalRecordsRepository.updateMedicalRecord(organizationId, id, {
+    followUpReminderStatus: "sent",
+    followUpReminderSentAt: new Date().toISOString(),
+    followUpReminderLastAttemptAt: new Date().toISOString(),
+    followUpReminderError: null
+  });
+
+  await invalidateMedicalRecordCaches(organizationId);
+
+  return {
+    record: updated,
+    reminder: result
+  };
+};
+
+const processDueFollowUpReminders = async (organizationId = null) => {
+  const records = await medicalRecordsRepository.listDueFollowUpReminders(organizationId);
+  const results = [];
+
+  for (const record of records) {
+    try {
+      const reminder = await sendFollowUpReminder({
+        patientPhone: record.patient_phone,
+        patientName: record.patient_name,
+        clinicName: record.clinic_name,
+        doctorName: record.doctor_name || "Doctor"
+      });
+
+      await medicalRecordsRepository.updateMedicalRecord(record.organization_id || organizationId, record.id, {
+        followUpReminderStatus: "sent",
+        followUpReminderSentAt: new Date().toISOString(),
+        followUpReminderLastAttemptAt: new Date().toISOString(),
+        followUpReminderError: null
+      });
+
+      if (record.organization_id || organizationId) {
+        await invalidateMedicalRecordCaches(record.organization_id || organizationId);
+      }
+
+      results.push({ id: record.id, status: "sent", reminder });
+    } catch (error) {
+      const targetOrganizationId = record.organization_id || organizationId;
+      if (targetOrganizationId) {
+        await medicalRecordsRepository.updateMedicalRecord(targetOrganizationId, record.id, {
+          followUpReminderStatus: "failed",
+          followUpReminderLastAttemptAt: new Date().toISOString(),
+          followUpReminderError: error.message
+        });
+        await invalidateMedicalRecordCaches(targetOrganizationId);
+      }
+      results.push({ id: record.id, status: "failed", error: error.message });
+    }
+  }
+
+  return results;
+};
+
 module.exports = {
   listMedicalRecords,
   createMedicalRecord,
@@ -213,5 +334,7 @@ module.exports = {
   uploadMedicalRecordAttachment,
   createAppointmentRecordIfMissing,
   upsertAppointmentConsultationRecord,
-  ensureMedicalRecordAccess
+  ensureMedicalRecordAccess,
+  sendMedicalRecordFollowUpReminder,
+  processDueFollowUpReminders
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle, Clock, Download, IndianRupee, Plus, TrendingUp } from "lucide-react";
 import { apiRequest } from "@/lib/api";
@@ -58,6 +59,8 @@ const statusClass = (status: string) => {
 };
 
 export default function BillingsPage() {
+  const searchParams = useSearchParams();
+  const patientFilterId = searchParams.get("patientId") || "";
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -93,6 +96,7 @@ export default function BillingsPage() {
     params.set("limit", "100");
     if (appliedSearch.trim()) params.set("q", appliedSearch.trim());
     if (appliedStatusFilter) params.set("status", appliedStatusFilter);
+    if (patientFilterId) params.set("patientId", patientFilterId);
 
     apiRequest<BillingsResponse>(`/billings?${params.toString()}`, { authenticated: true })
       .then((billingRes) => {
@@ -111,7 +115,7 @@ export default function BillingsPage() {
       })
       .catch((err: Error) => setError(err.message || "Failed to load billing data"))
       .finally(() => setLoading(false));
-  }, [appliedSearch, appliedStatusFilter]);
+  }, [appliedSearch, appliedStatusFilter, patientFilterId]);
 
   const loadMetadata = useCallback(() => {
     Promise.all([
@@ -159,8 +163,13 @@ export default function BillingsPage() {
       (invoice) =>
         invoice.invoice_number.toLowerCase().includes(query) ||
         (invoice.patient_name || "").toLowerCase().includes(query)
-    );
+      );
   }, [invoices, search]);
+
+  const selectedPatient = useMemo(
+    () => patients.find((patient) => patient.id === patientFilterId) || null,
+    [patientFilterId, patients]
+  );
 
   if (currentRole && !canAccessBilling(currentRole)) {
     return <p className="text-red-600">You do not have access to billing.</p>;
@@ -301,7 +310,13 @@ export default function BillingsPage() {
           <p className="text-gray-600 mt-1">Manage invoices and payment records</p>
         </div>
         <button
-          onClick={() => setShowCreate(true)}
+          onClick={() => {
+            setInvoiceForm({
+              ...initialInvoiceForm,
+              patientId: patientFilterId
+            });
+            setShowCreate(true);
+          }}
           className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
         >
           <Plus className="w-4 h-4" />
@@ -309,11 +324,28 @@ export default function BillingsPage() {
         </button>
       </div>
 
+      {patientFilterId && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Patient Filter</p>
+            <p className="mt-1 text-sm text-emerald-900">
+              Showing billing for {selectedPatient?.full_name || "the selected patient"}.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/billings"
+            className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-100"
+          >
+            Clear Filter
+          </Link>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl p-6 border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Total Revenue</p>
+              <p className="text-sm text-gray-600">{patientFilterId ? "Patient Revenue" : "Total Revenue"}</p>
               <p className="text-2xl mt-2 text-gray-900">{formatRupee(stats.totalRevenue)}</p>
             </div>
             <div className="w-12 h-12 bg-green-50 text-green-600 rounded-lg flex items-center justify-center">
@@ -324,7 +356,7 @@ export default function BillingsPage() {
         <div className="bg-white rounded-xl p-6 border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Paid Invoices</p>
+              <p className="text-sm text-gray-600">{patientFilterId ? "Paid Bills" : "Paid Invoices"}</p>
               <p className="text-2xl mt-2 text-gray-900">{stats.paidInvoices}</p>
             </div>
             <div className="w-12 h-12 bg-teal-50 text-teal-600 rounded-lg flex items-center justify-center">
@@ -335,7 +367,7 @@ export default function BillingsPage() {
         <div className="bg-white rounded-xl p-6 border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Pending</p>
+              <p className="text-sm text-gray-600">{patientFilterId ? "Pending Bills" : "Pending"}</p>
               <p className="text-2xl mt-2 text-gray-900">{stats.pendingInvoices}</p>
             </div>
             <div className="w-12 h-12 bg-yellow-50 text-yellow-600 rounded-lg flex items-center justify-center">
@@ -346,7 +378,7 @@ export default function BillingsPage() {
         <div className="bg-white rounded-xl p-6 border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Overdue</p>
+              <p className="text-sm text-gray-600">{patientFilterId ? "Overdue Bills" : "Overdue"}</p>
               <p className="text-2xl mt-2 text-gray-900">{stats.overdueInvoices}</p>
             </div>
             <div className="w-12 h-12 bg-red-50 text-red-600 rounded-lg flex items-center justify-center">

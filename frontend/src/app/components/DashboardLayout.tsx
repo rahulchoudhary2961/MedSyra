@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  Bot,
   Users,
   Calendar,
   UserRound,
@@ -16,7 +17,7 @@ import {
   Menu,
   LogOut
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { clearAuthToken, getAuthToken } from "@/lib/auth";
 import { canAccessBilling, canDeleteMedicalRecords, isFullAccessRole, isReceptionRole } from "@/lib/roles";
@@ -25,6 +26,7 @@ import BrandLogo from "./BrandLogo";
 
 const navigation = [
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+  { name: "AI Assistant", path: "/dashboard/assistant", icon: Bot },
   { name: "Patients", path: "/dashboard/patients", icon: Users },
   { name: "Calendar", path: "/dashboard/appointments", icon: Calendar },
   { name: "Doctors", path: "/dashboard/doctors", icon: UserRound },
@@ -73,6 +75,52 @@ type SearchDoctorsResponse = {
   };
 };
 
+type UpcomingAppointmentsResponse = {
+  success: boolean;
+  data: {
+    items: Array<{
+      id: string;
+      status: string;
+      appointment_date: string;
+      appointment_time: string;
+    }>;
+  };
+};
+
+const pad = (value: number) => String(value).padStart(2, "0");
+
+const toDateKey = (date: Date) =>
+  `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+const toMinutes = (value: string) => {
+  const [hours, minutes] = value.slice(0, 5).split(":").map(Number);
+  return hours * 60 + minutes;
+};
+
+const countUpcomingAppointments = (items: UpcomingAppointmentsResponse["data"]["items"]) => {
+  const now = new Date();
+  const todayKey = toDateKey(now);
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  return items.filter((appointment) => {
+    const status = (appointment.status || "").toLowerCase();
+    if (["completed", "cancelled", "no-show"].includes(status)) {
+      return false;
+    }
+
+    const appointmentDate = appointment.appointment_date.slice(0, 10);
+    if (appointmentDate !== todayKey) {
+      return false;
+    }
+
+    if (status === "checked-in") {
+      return true;
+    }
+
+    return toMinutes(appointment.appointment_time) >= currentMinutes;
+  }).length;
+};
+
 export default function DashboardLayout({
   children
 }: {
@@ -93,6 +141,7 @@ export default function DashboardLayout({
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [recentActivity, setRecentActivity] = useState<DashboardSummaryResponse["data"]["recentActivity"]>([]);
+  const [upcomingAppointmentsCount, setUpcomingAppointmentsCount] = useState(0);
   const searchRef = useRef<HTMLDivElement | null>(null);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
 
@@ -128,6 +177,21 @@ export default function DashboardLayout({
     clearAuthToken();
     router.replace("/auth/signin");
   };
+
+  const fetchUpcomingAppointmentsCount = useCallback(() => {
+    if (currentUser?.role !== "doctor") {
+      return;
+    }
+
+    const todayKey = toDateKey(new Date());
+    apiRequest<UpcomingAppointmentsResponse>(`/appointments?date=${todayKey}&limit=100`, { authenticated: true })
+      .then((response) => {
+        setUpcomingAppointmentsCount(countUpcomingAppointments(response.data.items || []));
+      })
+      .catch(() => {
+        setUpcomingAppointmentsCount(0);
+      });
+  }, [currentUser?.role]);
 
   useEffect(() => {
     const term = headerSearch.trim();
@@ -180,6 +244,34 @@ export default function DashboardLayout({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (currentUser?.role !== "doctor") {
+      return undefined;
+    }
+
+    const refresh = () => {
+      fetchUpcomingAppointmentsCount();
+    };
+
+    refresh();
+
+    const intervalId = window.setInterval(refresh, 60 * 1000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+      }
+    };
+
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [currentUser?.role, fetchUpcomingAppointmentsCount]);
+
   const openNotifications = () => {
     const nextOpen = !notificationsOpen;
     setNotificationsOpen(nextOpen);
@@ -211,7 +303,7 @@ export default function DashboardLayout({
     }
 
     if (currentUser?.role === "doctor") {
-      return ["/dashboard/patients", "/dashboard/appointments", "/dashboard/medical-records"].includes(item.path);
+      return ["/dashboard/assistant", "/dashboard/patients", "/dashboard/appointments", "/dashboard/medical-records"].includes(item.path);
     }
 
     if (item.path === "/dashboard/billings" || item.path === "/dashboard/reports") {
@@ -275,6 +367,11 @@ export default function DashboardLayout({
                     >
                       <Icon className="w-5 h-5" />
                       <span>{item.name}</span>
+                      {item.path === "/dashboard/appointments" && currentUser?.role === "doctor" && upcomingAppointmentsCount > 0 && (
+                        <span className="ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-emerald-500 px-2 py-0.5 text-xs font-medium text-white">
+                          {upcomingAppointmentsCount}
+                        </span>
+                      )}
                     </Link>
                   </li>
                 );

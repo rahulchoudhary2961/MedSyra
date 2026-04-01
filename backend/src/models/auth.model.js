@@ -24,10 +24,12 @@ const createUser = async ({
 
 const findUserByEmail = async (email) => {
   const query = `
-    SELECT id, organization_id, full_name, email, phone, role, password_hash,
+    SELECT u.id, u.organization_id, u.full_name, u.email, u.phone, u.role, u.password_hash,
+           o.name AS organization_name,
            email_verified_at, failed_login_attempts, locked_until, created_at
-    FROM users
-    WHERE LOWER(email) = LOWER($1)
+    FROM users u
+    JOIN organizations o ON o.id = u.organization_id
+    WHERE LOWER(u.email) = LOWER($1)
   `;
   const { rows } = await pool.query(query, [email]);
   return rows[0] || null;
@@ -35,9 +37,11 @@ const findUserByEmail = async (email) => {
 
 const findUserById = async (id) => {
   const query = `
-    SELECT id, organization_id, full_name, email, phone, role, email_verified_at, created_at
-    FROM users
-    WHERE id = $1
+    SELECT u.id, u.organization_id, u.full_name, u.email, u.phone, u.role, u.email_verified_at, u.created_at,
+           o.name AS organization_name
+    FROM users u
+    JOIN organizations o ON o.id = u.organization_id
+    WHERE u.id = $1
   `;
   const { rows } = await pool.query(query, [id]);
   return rows[0] || null;

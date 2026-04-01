@@ -74,35 +74,65 @@ const listInvoices = async (organizationId, query) => {
     WHERE ${where}
   `;
 
-  const statsSql = `
-    SELECT
-      COALESCE(SUM(total_amount), 0)::numeric(12,2) AS total_revenue,
-      COUNT(*) FILTER (WHERE status = 'paid')::int AS paid_invoices,
-      COUNT(*) FILTER (WHERE status IN ('issued', 'partially_paid'))::int AS pending_invoices,
-      COUNT(*) FILTER (WHERE status = 'overdue')::int AS overdue_invoices,
-      (
-        SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
-        FROM payments
-        WHERE organization_id = $1 AND status = 'completed' AND method = 'cash'
-      ) AS cash_total,
-      (
-        SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
-        FROM payments
-        WHERE organization_id = $1 AND status = 'completed' AND method = 'upi'
-      ) AS upi_total,
-      (
-        SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
-        FROM payments
-        WHERE organization_id = $1 AND status = 'completed' AND method = 'card'
-      ) AS card_total
-    FROM invoices
-    WHERE organization_id = $1
-  `;
+  const statsSql = query.patientId
+    ? `
+        SELECT
+          COALESCE(SUM(i.total_amount), 0)::numeric(12,2) AS total_revenue,
+          COUNT(*) FILTER (WHERE i.status = 'paid')::int AS paid_invoices,
+          COUNT(*) FILTER (WHERE i.status IN ('issued', 'partially_paid'))::int AS pending_invoices,
+          COUNT(*) FILTER (WHERE i.status = 'overdue')::int AS overdue_invoices,
+          (
+            SELECT COALESCE(SUM(pay.amount), 0)::numeric(12,2)
+            FROM payments pay
+            INNER JOIN invoices inv ON inv.id = pay.invoice_id AND inv.organization_id = pay.organization_id
+            WHERE pay.organization_id = $1 AND inv.patient_id = $2 AND pay.status = 'completed' AND pay.method = 'cash'
+          ) AS cash_total,
+          (
+            SELECT COALESCE(SUM(pay.amount), 0)::numeric(12,2)
+            FROM payments pay
+            INNER JOIN invoices inv ON inv.id = pay.invoice_id AND inv.organization_id = pay.organization_id
+            WHERE pay.organization_id = $1 AND inv.patient_id = $2 AND pay.status = 'completed' AND pay.method = 'upi'
+          ) AS upi_total,
+          (
+            SELECT COALESCE(SUM(pay.amount), 0)::numeric(12,2)
+            FROM payments pay
+            INNER JOIN invoices inv ON inv.id = pay.invoice_id AND inv.organization_id = pay.organization_id
+            WHERE pay.organization_id = $1 AND inv.patient_id = $2 AND pay.status = 'completed' AND pay.method = 'card'
+          ) AS card_total
+        FROM invoices i
+        WHERE i.organization_id = $1 AND i.patient_id = $2
+      `
+    : `
+        SELECT
+          COALESCE(SUM(total_amount), 0)::numeric(12,2) AS total_revenue,
+          COUNT(*) FILTER (WHERE status = 'paid')::int AS paid_invoices,
+          COUNT(*) FILTER (WHERE status IN ('issued', 'partially_paid'))::int AS pending_invoices,
+          COUNT(*) FILTER (WHERE status = 'overdue')::int AS overdue_invoices,
+          (
+            SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
+            FROM payments
+            WHERE organization_id = $1 AND status = 'completed' AND method = 'cash'
+          ) AS cash_total,
+          (
+            SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
+            FROM payments
+            WHERE organization_id = $1 AND status = 'completed' AND method = 'upi'
+          ) AS upi_total,
+          (
+            SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
+            FROM payments
+            WHERE organization_id = $1 AND status = 'completed' AND method = 'card'
+          ) AS card_total
+        FROM invoices
+        WHERE organization_id = $1
+      `;
+
+  const statsValues = query.patientId ? [organizationId, query.patientId] : [organizationId];
 
   const [rowsRes, countRes, statsRes] = await Promise.all([
     pool.query(querySql, values),
     pool.query(countSql, values.slice(0, values.length - 2)),
-    pool.query(statsSql, [organizationId])
+    pool.query(statsSql, statsValues)
   ]);
 
   return {
