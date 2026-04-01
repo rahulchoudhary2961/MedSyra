@@ -36,6 +36,12 @@ router.patch(
   validateRequest({ params: medicalRecordsSchemas.idParams, body: medicalRecordsSchemas.updateBody }),
   controller.updateMedicalRecord
 );
+router.post(
+  "/:id/send-follow-up-reminder",
+  authorizeRoles("full_access", "reception_access", "doctor"),
+  validateRequest({ params: medicalRecordsSchemas.idParams, body: medicalRecordsSchemas.sendFollowUpReminderBody }),
+  controller.sendFollowUpReminder
+);
 router.delete(
   "/:id",
   authorizeRoles("full_access"),

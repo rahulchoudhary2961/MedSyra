@@ -67,6 +67,9 @@ const listAppointments = async (organizationId, query) => {
       a.duration_minutes,
       a.planned_procedures,
       a.notes,
+      a.reminder_3d_sent_at,
+      a.reminder_1d_sent_at,
+      a.reminder_same_day_sent_at,
       a.created_at,
       a.updated_at
     FROM appointments a
@@ -138,6 +141,9 @@ const createAppointment = async (organizationId, payload) => {
       duration_minutes,
       planned_procedures,
       notes,
+      reminder_3d_sent_at,
+      reminder_1d_sent_at,
+      reminder_same_day_sent_at,
       created_at,
       updated_at
   `;
@@ -185,6 +191,9 @@ const getAppointmentById = async (organizationId, id) => {
       a.duration_minutes,
       a.planned_procedures,
       a.notes,
+      a.reminder_3d_sent_at,
+      a.reminder_1d_sent_at,
+      a.reminder_same_day_sent_at,
       a.created_at,
       a.updated_at
     FROM appointments a
@@ -263,6 +272,9 @@ const updateAppointment = async (organizationId, id, payload) => {
       duration_minutes,
       planned_procedures,
       notes,
+      reminder_3d_sent_at,
+      reminder_1d_sent_at,
+      reminder_same_day_sent_at,
       created_at,
       updated_at
   `;
@@ -326,10 +338,73 @@ const bulkCancelAppointments = async (organizationId, payload) => {
   return rows.length;
 };
 
+const getAppointmentReminderContext = async (organizationId, id) => {
+  const query = `
+    SELECT
+      a.id,
+      a.organization_id,
+      a.title,
+      a.patient_id,
+      a.patient_name,
+      a.mobile_number,
+      a.status,
+      a.appointment_date::text AS appointment_date,
+      a.appointment_time,
+      a.reminder_3d_sent_at,
+      a.reminder_1d_sent_at,
+      a.reminder_same_day_sent_at,
+      p.phone AS patient_phone,
+      d.full_name AS doctor_name,
+      o.name AS clinic_name
+    FROM appointments a
+    LEFT JOIN patients p
+      ON p.id = a.patient_id
+     AND p.organization_id = a.organization_id
+    LEFT JOIN doctors d
+      ON d.id = a.doctor_id
+     AND d.organization_id = a.organization_id
+    JOIN organizations o
+      ON o.id = a.organization_id
+    WHERE a.organization_id = $1 AND a.id = $2
+  `;
+
+  const { rows } = await pool.query(query, [organizationId, id]);
+  return rows[0] || null;
+};
+
+const markAppointmentReminderSent = async (organizationId, id, stage) => {
+  const columnMap = {
+    three_day: "reminder_3d_sent_at",
+    one_day: "reminder_1d_sent_at",
+    same_day: "reminder_same_day_sent_at"
+  };
+
+  const column = columnMap[stage];
+  if (!column) {
+    return getAppointmentById(organizationId, id);
+  }
+
+  const query = `
+    UPDATE appointments
+    SET ${column} = NOW(), updated_at = NOW()
+    WHERE organization_id = $1 AND id = $2
+    RETURNING id
+  `;
+
+  const { rows } = await pool.query(query, [organizationId, id]);
+  if (!rows[0]) {
+    return null;
+  }
+
+  return getAppointmentById(organizationId, id);
+};
+
 module.exports = {
   listAppointments,
   createAppointment,
   getAppointmentById,
+  getAppointmentReminderContext,
+  markAppointmentReminderSent,
   findDoctorConflicts,
   updateAppointment,
   deleteAppointment,

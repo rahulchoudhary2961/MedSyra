@@ -49,6 +49,11 @@ const listMedicalRecords = async (organizationId, query) => {
       mr.symptoms,
       mr.diagnosis,
       mr.prescription,
+      mr.follow_up_date,
+      mr.follow_up_reminder_status,
+      mr.follow_up_reminder_sent_at,
+      mr.follow_up_reminder_error,
+      mr.follow_up_reminder_last_attempt_at,
       mr.notes,
       mr.file_url,
       mr.created_at,
@@ -88,10 +93,14 @@ const createMedicalRecord = async (organizationId, payload) => {
   const query = `
     INSERT INTO medical_records (
       organization_id, patient_id, doctor_id, record_type,
-      appointment_id, status, record_date, symptoms, diagnosis, prescription, notes, file_url
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      appointment_id, status, record_date, symptoms, diagnosis, prescription,
+      follow_up_date, follow_up_reminder_status, follow_up_reminder_sent_at,
+      follow_up_reminder_error, follow_up_reminder_last_attempt_at, notes, file_url
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
     RETURNING id, appointment_id, patient_id, doctor_id, record_type, status,
-              record_date, symptoms, diagnosis, prescription, notes, file_url, created_at, updated_at
+              record_date, symptoms, diagnosis, prescription, follow_up_date,
+              follow_up_reminder_status, follow_up_reminder_sent_at, follow_up_reminder_error,
+              follow_up_reminder_last_attempt_at, notes, file_url, created_at, updated_at
   `;
 
   const values = [
@@ -105,6 +114,11 @@ const createMedicalRecord = async (organizationId, payload) => {
     payload.symptoms || null,
     payload.diagnosis || null,
     payload.prescription || null,
+    payload.followUpDate || null,
+    payload.followUpReminderStatus || "pending",
+    payload.followUpReminderSentAt || null,
+    payload.followUpReminderError || null,
+    payload.followUpReminderLastAttemptAt || null,
     payload.notes || null,
     payload.fileUrl || null
   ];
@@ -128,6 +142,11 @@ const getMedicalRecordById = async (organizationId, id) => {
       mr.symptoms,
       mr.diagnosis,
       mr.prescription,
+      mr.follow_up_date,
+      mr.follow_up_reminder_status,
+      mr.follow_up_reminder_sent_at,
+      mr.follow_up_reminder_error,
+      mr.follow_up_reminder_last_attempt_at,
       mr.notes,
       mr.file_url,
       mr.created_at,
@@ -168,6 +187,11 @@ const updateMedicalRecord = async (organizationId, id, payload) => {
     symptoms: "symptoms",
     diagnosis: "diagnosis",
     prescription: "prescription",
+    followUpDate: "follow_up_date",
+    followUpReminderStatus: "follow_up_reminder_status",
+    followUpReminderSentAt: "follow_up_reminder_sent_at",
+    followUpReminderError: "follow_up_reminder_error",
+    followUpReminderLastAttemptAt: "follow_up_reminder_last_attempt_at",
     notes: "notes",
     fileUrl: "file_url"
   };
@@ -193,7 +217,9 @@ const updateMedicalRecord = async (organizationId, id, payload) => {
     SET ${setClauses.join(", ")}, updated_at = NOW()
     WHERE organization_id = $1 AND id = $2
     RETURNING id, appointment_id, patient_id, doctor_id, record_type, status, record_date,
-              symptoms, diagnosis, prescription, notes, file_url, created_at, updated_at
+              symptoms, diagnosis, prescription, follow_up_date, follow_up_reminder_status,
+              follow_up_reminder_sent_at, follow_up_reminder_error, follow_up_reminder_last_attempt_at,
+              notes, file_url, created_at, updated_at
   `;
 
   const { rows } = await pool.query(query, values);
@@ -214,11 +240,80 @@ const deleteMedicalRecord = async (organizationId, id) => {
   return rows[0] || null;
 };
 
+const getMedicalRecordReminderContext = async (organizationId, id) => {
+  const query = `
+    SELECT
+      mr.id,
+      mr.organization_id,
+      mr.follow_up_date,
+      p.full_name AS patient_name,
+      p.phone AS patient_phone,
+      d.full_name AS doctor_name,
+      o.name AS clinic_name
+    FROM medical_records mr
+    JOIN patients p
+      ON p.id = mr.patient_id
+     AND p.organization_id = mr.organization_id
+    LEFT JOIN doctors d
+      ON d.id = mr.doctor_id
+     AND d.organization_id = mr.organization_id
+    JOIN organizations o
+      ON o.id = mr.organization_id
+    WHERE mr.organization_id = $1 AND mr.id = $2
+  `;
+
+  const { rows } = await pool.query(query, [organizationId, id]);
+  return rows[0] || null;
+};
+
+const listDueFollowUpReminders = async (organizationId = null) => {
+  const values = [];
+  const conditions = [
+    "mr.follow_up_date IS NOT NULL",
+    "mr.follow_up_date <= CURRENT_DATE + INTERVAL '1 day'",
+    "mr.follow_up_reminder_status <> 'sent'"
+  ];
+
+  if (organizationId) {
+    values.push(organizationId);
+    conditions.push(`mr.organization_id = $${values.length}`);
+  }
+
+  const query = `
+    SELECT
+      mr.id,
+      mr.organization_id,
+      mr.patient_id,
+      p.full_name AS patient_name,
+      p.phone AS patient_phone,
+      d.full_name AS doctor_name,
+      o.name AS clinic_name,
+      mr.follow_up_date,
+      mr.follow_up_reminder_status
+    FROM medical_records mr
+    JOIN patients p
+      ON p.id = mr.patient_id
+     AND p.organization_id = mr.organization_id
+    LEFT JOIN doctors d
+      ON d.id = mr.doctor_id
+     AND d.organization_id = mr.organization_id
+    JOIN organizations o
+      ON o.id = mr.organization_id
+    WHERE ${conditions.join(" AND ")}
+    ORDER BY mr.follow_up_date ASC, mr.created_at ASC
+  `;
+
+  const { rows } = await pool.query(query, values);
+  return rows;
+};
+
 module.exports = {
   listMedicalRecords,
   createMedicalRecord,
   getMedicalRecordById,
   getMedicalRecordByAppointmentId,
+  getMedicalRecordReminderContext,
   updateMedicalRecord,
-  deleteMedicalRecord
+  deleteMedicalRecord,
+  listDueFollowUpReminders
 };

@@ -26,9 +26,10 @@ const listInvoices = async (organizationId, query) => {
   const limit = Number.parseInt(query.limit, 10) || 10;
   const q = query.q || "";
   const status = query.status || "";
+  const patientId = query.patientId || "";
   const cacheKey =
     `${listCachePrefix(organizationId)}` +
-    `page=${page}:limit=${limit}:q=${q.toLowerCase()}:status=${status.toLowerCase()}`;
+    `page=${page}:limit=${limit}:q=${q.toLowerCase()}:status=${status.toLowerCase()}:patientId=${patientId}`;
 
   const cached = await cache.get(cacheKey);
   if (cached) {

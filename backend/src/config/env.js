@@ -54,7 +54,13 @@ const env = {
   passwordResetTokenMinutes: Number(process.env.PASSWORD_RESET_TOKEN_MINUTES || 30),
   leadsEmailTo: process.env.LEADS_EMAIL_TO || "",
   resendApiKey: process.env.RESEND_API_KEY || "",
-  resendFromEmail: process.env.RESEND_FROM_EMAIL || ""
+  resendFromEmail: process.env.RESEND_FROM_EMAIL || "",
+  nvidiaApiKey: process.env.NVIDIA_API_KEY || "",
+  nvidiaBaseUrl: process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1",
+  nvidiaModel: process.env.NVIDIA_MODEL || "openai/gpt-oss-120b",
+  ycloudApiKey: process.env.YCLOUD_API_KEY || "",
+  ycloudWhatsappFrom: process.env.YCLOUD_WHATSAPP_FROM || "",
+  whatsappReminderEnabled: parseBoolean(process.env.WHATSAPP_REMINDER_ENABLED, false)
 };
 
 const weakJwtSecret = env.jwtSecret.length < 32 || env.jwtSecret.toLowerCase().includes("change-this-secret");

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Edit2, Eye, Plus, Search, Trash2 } from "lucide-react";
 import { apiRequest, ApiRequestError } from "@/lib/api";
+import { isUuid } from "@/lib/uuid";
 import { Patient } from "@/types/api";
 
 type PatientsResponse = {
@@ -290,7 +291,12 @@ export default function PatientsPage() {
   };
 
   const handleViewPatient = async (patient: Patient) => {
-    router.push(`/dashboard/patients/${patient.id}`);
+    if (!isUuid(patient.id)) {
+      setError("This patient record has an invalid id and cannot be opened.");
+      return;
+    }
+
+    router.push(`/dashboard/patients/${encodeURIComponent(patient.id)}`);
   };
 
   const handleEditPatient = (patient: Patient) => {

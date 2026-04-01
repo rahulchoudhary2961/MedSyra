@@ -7,6 +7,7 @@ const medicalRecordsRoutes = require("./medical-records.routes");
 const billingsRoutes = require("./billings.routes");
 const dashboardRoutes = require("./dashboard.routes");
 const leadsRoutes = require("./leads.routes");
+const aiRoutes = require("./ai.routes");
 const requireAuth = require("../middlewares/require-auth");
 const {
   protectedReadLimiter,
@@ -24,6 +25,6 @@ router.use("/appointments", requireAuth, protectedReadLimiter, protectedWriteLim
 router.use("/medical-records", requireAuth, protectedReadLimiter, protectedWriteLimiter, medicalRecordsRoutes);
 router.use("/billings", requireAuth, protectedReadLimiter, protectedWriteLimiter, billingsRoutes);
 router.use("/dashboard", requireAuth, protectedReadLimiter, dashboardRoutes);
-router.use("/ai", requireAuth, aiGenerationLimiter);
+router.use("/ai", requireAuth, aiGenerationLimiter, aiRoutes);
 
 module.exports = router;

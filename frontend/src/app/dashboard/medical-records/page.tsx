@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Eye, FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { canDeleteMedicalRecords, isFullAccessRole } from "@/lib/roles";
@@ -73,6 +75,8 @@ type MeResponse = {
 };
 
 export default function MedicalRecordsPage() {
+  const searchParams = useSearchParams();
+  const patientFilterId = searchParams.get("patientId") || "";
   const medicalRecordStatuses = ["completed", "pending review", "in progress"] as const;
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -114,7 +118,10 @@ export default function MedicalRecordsPage() {
   });
 
   const resetForm = () => {
-    setForm(initialForm);
+    setForm({
+      ...initialForm,
+      patientId: patientFilterId
+    });
     setEditingRecordId(null);
     setSelectedFile(null);
   };
@@ -144,15 +151,21 @@ export default function MedicalRecordsPage() {
       reader.readAsDataURL(file);
     });
 
-  const loadRecords = () => {
+  const loadRecords = useCallback(() => {
     setLoading(true);
-    apiRequest<MedicalRecordsResponse>("/medical-records?limit=100", { authenticated: true })
+    const params = new URLSearchParams();
+    params.set("limit", "100");
+    if (patientFilterId) {
+      params.set("patientId", patientFilterId);
+    }
+
+    apiRequest<MedicalRecordsResponse>(`/medical-records?${params.toString()}`, { authenticated: true })
       .then((recordsRes) => {
         setRecords(recordsRes.data.items || []);
       })
       .catch((err: Error) => setError(err.message || "Failed to load medical records"))
       .finally(() => setLoading(false));
-  };
+  }, [patientFilterId]);
 
   const loadMetadata = () => {
     Promise.all([
@@ -170,8 +183,16 @@ export default function MedicalRecordsPage() {
 
   useEffect(() => {
     loadMetadata();
-    loadRecords();
   }, []);
+
+  useEffect(() => {
+    loadRecords();
+  }, [loadRecords]);
+
+  const selectedPatient = useMemo(
+    () => patients.find((patient) => patient.id === patientFilterId) || null,
+    [patientFilterId, patients]
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -389,6 +410,23 @@ export default function MedicalRecordsPage() {
           </button>
         )}
       </div>
+
+      {patientFilterId && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Patient Filter</p>
+            <p className="mt-1 text-sm text-emerald-900">
+              Showing records for {selectedPatient?.full_name || "the selected patient"}.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/medical-records"
+            className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-100"
+          >
+            Clear Filter
+          </Link>
+        </div>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 

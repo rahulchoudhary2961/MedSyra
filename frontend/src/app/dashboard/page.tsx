@@ -6,6 +6,7 @@ import StatCard from "../components/StatCard";
 import RecentPatientsTable from "../components/RecentPatientsTable";
 import PatientActivityTimeline from "../components/PatientActivityTimeline";
 import { apiRequest, ApiRequestError } from "@/lib/api";
+import { isUuid } from "@/lib/uuid";
 import { ActivityLog, Patient } from "@/types/api";
 
 type DashboardResponse = {
@@ -16,6 +17,15 @@ type DashboardResponse = {
       todayRevenue: number;
       pendingPayments: number;
       noShows: number;
+    };
+    insights: {
+      patientsDidNotReturn: number;
+      mostCommonIssue: {
+        label: string;
+        count: number;
+      };
+      weeklyRevenue: number;
+      followUpsDueToday: number;
     };
     recentActivity: ActivityLog[];
   };
@@ -71,6 +81,15 @@ export default function Dashboard() {
     pendingPayments: 0,
     noShows: 0
   });
+  const [insights, setInsights] = useState({
+    patientsDidNotReturn: 0,
+    mostCommonIssue: {
+      label: "-",
+      count: 0
+    },
+    weeklyRevenue: 0,
+    followUpsDueToday: 0
+  });
   const [patients, setPatients] = useState<Patient[]>([]);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [viewPatient, setViewPatient] = useState<Patient | null>(null);
@@ -88,6 +107,7 @@ export default function Dashboard() {
     ])
       .then(([dashboardRes, patientsRes]) => {
         setStats(dashboardRes.data.stats);
+        setInsights(dashboardRes.data.insights);
         setActivities(dashboardRes.data.recentActivity || []);
         setPatients(patientsRes.data.items || []);
       })
@@ -103,6 +123,7 @@ export default function Dashboard() {
     ])
       .then(([dashboardRes, patientsRes]) => {
         setStats(dashboardRes.data.stats);
+        setInsights(dashboardRes.data.insights);
         setActivities(dashboardRes.data.recentActivity || []);
         setPatients(patientsRes.data.items || []);
       })
@@ -148,6 +169,11 @@ export default function Dashboard() {
   };
 
   const openViewPatient = async (patient: Patient) => {
+    if (!isUuid(patient.id)) {
+      setError("This patient record has an invalid id and cannot be opened.");
+      return;
+    }
+
     setViewPatient(patient);
     try {
       const response = await apiRequest<GetPatientResponse>(`/patients/${patient.id}`, {
@@ -243,6 +269,43 @@ export default function Dashboard() {
         <StatCard title="Pending Payments" value={String(stats.pendingPayments)} change="Open" trend="up" icon={FileText} color="emerald" />
         <StatCard title="No-shows" value={String(stats.noShows)} change="Today" trend="up" icon={UserRound} color="teal" />
       </div>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="theme-heading text-lg">Smart Insights</h2>
+          <p className="theme-copy mt-1">A compact view of return risk, trends, revenue, and due follow-ups.</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="theme-panel rounded-xl p-5">
+            <p className="text-sm theme-muted">Patients Didn&apos;t Return</p>
+            <p className="mt-2 text-2xl theme-heading">{insights.patientsDidNotReturn}</p>
+            <p className="mt-2 text-sm theme-copy">No visit in the last 30 days</p>
+          </div>
+
+          <div className="theme-panel rounded-xl p-5">
+            <p className="text-sm theme-muted">Most Common Issue</p>
+            <p className="mt-2 text-2xl theme-heading">{insights.mostCommonIssue.label}</p>
+            <p className="mt-2 text-sm theme-copy">
+              {insights.mostCommonIssue.count > 0
+                ? `${insights.mostCommonIssue.count} recent record${insights.mostCommonIssue.count === 1 ? "" : "s"}`
+                : "No diagnosis trend yet"}
+            </p>
+          </div>
+
+          <div className="theme-panel rounded-xl p-5">
+            <p className="text-sm theme-muted">This Week Revenue</p>
+            <p className="mt-2 text-2xl theme-heading">{formatRupee(insights.weeklyRevenue)}</p>
+            <p className="mt-2 text-sm theme-copy">Collected payments this week</p>
+          </div>
+
+          <div className="theme-panel rounded-xl p-5">
+            <p className="text-sm theme-muted">Follow-ups Due Today</p>
+            <p className="mt-2 text-2xl theme-heading">{insights.followUpsDueToday}</p>
+            <p className="mt-2 text-sm theme-copy">Based on saved follow-up dates</p>
+          </div>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">

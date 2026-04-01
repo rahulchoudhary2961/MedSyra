@@ -4,6 +4,19 @@ const getSummary = async (organizationId) => {
   const [metrics, activities] = await Promise.all([
     pool.query(
       `
+      WITH most_common_issue AS (
+        SELECT
+          MIN(TRIM(diagnosis)) AS issue_label,
+          COUNT(*)::int AS issue_count,
+          MAX(record_date) AS latest_record_date
+        FROM medical_records
+        WHERE organization_id = $1
+          AND diagnosis IS NOT NULL
+          AND BTRIM(diagnosis) <> ''
+        GROUP BY LOWER(TRIM(diagnosis))
+        ORDER BY issue_count DESC, latest_record_date DESC
+        LIMIT 1
+      )
       SELECT
         (SELECT COUNT(*)::int
          FROM appointments
@@ -23,7 +36,31 @@ const getSummary = async (organizationId) => {
          FROM appointments
          WHERE organization_id = $1
            AND appointment_date = CURRENT_DATE
-           AND status = 'no-show') AS no_shows
+           AND status = 'no-show') AS no_shows,
+        (SELECT COUNT(*)::int
+         FROM patients
+         WHERE organization_id = $1
+           AND is_active = true
+           AND last_visit_at IS NOT NULL
+           AND last_visit_at < CURRENT_DATE - INTERVAL '30 days') AS patients_did_not_return,
+        COALESCE((SELECT issue_label FROM most_common_issue), NULL) AS most_common_issue,
+        COALESCE((SELECT issue_count FROM most_common_issue), 0)::int AS most_common_issue_count,
+        (SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2)
+         FROM payments p
+         WHERE p.organization_id = $1
+           AND p.status = 'completed'
+           AND p.paid_at >= DATE_TRUNC('week', CURRENT_DATE::timestamp)
+           AND p.paid_at < DATE_TRUNC('week', CURRENT_DATE::timestamp) + INTERVAL '7 days') AS weekly_revenue,
+        (SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2)
+         FROM payments p
+         WHERE p.organization_id = $1
+           AND p.status = 'completed'
+           AND p.paid_at >= DATE_TRUNC('month', CURRENT_DATE::timestamp)
+           AND p.paid_at < DATE_TRUNC('month', CURRENT_DATE::timestamp) + INTERVAL '1 month') AS monthly_revenue,
+        (SELECT COUNT(*)::int
+         FROM medical_records
+         WHERE organization_id = $1
+           AND follow_up_date = CURRENT_DATE) AS follow_ups_due_today
       `,
       [organizationId]
     ),
@@ -43,6 +80,16 @@ const getSummary = async (organizationId) => {
       todayRevenue: Number(metrics.rows[0].today_revenue || 0),
       pendingPayments: Number(metrics.rows[0].pending_payments || 0),
       noShows: Number(metrics.rows[0].no_shows || 0)
+    },
+    insights: {
+      patientsDidNotReturn: Number(metrics.rows[0].patients_did_not_return || 0),
+      mostCommonIssue: {
+        label: metrics.rows[0].most_common_issue || "-",
+        count: Number(metrics.rows[0].most_common_issue_count || 0)
+      },
+      weeklyRevenue: Number(metrics.rows[0].weekly_revenue || 0),
+      monthlyRevenue: Number(metrics.rows[0].monthly_revenue || 0),
+      followUpsDueToday: Number(metrics.rows[0].follow_ups_due_today || 0)
     },
     recentActivity: activities.rows
   };
