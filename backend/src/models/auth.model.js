@@ -26,7 +26,7 @@ const findUserByEmail = async (email) => {
   const query = `
     SELECT u.id, u.organization_id, u.full_name, u.email, u.phone, u.role, u.password_hash,
            o.name AS organization_name,
-           email_verified_at, failed_login_attempts, locked_until, created_at
+           u.email_verified_at, u.failed_login_attempts, u.locked_until, u.created_at
     FROM users u
     JOIN organizations o ON o.id = u.organization_id
     WHERE LOWER(u.email) = LOWER($1)

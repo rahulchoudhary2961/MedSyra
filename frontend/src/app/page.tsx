@@ -5,11 +5,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
+  Bot,
+  BellRing,
   CalendarDays,
   CreditCard,
   ClipboardList,
   LayoutDashboard,
   CheckCircle2,
+  Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import BrandLogo from "./components/BrandLogo";
 import { getAuthToken } from "@/lib/auth";
@@ -20,6 +24,8 @@ const solutionItems = [
   "Billing",
   "Patient records",
   "Reports",
+  "WhatsApp reminders",
+  "AI assistant",
 ];
 
 const featureSections = [
@@ -60,14 +66,42 @@ const featureSections = [
       "Clinic reports",
     ],
   },
+  {
+    title: "AI Assistant",
+    icon: Bot,
+    points: [
+      "Ask clinic questions in plain English",
+      "Get answers from your real data",
+      "Patient-aware assistant context",
+    ],
+  },
+  {
+    title: "Reminders",
+    icon: BellRing,
+    points: [
+      "One-click WhatsApp reminders",
+      "Follow-up tracking",
+      "Appointment reminder flow",
+    ],
+  },
+  {
+    title: "Smart Insights",
+    icon: TrendingUp,
+    points: [
+      "Patients who did not return",
+      "Most common issue",
+      "Weekly and monthly revenue",
+    ],
+  },
 ];
 
 const flowSteps = [
   "Add patient",
   "Book appointment / walk-in",
   "Complete consultation",
+  "Send reminder",
   "Generate bill",
-  "View history",
+  "Ask AI assistant",
 ];
 
 const reasons = [
@@ -75,6 +109,29 @@ const reasons = [
   "No training required",
   "Saves time",
   "Works on any device",
+];
+
+const aiHighlights = [
+  {
+    title: "AI Patient Summary",
+    icon: Sparkles,
+    description: "Give doctors a quick view of last visit, recurring issue, follow-up status, and last prescription."
+  },
+  {
+    title: "One-click Reminders",
+    icon: BellRing,
+    description: "Open WhatsApp with a ready reminder message for follow-up and appointment communication."
+  },
+  {
+    title: "Smart Insights",
+    icon: TrendingUp,
+    description: "See return gaps, common issues, revenue, and follow-ups due without opening multiple screens."
+  },
+  {
+    title: "Clinic Copilot",
+    icon: Bot,
+    description: "Ask questions like total income this month or unpaid invoices and get a direct answer from your data."
+  }
 ];
 
 export default function Home() {
@@ -181,7 +238,7 @@ export default function Home() {
                 Run your clinic smoothly, without registers or manual work
               </h1>
               <p className="animate-fade-up animation-delay-200 mt-6 max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
-                Manage appointments, billing, patient records, and reports in one simple system.
+                Manage appointments, billing, reminders, patient records, reports, and AI workflows in one simple system.
               </p>
 
               <div className="animate-fade-up animation-delay-300 mt-10 flex flex-col gap-4 sm:flex-row">
@@ -204,6 +261,7 @@ export default function Home() {
                 <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Easy for doctors and reception</div>
                 <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Works on laptop and mobile</div>
                 <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Built for daily clinic work</div>
+                <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">AI summaries and reminders built in</div>
               </div>
             </div>
 
@@ -240,6 +298,19 @@ export default function Home() {
                           <p className="text-base font-medium text-white">Pending payments</p>
                           <p className="mt-2 text-sm leading-6 text-slate-300">
                             6 bills need follow-up today.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="hover-lift rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-4 md:col-span-2">
+                      <div className="flex items-start gap-4">
+                        <div className="rounded-2xl bg-white/10 p-3 text-emerald-200">
+                          <Bot className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-base font-medium text-white">Clinic Copilot</p>
+                          <p className="mt-2 text-sm leading-6 text-slate-300">
+                            Ask: What is this month revenue? Who needs follow-up today? Which patient did not return?
                           </p>
                         </div>
                       </div>
@@ -313,6 +384,36 @@ export default function Home() {
               </ul>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-10">
+        <div className="animate-fade-up rounded-[2rem] border border-emerald-100 bg-[linear-gradient(135deg,#f2fff8_0%,#ffffff_46%,#ecfeff_100%)] px-8 py-12 md:px-12">
+          <div className="max-w-3xl">
+            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">AI + Automation</p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-4xl">
+              Modern clinic workflows without extra complexity
+            </h2>
+            <p className="mt-4 text-base leading-8 text-slate-600">
+              MedSyra now includes doctor-friendly AI summaries, reminder workflows, smart insights, and a clinic assistant that answers questions from your real data.
+            </p>
+          </div>
+
+          <div className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+            {aiHighlights.map((item, index) => (
+              <div
+                key={item.title}
+                className="animate-fade-up hover-lift rounded-[1.5rem] border border-white/80 bg-white/90 p-6 shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
+                style={{ animationDelay: `${index * 0.08 + 0.12}s` }}
+              >
+                <div className="inline-flex rounded-2xl bg-emerald-50 p-3 text-emerald-700">
+                  <item.icon className="h-5 w-5" />
+                </div>
+                <h3 className="mt-5 text-xl font-semibold tracking-[-0.03em] text-slate-950">{item.title}</h3>
+                <p className="mt-3 text-sm leading-7 text-slate-600">{item.description}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
