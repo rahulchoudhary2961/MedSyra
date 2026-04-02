@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "MedSyra",
-  description: "A patient management app for clincs and hospitals",
+  description: "A patient management app for doctors, clinics, and hospitals",
   icons: {
     icon: "/Logo.jpeg",
     shortcut: "/Logo.jpeg",

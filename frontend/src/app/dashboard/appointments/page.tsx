@@ -1604,7 +1604,7 @@ export default function AppointmentsPage() {
         </div>
       )}
 
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div data-tour-id="tour-appointments-calendar" className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.2em] text-emerald-600">Schedule</p>
@@ -1644,6 +1644,7 @@ export default function AppointmentsPage() {
             )}
             {canManageCalendar && (
               <button
+                data-tour-id="tour-appointments-add"
                 onClick={() => openCreate(selectedDay)}
                 className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
               >

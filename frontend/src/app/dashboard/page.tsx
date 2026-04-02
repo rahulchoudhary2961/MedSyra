@@ -260,17 +260,17 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div>
         <h1 className="theme-heading space-y-1">Dashboard</h1>
-        <p className="theme-copy mt-1">Overview of your clinic operations</p>
+        <p className="theme-copy mt-1">Overview of your practice, clinic, or hospital operations</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div data-tour-id="tour-dashboard-stats" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Today Appointments" value={String(stats.todayAppointments)} change="Today" trend="up" icon={Users} color="blue" />
         <StatCard title="Today Revenue" value={formatRupee(stats.todayRevenue)} change="Today" trend="up" icon={IndianRupee} color="green" />
         <StatCard title="Pending Payments" value={String(stats.pendingPayments)} change="Open" trend="up" icon={FileText} color="emerald" />
         <StatCard title="No-shows" value={String(stats.noShows)} change="Today" trend="up" icon={UserRound} color="teal" />
       </div>
 
-      <section className="space-y-3">
+      <section data-tour-id="tour-dashboard-insights" className="space-y-3">
         <div>
           <h2 className="theme-heading text-lg">Smart Insights</h2>
           <p className="theme-copy mt-1">A compact view of return risk, trends, revenue, and due follow-ups.</p>

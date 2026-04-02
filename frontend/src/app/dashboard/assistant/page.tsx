@@ -128,9 +128,9 @@ export default function AssistantPage() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
             <p className="text-sm uppercase tracking-[0.2em] text-emerald-600">AI Assistant</p>
-            <h1 className="mt-2 text-2xl text-gray-900">Clinic Copilot</h1>
+            <h1 className="mt-2 text-2xl text-gray-900">MedSyra Copilot</h1>
             <p className="mt-3 text-sm leading-6 text-gray-600">
-              One screen, one purpose: ask clinic questions and get a short operational answer.
+              One screen, one purpose: ask operational questions and get a short answer from your real data.
             </p>
           </div>
 
@@ -138,7 +138,7 @@ export default function AssistantPage() {
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Patient Context</p>
               <p className="mt-2 text-sm text-emerald-900">
-                {selectedPatient ? selectedPatient.full_name : "General clinic view"}
+                {selectedPatient ? selectedPatient.full_name : "General organization view"}
               </p>
             </div>
             <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4">
@@ -157,7 +157,7 @@ export default function AssistantPage() {
               disabled={loadingPatients || sending}
               className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-gray-900"
             >
-              <option value="">General clinic context</option>
+              <option value="">General organization context</option>
               {patients.map((patient) => (
                 <option key={patient.id} value={patient.id}>
                   {patient.full_name}
@@ -185,7 +185,7 @@ export default function AssistantPage() {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-gray-200 bg-white shadow-sm">
+      <section data-tour-id="tour-assistant-chat" className="rounded-3xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-200 px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl bg-emerald-600 p-2 text-white">
@@ -216,7 +216,7 @@ export default function AssistantPage() {
                   {message.role === "assistant" && (
                     <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
                       <Sparkles className="h-3.5 w-3.5" />
-                      <span>{message.mode === "nvidia" ? "NVIDIA-backed response" : "Local clinic fallback"}</span>
+                      <span>{message.mode === "nvidia" ? "NVIDIA-backed response" : "Local data fallback"}</span>
                     </div>
                   )}
                 </div>
@@ -247,7 +247,7 @@ export default function AssistantPage() {
             />
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-gray-500">
-                {selectedPatient ? `Patient context: ${selectedPatient.full_name}` : "Using general clinic context"}
+                {selectedPatient ? `Patient context: ${selectedPatient.full_name}` : "Using general organization context"}
               </p>
               <button
                 type="submit"

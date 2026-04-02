@@ -171,7 +171,7 @@ export default function SettingsPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white rounded-xl p-4 border border-gray-200 h-fit">
+        <div data-tour-id="tour-settings-tabs" className="bg-white rounded-xl p-4 border border-gray-200 h-fit">
           <nav className="space-y-1">
             <button
               onClick={() => setActiveTab("profile")}
@@ -200,7 +200,7 @@ export default function SettingsPage() {
               }`}
             >
               <Building2 className="w-5 h-5" />
-              <span>Clinic</span>
+              <span>Organization</span>
             </button>
             <button
               onClick={() => setActiveTab("security")}
@@ -349,10 +349,10 @@ export default function SettingsPage() {
 
           {activeTab === "clinic" && (
             <div className="bg-white rounded-xl p-6 border border-gray-200">
-              <h3 className="text-gray-900 mb-6">Clinic Preferences</h3>
+              <h3 className="text-gray-900 mb-6">Organization Preferences</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
-                  <label className="block text-sm text-gray-700 mb-2">Clinic Name</label>
+                  <label className="block text-sm text-gray-700 mb-2">Doctor / Clinic / Hospital Name</label>
                   <input
                     type="text"
                     value={clinicSettings.clinicName}
@@ -370,7 +370,7 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-700 mb-2">Clinic Phone</label>
+                  <label className="block text-sm text-gray-700 mb-2">Primary Phone</label>
                   <input
                     type="tel"
                     value={clinicSettings.clinicPhone}

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Mail, Lock, EyeOff, Eye } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { setAuthToken } from "@/lib/auth";
+import { markLoginIntroPending } from "@/lib/onboarding";
 import BrandLogo from "../../components/BrandLogo";
 
 type SigninResponse = {
@@ -45,6 +46,7 @@ export default function LoginPage() {
       });
 
       setAuthToken(response.data.token);
+      markLoginIntroPending();
       router.push("/dashboard");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to sign in";

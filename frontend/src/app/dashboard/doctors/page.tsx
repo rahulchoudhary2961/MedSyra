@@ -393,6 +393,7 @@ export default function DoctorsPage() {
           <p className="text-gray-600 mt-1">Manage medical staff and link doctor profiles to login accounts</p>
         </div>
         <button
+          data-tour-id="tour-doctors-add"
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
         >

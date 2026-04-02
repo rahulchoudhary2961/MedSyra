@@ -341,7 +341,7 @@ export default function BillingsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div data-tour-id="tour-billings-overview" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl p-6 border border-gray-200">
           <div className="flex items-center justify-between">
             <div>

@@ -70,7 +70,7 @@ const featureSections = [
     title: "AI Assistant",
     icon: Bot,
     points: [
-      "Ask clinic questions in plain English",
+      "Ask operational questions in plain English",
       "Get answers from your real data",
       "Patient-aware assistant context",
     ],
@@ -128,9 +128,42 @@ const aiHighlights = [
     description: "See return gaps, common issues, revenue, and follow-ups due without opening multiple screens."
   },
   {
-    title: "Clinic Copilot",
+    title: "MedSyra Copilot",
     icon: Bot,
     description: "Ask questions like total income this month or unpaid invoices and get a direct answer from your data."
+  }
+];
+
+const pricingPlans = [
+  {
+    name: "Base Plan",
+    price: "Rs. 799 / month",
+    description: "Core healthcare system with shared infra coverage and a starter credit wallet for light AI and reminder usage.",
+    points: [
+      "Covers core workflow and fixed platform cost",
+      "Includes monthly credits for light automation usage",
+      "Simple entry plan for growing practices"
+    ]
+  },
+  {
+    name: "Credit Top-Up",
+    price: "Rs. 199 / 200 credits",
+    description: "One shared wallet for MedSyra Copilot, AI patient summaries, and WhatsApp reminders.",
+    points: [
+      "One purchase works across AI and messaging",
+      "Easy for teams to understand and track",
+      "Scales cleanly as usage grows"
+    ]
+  },
+  {
+    name: "Credit Usage",
+    price: "1 credit per action",
+    description: "Keep usage transparent with a simple rule for every metered action.",
+    points: [
+      "1 AI query = 1 credit",
+      "1 WhatsApp reminder = 1 credit",
+      "New metered features can use the same wallet"
+    ]
   }
 ];
 
@@ -232,10 +265,10 @@ export default function Home() {
           <div className="grid items-center gap-16 py-14 lg:min-h-[calc(100vh-6rem)] lg:grid-cols-[1.1fr_0.9fr]">
             <div className="max-w-3xl">
               <div className="animate-fade-up mb-6 inline-flex items-center rounded-full border border-emerald-200 bg-white/80 px-4 py-2 text-sm text-emerald-800 shadow-sm backdrop-blur">
-                For doctors, clinic owners, and small hospitals
+                For independent doctors, clinics, and hospitals
               </div>
               <h1 className="animate-fade-up animation-delay-100 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.04em] text-slate-950 md:text-6xl lg:text-7xl">
-                Run your clinic smoothly, without registers or manual work
+                Run your practice smoothly, without registers or manual work
               </h1>
               <p className="animate-fade-up animation-delay-200 mt-6 max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
                 Manage appointments, billing, reminders, patient records, reports, and AI workflows in one simple system.
@@ -260,7 +293,7 @@ export default function Home() {
               <div className="animate-fade-up animation-delay-400 mt-8 flex flex-wrap gap-3 text-sm text-slate-600">
                 <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Easy for doctors and reception</div>
                 <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Works on laptop and mobile</div>
-                <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Built for daily clinic work</div>
+                <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Built for daily healthcare operations</div>
                 <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">AI summaries and reminders built in</div>
               </div>
             </div>
@@ -271,7 +304,7 @@ export default function Home() {
                 <div className="rounded-[1.5rem] bg-slate-950 p-6 text-white">
                   <div className="flex items-center justify-between border-b border-white/10 pb-4">
                     <div>
-                      <p className="text-sm uppercase tracking-[0.24em] text-emerald-300">Clinic dashboard</p>
+                      <p className="text-sm uppercase tracking-[0.24em] text-emerald-300">Operations dashboard</p>
                       <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">See today clearly</h2>
                     </div>
                     <div className="rounded-2xl bg-white/10 px-3 py-2 text-right">
@@ -308,7 +341,7 @@ export default function Home() {
                           <Bot className="h-5 w-5" />
                         </div>
                         <div>
-                          <p className="text-base font-medium text-white">Clinic Copilot</p>
+                          <p className="text-base font-medium text-white">MedSyra Copilot</p>
                           <p className="mt-2 text-sm leading-6 text-slate-300">
                             Ask: What is this month revenue? Who needs follow-up today? Which patient did not return?
                           </p>
@@ -327,7 +360,7 @@ export default function Home() {
         <div className="animate-fade-up mx-auto max-w-3xl text-center">
           <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Problem</p>
           <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
-            Common clinic problems, every day
+            Common healthcare workflow problems, every day
           </h2>
           <div className="mt-8 space-y-3 text-lg text-slate-600">
             <p>Managing patients on paper or in registers?</p>
@@ -341,7 +374,7 @@ export default function Home() {
         <div className="animate-fade-up rounded-[2rem] bg-slate-950 px-8 py-12 text-white md:px-12">
           <p className="text-sm uppercase tracking-[0.24em] text-emerald-300">Solution</p>
           <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">
-            One place to handle the full clinic workflow
+            One place to handle the full healthcare workflow
           </h2>
           <p className="mt-4 max-w-2xl text-base leading-8 text-slate-300">
             MedSyra keeps appointments, billing, patient records, and reports together so your team can work faster and stay organized.
@@ -360,7 +393,7 @@ export default function Home() {
         <div className="animate-fade-up mx-auto max-w-3xl text-center">
           <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Core features</p>
           <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
-            Simple tools your clinic will actually use
+            Simple tools healthcare teams will actually use
           </h2>
         </div>
         <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
@@ -392,10 +425,10 @@ export default function Home() {
           <div className="max-w-3xl">
             <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">AI + Automation</p>
             <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-4xl">
-              Modern clinic workflows without extra complexity
+              Modern healthcare workflows without extra complexity
             </h2>
             <p className="mt-4 text-base leading-8 text-slate-600">
-              MedSyra now includes doctor-friendly AI summaries, reminder workflows, smart insights, and a clinic assistant that answers questions from your real data.
+              MedSyra now includes doctor-friendly AI summaries, reminder workflows, smart insights, and an assistant that answers questions from your real data.
             </p>
           </div>
 
@@ -444,7 +477,7 @@ export default function Home() {
         <div className="animate-fade-up mx-auto max-w-3xl text-center">
           <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Why choose this</p>
           <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
-            Made to reduce clinic stress, not add to it
+            Made to reduce operational stress, not add to it
           </h2>
         </div>
         <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
@@ -459,7 +492,7 @@ export default function Home() {
               </div>
               <h3 className="mt-5 text-xl font-semibold tracking-[-0.03em] text-slate-950">{reason}</h3>
               <p className="mt-3 text-sm leading-7 text-slate-600">
-                {reason === "Easy to use" && "Clean screens and simple actions for busy clinic staff."}
+                {reason === "Easy to use" && "Clean screens and simple actions for busy healthcare staff."}
                 {reason === "No training required" && "Your team can start using it without long onboarding."}
                 {reason === "Saves time" && "Reduce repetitive front-desk work and manual tracking."}
                 {reason === "Works on any device" && "Use it on laptop, desktop, or mobile during the day."}
@@ -474,7 +507,7 @@ export default function Home() {
           <div className="animate-fade-up hover-lift rounded-[2rem] border border-emerald-100 bg-emerald-50 p-8">
             <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Trust</p>
             <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950">
-              Built for clinics and small hospitals
+              Built for doctors, clinics, and hospitals
             </h2>
             <p className="mt-4 text-base leading-8 text-slate-600">
               Designed for daily use by doctors, reception, and staff.
@@ -486,9 +519,43 @@ export default function Home() {
               Start with a free trial
             </h2>
             <p className="mt-4 text-base leading-8 text-slate-600">
-              Free trial available with a simple monthly plan for growing clinics.
+              Free trial available with a simple monthly plan for growing practices and teams.
             </p>
           </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-10">
+        <div className="animate-fade-up mx-auto max-w-3xl text-center">
+          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Pricing Logic</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
+            One base plan, one credit wallet
+          </h2>
+          <p className="mt-4 text-base leading-8 text-slate-600">
+            Keep pricing simple: the monthly plan covers your core product and shared infra, and one credit wallet handles AI and messaging usage without separate packs for every feature.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-6 xl:grid-cols-3">
+          {pricingPlans.map((plan, index) => (
+            <div
+              key={plan.name}
+              className="animate-fade-up hover-lift rounded-[1.75rem] border border-slate-200 bg-white p-7 shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
+              style={{ animationDelay: `${index * 0.08 + 0.1}s` }}
+            >
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-700">{plan.name}</p>
+              <h3 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950">{plan.price}</h3>
+              <p className="mt-4 text-sm leading-7 text-slate-600">{plan.description}</p>
+              <ul className="mt-6 space-y-3">
+                {plan.points.map((point) => (
+                  <li key={point} className="flex items-start gap-2 text-sm leading-7 text-slate-600">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -498,7 +565,7 @@ export default function Home() {
           <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
               <h2 className="text-3xl font-semibold tracking-[-0.04em] md:text-4xl">
-                Make your clinic easier to manage
+                Make your practice easier to manage
               </h2>
               <p className="mt-4 text-base leading-8 text-slate-300">
                 Book a free demo or start your free trial today.
@@ -527,13 +594,13 @@ export default function Home() {
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Request a callback</p>
             <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-4xl">
-              Share your clinic details and we will reach out to you
+              Share your practice details and we will reach out to you
             </h2>
             <p className="mt-4 text-base leading-8 text-slate-600">
               Fill in your basic details below. We will contact you on email or phone to schedule a demo.
             </p>
             <div className="mt-8 space-y-3 text-sm text-slate-600">
-              <p>Best for doctors, clinic owners, and small hospitals.</p>
+              <p>Best for independent doctors, clinics, and hospitals.</p>
               <p>Use this if you want a guided demo before starting the trial.</p>
             </div>
           </div>
@@ -552,7 +619,7 @@ export default function Home() {
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm text-slate-700">Clinic / Hospital Name</label>
+                <label className="mb-2 block text-sm text-slate-700">Doctor / Clinic / Hospital Name</label>
                 <input
                   type="text"
                   value={leadForm.clinicName}
@@ -572,7 +639,7 @@ export default function Home() {
                   value={leadForm.email}
                   onChange={(e) => setLeadForm((current) => ({ ...current, email: e.target.value }))}
                   className="theme-input w-full rounded-xl px-4 py-3"
-                  placeholder="doctor@clinic.com"
+                  placeholder="doctor@practice.com"
                   required
                 />
               </div>
@@ -618,7 +685,7 @@ export default function Home() {
                 value={leadForm.message}
                 onChange={(e) => setLeadForm((current) => ({ ...current, message: e.target.value }))}
                 className="theme-input w-full rounded-xl px-4 py-3"
-                placeholder="Tell us a little about your clinic and what you need help with."
+                placeholder="Tell us a little about your practice, clinic, or hospital and what you need help with."
               />
             </div>
 

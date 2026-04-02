@@ -2,12 +2,14 @@ const env = require("../config/env");
 const dashboardService = require("./dashboard.service");
 const patientsService = require("./patients.service");
 const aiToolsModel = require("../models/ai-tools.model");
+const authModel = require("../models/auth.model");
 
 const DEFAULT_MODEL = "openai/gpt-oss-120b";
 
 const formatCurrency = (value) => `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
-const buildClinicSnapshot = (summary) => [
+const buildClinicSnapshot = (summary, clinicName = null) => [
+  `Clinic name: ${clinicName || "-"}`,
   `Today's appointments: ${summary.stats.todayAppointments}`,
   `Today's revenue: ${formatCurrency(summary.stats.todayRevenue)}`,
   `Pending payments: ${summary.stats.pendingPayments}`,
@@ -53,10 +55,10 @@ const buildRecentActivitySnapshot = (activities) => {
   ];
 };
 
-const buildPrompt = ({ message, clinicSummary, patientProfile }) => {
+const buildPrompt = ({ message, clinicSummary, patientProfile, clinicName }) => {
   const sections = [
     "Clinic context:",
-    ...buildClinicSnapshot(clinicSummary),
+    ...buildClinicSnapshot(clinicSummary, clinicName),
     "",
     ...buildRecentActivitySnapshot(clinicSummary.recentActivity || [])
   ];
@@ -155,6 +157,15 @@ const getRangeFromMessage = (message, fallback = "this_month") => {
 
 const inferIntentRuleBased = (message, hasPatientContext) => {
   const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("clinic name") ||
+    normalized.includes("hospital name") ||
+    normalized.includes("organization name") ||
+    normalized.includes("my clinic")
+  ) {
+    return { tool: "clinic_name" };
+  }
 
   if (
     hasPatientContext &&
@@ -257,6 +268,8 @@ const formatPatientSummaryReply = (profile) => {
 
 const formatToolResultReply = (plan, result, patientProfile) => {
   switch (plan.tool) {
+    case "clinic_name":
+      return result?.clinicName ? `Your clinic name is ${result.clinicName}.` : "Your clinic name is not available right now.";
     case "revenue":
       return `Your total income for ${plan.range.replace(/_/g, " ")} is ${formatCurrency(result.revenue)}.`;
     case "appointments_count":
@@ -285,6 +298,8 @@ const executeToolPlan = async (organizationId, plan, patientProfile) => {
   const patientId = patientProfile?.patient?.id || null;
 
   switch (plan.tool) {
+    case "clinic_name":
+      return { clinicName: null };
     case "revenue":
       return aiToolsModel.getRevenueMetric(organizationId, { range: plan.range });
     case "appointments_count":
@@ -314,11 +329,20 @@ const executeToolPlan = async (organizationId, plan, patientProfile) => {
   }
 };
 
-const getFallbackReply = ({ message, clinicSummary, patientProfile }) => {
+const getFallbackReply = ({ message, clinicSummary, patientProfile, clinicName = null }) => {
   const normalized = message.toLowerCase();
 
   if (patientProfile && normalized.includes("patient")) {
     return formatPatientSummaryReply(patientProfile);
+  }
+
+  if (
+    normalized.includes("clinic name") ||
+    normalized.includes("hospital name") ||
+    normalized.includes("organization name") ||
+    normalized.includes("my clinic")
+  ) {
+    return clinicName ? `Your clinic name is ${clinicName}.` : "Your clinic name is not available right now.";
   }
 
   if (normalized.includes("month") || normalized.includes("monthly")) {
@@ -360,6 +384,19 @@ const getFallbackReply = ({ message, clinicSummary, patientProfile }) => {
   ].join(" ");
 };
 
+const resolveClinicName = async (currentUser) => {
+  if (currentUser?.organization_name) {
+    return currentUser.organization_name;
+  }
+
+  if (currentUser?.sub) {
+    const user = await authModel.findUserById(currentUser.sub).catch(() => null);
+    return user?.organization_name || null;
+  }
+
+  return null;
+};
+
 const getSuggestions = (patientProfile) =>
   patientProfile
     ? [
@@ -373,10 +410,11 @@ const getSuggestions = (patientProfile) =>
         "How many unpaid invoices do I have?"
       ];
 
-const shouldUseModelFormatting = (tool) => !["revenue", "outstanding_invoices"].includes(tool || "");
+const shouldUseModelFormatting = (tool) => !["clinic_name", "revenue", "outstanding_invoices"].includes(tool || "");
 
-const askAssistant = async (organizationId, payload) => {
+const askAssistant = async (organizationId, payload, currentUser = null) => {
   const clinicSummary = await dashboardService.getSummary(organizationId);
+  const clinicName = await resolveClinicName(currentUser);
   const patientProfile = payload.patientId
     ? await patientsService.getPatientProfile(organizationId, payload.patientId)
     : null;
@@ -398,7 +436,10 @@ const askAssistant = async (organizationId, payload) => {
   let tool = null;
 
   if (plan) {
-    const toolResult = await executeToolPlan(organizationId, plan, patientProfile);
+    const toolResult =
+      plan.tool === "clinic_name"
+        ? { clinicName }
+        : await executeToolPlan(organizationId, plan, patientProfile);
     tool = plan.tool;
     reply = formatToolResultReply(plan, toolResult, patientProfile);
 
@@ -425,7 +466,7 @@ const askAssistant = async (organizationId, payload) => {
       reply = await askNvidia({
         systemPrompt:
           "You are MedSyra Clinic Assistant for a healthcare operations dashboard. Answer only from the provided clinic context. Keep answers short, factual, and operational. If context is missing, say so clearly. Do not invent patients, diagnoses, revenue, or schedules.",
-        userPrompt: buildPrompt({ message: payload.message, clinicSummary, patientProfile }),
+        userPrompt: buildPrompt({ message: payload.message, clinicSummary, patientProfile, clinicName }),
         temperature: 0.3
       });
       mode = "nvidia";
@@ -433,14 +474,16 @@ const askAssistant = async (organizationId, payload) => {
       reply = getFallbackReply({
         message: payload.message,
         clinicSummary,
-        patientProfile
+        patientProfile,
+        clinicName
       });
     }
   } else {
     reply = getFallbackReply({
       message: payload.message,
       clinicSummary,
-      patientProfile
+      patientProfile,
+      clinicName
     });
   }
 

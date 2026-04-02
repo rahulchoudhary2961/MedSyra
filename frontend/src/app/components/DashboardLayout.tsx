@@ -20,9 +20,11 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { clearAuthToken, getAuthToken } from "@/lib/auth";
+import { clearLoginIntroPending, shouldShowLoginIntro } from "@/lib/onboarding";
 import { canAccessBilling, canDeleteMedicalRecords, isFullAccessRole, isReceptionRole } from "@/lib/roles";
 import { AuthUser } from "@/types/api";
 import BrandLogo from "./BrandLogo";
+import DashboardTour from "./DashboardTour";
 
 const navigation = [
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
@@ -142,6 +144,8 @@ export default function DashboardLayout({
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [recentActivity, setRecentActivity] = useState<DashboardSummaryResponse["data"]["recentActivity"]>([]);
   const [upcomingAppointmentsCount, setUpcomingAppointmentsCount] = useState(0);
+  const [showTour, setShowTour] = useState(false);
+  const [tourStepIndex, setTourStepIndex] = useState(0);
   const searchRef = useRef<HTMLDivElement | null>(null);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
 
@@ -156,6 +160,10 @@ export default function DashboardLayout({
     apiRequest<MeResponse>("/auth/me", { authenticated: true })
       .then((response) => {
         setCurrentUser(response.data);
+        if (shouldShowLoginIntro()) {
+          setTourStepIndex(0);
+          setShowTour(true);
+        }
       })
       .catch(() => {
         clearAuthToken();
@@ -297,6 +305,12 @@ export default function DashboardLayout({
     router.push(`/dashboard/patients?q=${encodeURIComponent(term)}`);
   };
 
+  const closeTour = useCallback(() => {
+    clearLoginIntroPending();
+    setShowTour(false);
+    setTourStepIndex(0);
+  }, []);
+
   const visibleNavigation = navigation.filter((item) => {
     if (currentUser?.role === "receptionist" && ["/dashboard", "/dashboard/reports", "/dashboard/settings"].includes(item.path)) {
       return false;
@@ -331,6 +345,14 @@ export default function DashboardLayout({
 
   return (
     <div className="theme-app-bg min-h-screen">
+      <DashboardTour
+        currentUser={currentUser}
+        isOpen={showTour}
+        stepIndex={tourStepIndex}
+        onStepIndexChange={setTourStepIndex}
+        onClose={closeTour}
+      />
+
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
@@ -339,6 +361,7 @@ export default function DashboardLayout({
       )}
 
       <aside
+        data-tour-id="tour-sidebar"
         className={`theme-sidebar fixed top-0 left-0 h-full w-64 z-50 transition-transform duration-300 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
@@ -518,7 +541,7 @@ export default function DashboardLayout({
                 <div className="theme-surface-strong absolute right-12 top-full mt-2 w-80 rounded-xl z-40 overflow-hidden">
                   <div className="border-b border-slate-100 px-4 py-3">
                     <p className="text-sm theme-heading">Notifications</p>
-                    <p className="text-xs theme-muted">Recent activity from your clinic</p>
+                    <p className="text-xs theme-muted">Recent activity from your organization</p>
                   </div>
                   {notificationsLoading ? (
                     <div className="px-4 py-4 text-sm theme-muted">Loading notifications...</div>
