@@ -333,6 +333,7 @@ export default function PatientsPage() {
           <p className="text-gray-600 mt-1">Manage and view all patient records</p>
         </div>
         <button
+          data-tour-id="tour-patients-add"
           onClick={() => {
             setEditingPatientId(null);
             setFormData(initialForm);
