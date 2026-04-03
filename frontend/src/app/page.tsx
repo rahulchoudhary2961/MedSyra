@@ -142,7 +142,7 @@ const pricingPlans = [
     points: [
       "Appointments, patients, billing, reminders, and core reports",
       "Designed for one doctor with a light staff setup",
-      "Includes a starter monthly credit wallet for AI and messaging"
+      "Simple monthly plan for smaller practices"
     ]
   },
   {
@@ -152,17 +152,7 @@ const pricingPlans = [
     points: [
       "Advanced reporting, MedSyra Copilot, and fuller staff workflows",
       "Built for multi-doctor practices and busier front desks",
-      "Includes a larger monthly credit bundle than Starter"
-    ]
-  },
-  {
-    name: "Scale",
-    price: "Rs. 3500 / month",
-    description: "For larger clinic teams that need stronger controls, heavier automation, and higher-volume operations in one account.",
-    points: [
-      "Priority-ready workflows for larger teams and daily volume",
-      "Best fit for clinics with multiple coordinators and billing staff",
-      "Comes with the strongest included credit allowance in standard plans"
+      "Best fit for clinics ready to scale daily operations"
     ]
   },
   {
@@ -539,7 +529,7 @@ export default function Home() {
               Start with a free trial
             </h2>
             <p className="mt-4 text-base leading-8 text-slate-600">
-              Free trial available with tiered clinic plans and credit-based usage upsells.
+              Free trial available with simple clinic plans and optional usage add-ons.
             </p>
           </div>
         </div>
@@ -549,14 +539,14 @@ export default function Home() {
         <div className="animate-fade-up mx-auto max-w-3xl text-center">
           <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Pricing Logic</p>
           <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
-            Tiered plans with one shared credit wallet
+            Simple plans for every clinic stage
           </h2>
           <p className="mt-4 text-base leading-8 text-slate-600">
-            Keep subscription pricing simple across Starter, Growth, Scale, and Enterprise, then use one shared credit wallet as the usage upsell for AI and messaging.
+            Choose Starter, Growth, or Enterprise based on your clinic size. AI and messaging usage can be added separately as your workflow expands.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-12 grid gap-6 md:grid-cols-3">
           {pricingPlans.map((plan, index) => (
             <div
               key={plan.name}
@@ -576,6 +566,13 @@ export default function Home() {
               </ul>
             </div>
           ))}
+        </div>
+
+        <div className="mt-8 animate-fade-up rounded-[1.5rem] border border-emerald-100 bg-emerald-50 px-6 py-5 text-center">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-700">Usage Add-On</p>
+          <p className="mt-3 text-base leading-7 text-slate-700">
+            Optional credits are available for higher AI and messaging usage, so clinics only pay more when they actually need more automation.
+          </p>
         </div>
       </section>
 
