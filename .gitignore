@@ -6,6 +6,8 @@
 **/dist/
 **/build/
 **/coverage/
+backend/uploads/
+backend/private-uploads/
 
 # Logs
 *.log

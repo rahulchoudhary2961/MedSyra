@@ -1,6 +1,7 @@
 const env = require("../config/env");
 const dashboardService = require("./dashboard.service");
 const patientsService = require("./patients.service");
+const commercialService = require("./commercial.service");
 const aiToolsModel = require("../models/ai-tools.model");
 const authModel = require("../models/auth.model");
 
@@ -413,6 +414,10 @@ const getSuggestions = (patientProfile) =>
 const shouldUseModelFormatting = (tool) => !["clinic_name", "revenue", "outstanding_invoices"].includes(tool || "");
 
 const askAssistant = async (organizationId, payload, currentUser = null) => {
+  await commercialService.ensureUsageAllowed(organizationId, {
+    aiQueriesUsed: 1
+  });
+
   const clinicSummary = await dashboardService.getSummary(organizationId);
   const clinicName = await resolveClinicName(currentUser);
   const patientProfile = payload.patientId
@@ -487,6 +492,14 @@ const askAssistant = async (organizationId, payload, currentUser = null) => {
     });
   }
 
+  const credits = await commercialService.recordUsage(organizationId, {
+    actorUserId: currentUser?.sub || null,
+    aiQueriesUsed: 1,
+    sourceFeature: "ai_assistant",
+    referenceId: payload.patientId || null,
+    note: "AI assistant query"
+  });
+
   return {
     reply,
     mode,
@@ -499,6 +512,12 @@ const askAssistant = async (organizationId, payload, currentUser = null) => {
             fullName: patientProfile.patient.full_name
           }
         : null,
+    credits: {
+      currentBalance: credits.wallet.currentBalance,
+      lowBalanceThreshold: credits.wallet.lowBalanceThreshold,
+      isLowBalance: credits.wallet.isLowBalance,
+      chargedCredits: credits.chargedCredits
+    },
     generatedAt: new Date().toISOString()
   };
 };

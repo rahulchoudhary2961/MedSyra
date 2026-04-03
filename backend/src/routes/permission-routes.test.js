@@ -18,6 +18,10 @@ const run = async () => {
   const dashboardRoutes = readRoute("./dashboard.routes.js");
   expectIncludes(dashboardRoutes, 'authorizeRoles("full_access")', "Dashboard reports route");
 
+  const commercialRoutes = readRoute("./commercial.routes.js");
+  expectIncludes(commercialRoutes, 'authorizeRoles("full_access")', "Commercial routes");
+  expectIncludes(commercialRoutes, '"/top-ups"', "Commercial top-up route");
+
   const patientsRoutes = readRoute("./patients.routes.js");
   expectIncludes(
     patientsRoutes,

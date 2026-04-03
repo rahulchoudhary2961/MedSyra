@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Download, FileText, IndianRupee, Receipt, Stethoscope, TrendingUp, Users } from "lucide-react";
 import {
   Bar,
@@ -92,6 +92,92 @@ type MeResponse = {
   };
 };
 
+type CommercialOverviewResponse = {
+  success: boolean;
+  data: {
+    pricing: {
+      planTier: string;
+      basePlanPrice: number;
+      monthlyIncludedCredits: number;
+      topupPrice: number;
+      topupCreditAmount: number;
+      aiCreditsPerQuery: number;
+      messageCreditsPerUnit: number;
+      defaultAiCostPerQuery: number;
+      defaultMessageCostPerUnit: number;
+    };
+    wallet: {
+      currentBalance: number;
+      monthlyIncludedCredits: number;
+      lowBalanceThreshold: number;
+      lastResetAt: string | null;
+      isLowBalance: boolean;
+    };
+    usage: {
+      usageMonth: string;
+      aiQueriesUsed: number;
+      aiCostPerQuery: number;
+      aiCostTotal: number;
+      messagesUsed: number;
+      messageCostPerUnit: number;
+      messageCostTotal: number;
+      creditsConsumed: number;
+      includedCreditsGranted: number;
+      topupCreditsPurchased: number;
+      topupRevenue: number;
+      infraCostShare: number;
+      basePlanRevenue: number;
+      totalRevenue: number;
+      totalCost: number;
+      profitAmount: number;
+    };
+    platformInfra: {
+      usageMonth: string;
+      totalInfraCost: number;
+      activeClinics: number;
+      infraCostPerClinic: number;
+      notes: string;
+    };
+    transactions: Array<{
+      id: string;
+      transactionType: string;
+      creditsDelta: number;
+      rupeeAmount: number;
+      sourceFeature: string | null;
+      referenceId: string | null;
+      note: string | null;
+      actorName: string | null;
+      createdAt: string;
+    }>;
+  };
+};
+
+type PricingForm = {
+  planTier: string;
+  basePlanPrice: string;
+  monthlyIncludedCredits: string;
+  lowBalanceThreshold: string;
+  topupPrice: string;
+  topupCreditAmount: string;
+  aiCreditsPerQuery: string;
+  messageCreditsPerUnit: string;
+  defaultAiCostPerQuery: string;
+  defaultMessageCostPerUnit: string;
+};
+
+type TopUpForm = {
+  packs: string;
+  credits: string;
+  rupeeAmount: string;
+  note: string;
+};
+
+type PlatformInfraForm = {
+  totalInfraCost: string;
+  activeClinics: string;
+  notes: string;
+};
+
 const PIE_COLORS = ["#059669", "#10b981", "#34d399", "#6ee7b7", "#047857", "#22c55e", "#f59e0b", "#ef4444"];
 const PERIOD_OPTIONS = [
   { value: "7d", label: "Last 7 days" },
@@ -99,10 +185,50 @@ const PERIOD_OPTIONS = [
   { value: "90d", label: "Last 90 days" },
   { value: "12m", label: "Last 12 months" }
 ] as const;
+const PLAN_OPTIONS = [
+  { value: "starter", label: "Starter" },
+  { value: "growth", label: "Growth" },
+  { value: "enterprise", label: "Enterprise" }
+] as const;
+const PLAN_PRICING_DEFAULTS: Record<string, Omit<PricingForm, "planTier" | "lowBalanceThreshold">> = {
+  starter: {
+    basePlanPrice: "799",
+    monthlyIncludedCredits: "100",
+    topupPrice: "199",
+    topupCreditAmount: "200",
+    aiCreditsPerQuery: "1",
+    messageCreditsPerUnit: "1",
+    defaultAiCostPerQuery: "1",
+    defaultMessageCostPerUnit: "1"
+  },
+  growth: {
+    basePlanPrice: "1499",
+    monthlyIncludedCredits: "400",
+    topupPrice: "199",
+    topupCreditAmount: "200",
+    aiCreditsPerQuery: "1",
+    messageCreditsPerUnit: "1",
+    defaultAiCostPerQuery: "1",
+    defaultMessageCostPerUnit: "1"
+  },
+  enterprise: {
+    basePlanPrice: "2999",
+    monthlyIncludedCredits: "1000",
+    topupPrice: "499",
+    topupCreditAmount: "500",
+    aiCreditsPerQuery: "1",
+    messageCreditsPerUnit: "1",
+    defaultAiCostPerQuery: "1",
+    defaultMessageCostPerUnit: "1"
+  }
+};
 
 const currency = (value: number) => `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const escapeCsv = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
 const escapePdfText = (text: string) => text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+const formatTimestamp = (value: string | null) => (value ? new Date(value).toLocaleString() : "-");
+const toOptionalInteger = (value: string) => (value.trim() ? Number.parseInt(value, 10) : undefined);
+const toOptionalNumber = (value: string) => (value.trim() ? Number(value) : undefined);
 
 const downloadBlob = (blob: Blob, filename: string) => {
   const url = URL.createObjectURL(blob);
@@ -156,6 +282,68 @@ export default function ReportsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [report, setReport] = useState<ReportsResponse["data"] | null>(null);
+  const [commercial, setCommercial] = useState<CommercialOverviewResponse["data"] | null>(null);
+  const [pricingForm, setPricingForm] = useState<PricingForm>({
+    planTier: "starter",
+    basePlanPrice: "",
+    monthlyIncludedCredits: "",
+    lowBalanceThreshold: "",
+    topupPrice: "",
+    topupCreditAmount: "",
+    aiCreditsPerQuery: "",
+    messageCreditsPerUnit: "",
+    defaultAiCostPerQuery: "",
+    defaultMessageCostPerUnit: ""
+  });
+  const [topUpForm, setTopUpForm] = useState<TopUpForm>({
+    packs: "1",
+    credits: "",
+    rupeeAmount: "",
+    note: ""
+  });
+  const [platformInfraForm, setPlatformInfraForm] = useState<PlatformInfraForm>({
+    totalInfraCost: "",
+    activeClinics: "",
+    notes: ""
+  });
+  const [commercialMessage, setCommercialMessage] = useState("");
+  const [commercialError, setCommercialError] = useState("");
+  const [savingPricing, setSavingPricing] = useState(false);
+  const [addingTopUp, setAddingTopUp] = useState(false);
+  const [savingPlatformInfra, setSavingPlatformInfra] = useState(false);
+
+  const applyCommercialData = (data: CommercialOverviewResponse["data"]) => {
+    setCommercial(data);
+    setPricingForm({
+      planTier: data.pricing.planTier,
+      basePlanPrice: String(data.pricing.basePlanPrice),
+      monthlyIncludedCredits: String(data.pricing.monthlyIncludedCredits),
+      lowBalanceThreshold: String(data.wallet.lowBalanceThreshold),
+      topupPrice: String(data.pricing.topupPrice),
+      topupCreditAmount: String(data.pricing.topupCreditAmount),
+      aiCreditsPerQuery: String(data.pricing.aiCreditsPerQuery),
+      messageCreditsPerUnit: String(data.pricing.messageCreditsPerUnit),
+      defaultAiCostPerQuery: String(data.pricing.defaultAiCostPerQuery),
+      defaultMessageCostPerUnit: String(data.pricing.defaultMessageCostPerUnit)
+    });
+    setTopUpForm({
+      packs: "1",
+      credits: "",
+      rupeeAmount: "",
+      note: ""
+    });
+    setPlatformInfraForm({
+      totalInfraCost: String(data.platformInfra.totalInfraCost),
+      activeClinics: String(data.platformInfra.activeClinics),
+      notes: data.platformInfra.notes
+    });
+  };
+
+  const loadCommercialOverview = async () => {
+    const response = await apiRequest<CommercialOverviewResponse>("/commercial/overview", { authenticated: true });
+    applyCommercialData(response.data);
+    return response.data;
+  };
 
   useEffect(() => {
     apiRequest<MeResponse>("/auth/me", { authenticated: true })
@@ -164,8 +352,14 @@ export default function ReportsPage() {
   }, []);
 
   useEffect(() => {
-    apiRequest<ReportsResponse>(`/dashboard/reports?period=${period}`, { authenticated: true })
-      .then((response) => setReport(response.data))
+    Promise.all([
+      apiRequest<ReportsResponse>(`/dashboard/reports?period=${period}`, { authenticated: true }),
+      apiRequest<CommercialOverviewResponse>("/commercial/overview", { authenticated: true })
+    ])
+      .then(([reportResponse, commercialResponse]) => {
+        setReport(reportResponse.data);
+        applyCommercialData(commercialResponse.data);
+      })
       .catch((err: Error) => setError(err.message || "Failed to load reports"))
       .finally(() => setIsLoading(false));
   }, [period]);
@@ -173,7 +367,95 @@ export default function ReportsPage() {
   const handlePeriodChange = (nextPeriod: string) => {
     setIsLoading(true);
     setError("");
+    setCommercialMessage("");
+    setCommercialError("");
     setPeriod(nextPeriod);
+  };
+
+  const handleSavePricing = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSavingPricing(true);
+    setCommercialMessage("");
+    setCommercialError("");
+
+    try {
+      const response = await apiRequest<CommercialOverviewResponse & { message?: string }>("/commercial/pricing", {
+        method: "PATCH",
+        authenticated: true,
+        body: {
+          planTier: pricingForm.planTier,
+          basePlanPrice: Number(pricingForm.basePlanPrice),
+          monthlyIncludedCredits: Number(pricingForm.monthlyIncludedCredits),
+          lowBalanceThreshold: Number(pricingForm.lowBalanceThreshold),
+          topupPrice: Number(pricingForm.topupPrice),
+          topupCreditAmount: Number(pricingForm.topupCreditAmount),
+          aiCreditsPerQuery: Number(pricingForm.aiCreditsPerQuery),
+          messageCreditsPerUnit: Number(pricingForm.messageCreditsPerUnit),
+          defaultAiCostPerQuery: Number(pricingForm.defaultAiCostPerQuery),
+          defaultMessageCostPerUnit: Number(pricingForm.defaultMessageCostPerUnit)
+        }
+      });
+
+      applyCommercialData(response.data);
+      setCommercialMessage(response.message || "Commercial pricing updated.");
+    } catch (err) {
+      setCommercialError(err instanceof Error ? err.message : "Failed to save pricing.");
+    } finally {
+      setSavingPricing(false);
+    }
+  };
+
+  const handleCreateTopUp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAddingTopUp(true);
+    setCommercialMessage("");
+    setCommercialError("");
+
+    try {
+      const response = await apiRequest<CommercialOverviewResponse & { message?: string }>("/commercial/top-ups", {
+        method: "POST",
+        authenticated: true,
+        body: {
+          packs: Number(topUpForm.packs),
+          credits: toOptionalInteger(topUpForm.credits),
+          rupeeAmount: toOptionalNumber(topUpForm.rupeeAmount),
+          note: topUpForm.note.trim() || undefined
+        }
+      });
+
+      applyCommercialData(response.data);
+      setCommercialMessage(response.message || "Credits added successfully.");
+    } catch (err) {
+      setCommercialError(err instanceof Error ? err.message : "Failed to add credits.");
+    } finally {
+      setAddingTopUp(false);
+    }
+  };
+
+  const handleSavePlatformInfra = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSavingPlatformInfra(true);
+    setCommercialMessage("");
+    setCommercialError("");
+
+    try {
+      const response = await apiRequest<{ success: boolean; message?: string }>("/commercial/platform-infra", {
+        method: "PATCH",
+        authenticated: true,
+        body: {
+          totalInfraCost: Number(platformInfraForm.totalInfraCost),
+          activeClinics: toOptionalInteger(platformInfraForm.activeClinics),
+          notes: platformInfraForm.notes.trim() || undefined
+        }
+      });
+
+      await loadCommercialOverview();
+      setCommercialMessage(response.message || "Platform infra updated.");
+    } catch (err) {
+      setCommercialError(err instanceof Error ? err.message : "Failed to update platform infra.");
+    } finally {
+      setSavingPlatformInfra(false);
+    }
   };
 
   const exportCsv = () => {
@@ -214,6 +496,23 @@ export default function ReportsPage() {
       ])
     ];
 
+    if (commercial) {
+      rows.push(
+        [],
+        ["Commercial Engine"],
+        ["Metric", "Value"],
+        ["Usage Month", commercial.usage.usageMonth],
+        ["Plan Tier", commercial.pricing.planTier],
+        ["Credit Balance", commercial.wallet.currentBalance],
+        ["Monthly Included Credits", commercial.wallet.monthlyIncludedCredits],
+        ["Credits Consumed", commercial.usage.creditsConsumed],
+        ["Commercial Revenue", commercial.usage.totalRevenue],
+        ["Commercial Cost", commercial.usage.totalCost],
+        ["Monthly Profit", commercial.usage.profitAmount],
+        ["Infra Cost Per Clinic", commercial.platformInfra.infraCostPerClinic]
+      );
+    }
+
     const csv = rows.map((row) => row.map((value) => escapeCsv(value ?? "")).join(",")).join("\n");
     downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `clinic-report-${report.meta.period}.csv`);
   };
@@ -245,6 +544,20 @@ export default function ReportsPage() {
         (invoice) => `${invoice.invoiceNumber} | ${invoice.patientName} | ${currency(invoice.balanceAmount)} | ${invoice.status}`
       )
     ];
+
+    if (commercial) {
+      lines.push(
+        "",
+        "Commercial Engine:",
+        `Usage Month: ${commercial.usage.usageMonth}`,
+        `Plan Tier: ${commercial.pricing.planTier}`,
+        `Credit Balance: ${commercial.wallet.currentBalance}`,
+        `Credits Consumed: ${commercial.usage.creditsConsumed}`,
+        `Commercial Revenue: ${currency(commercial.usage.totalRevenue)}`,
+        `Commercial Cost: ${currency(commercial.usage.totalCost)}`,
+        `Monthly Profit: ${currency(commercial.usage.profitAmount)}`
+      );
+    }
 
     downloadBlob(createSimplePdfBlob("Clinic Report Snapshot", lines), `clinic-report-${report.meta.period}.pdf`);
   };
@@ -285,6 +598,45 @@ export default function ReportsPage() {
       }
     ];
   }, [report]);
+
+  const commercialCards = useMemo(() => {
+    if (!commercial) {
+      return [];
+    }
+
+    return [
+      {
+        title: "Credit Balance",
+        value: commercial.wallet.currentBalance.toLocaleString(),
+        note: commercial.wallet.isLowBalance
+          ? `Low balance threshold ${commercial.wallet.lowBalanceThreshold}`
+          : `${commercial.wallet.monthlyIncludedCredits} monthly included`,
+        icon: Receipt,
+        tone: commercial.wallet.isLowBalance ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
+      },
+      {
+        title: "Commercial Revenue",
+        value: currency(commercial.usage.totalRevenue),
+        note: `${currency(commercial.usage.topupRevenue)} top-up revenue`,
+        icon: IndianRupee,
+        tone: "bg-green-50 text-green-700"
+      },
+      {
+        title: "Commercial Cost",
+        value: currency(commercial.usage.totalCost),
+        note: `${currency(commercial.usage.infraCostShare)} infra share`,
+        icon: FileText,
+        tone: "bg-amber-50 text-amber-700"
+      },
+      {
+        title: "Monthly Profit",
+        value: currency(commercial.usage.profitAmount),
+        note: `${commercial.usage.aiQueriesUsed} AI queries and ${commercial.usage.messagesUsed} messages`,
+        icon: TrendingUp,
+        tone: commercial.usage.profitAmount >= 0 ? "bg-teal-50 text-teal-700" : "bg-red-50 text-red-700"
+      }
+    ];
+  }, [commercial]);
 
   const appointmentStatusData = useMemo(
     () => (report?.appointmentStatus || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[index % PIE_COLORS.length] })),
@@ -364,6 +716,155 @@ export default function ReportsPage() {
               );
             })}
           </div>
+
+          {commercialMessage && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{commercialMessage}</div>
+          )}
+          {commercialError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{commercialError}</div>
+          )}
+
+          {commercial && (
+            <>
+              <div className="rounded-2xl border border-gray-200 bg-white p-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h2 className="text-gray-900">Commercial Engine</h2>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Credits, unit economics, and plan controls for {commercial.usage.usageMonth.slice(0, 7)}.
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 px-4 py-3 text-sm">
+                    <p className="text-gray-500">Plan tier</p>
+                    <p className="mt-1 text-gray-900">{commercial.pricing.planTier}</p>
+                    <p className="mt-1 text-xs text-gray-500">Last wallet reset {formatTimestamp(commercial.wallet.lastResetAt)}</p>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {commercialCards.map((card) => {
+                    const Icon = card.icon;
+                    return (
+                      <div key={card.title} className="rounded-2xl border border-gray-200 bg-gray-50/60 p-5">
+                        <div className="flex items-center gap-4">
+                          <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${card.tone}`}>
+                            <Icon className="h-6 w-6" />
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-500">{card.title}</p>
+                            <p className="mt-1 text-2xl text-gray-900">{card.value}</p>
+                            <p className="mt-1 text-xs text-gray-500">{card.note}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+                <div className="rounded-2xl border border-gray-200 bg-white p-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-gray-900">Wallet and Usage</h2>
+                      <p className="mt-1 text-sm text-gray-500">Track credits, low-balance risk, and current month spend.</p>
+                    </div>
+                    <Receipt className="h-5 w-5 text-emerald-600" />
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="rounded-xl border border-gray-200 p-4">
+                      <p className="text-sm text-gray-500">Current balance</p>
+                      <p className="mt-2 text-3xl text-gray-900">{commercial.wallet.currentBalance.toLocaleString()}</p>
+                      <p className="mt-2 text-xs text-gray-500">
+                        Low balance threshold {commercial.wallet.lowBalanceThreshold}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 p-4">
+                      <p className="text-sm text-gray-500">Credits consumed</p>
+                      <p className="mt-2 text-3xl text-gray-900">{commercial.usage.creditsConsumed.toLocaleString()}</p>
+                      <p className="mt-2 text-xs text-gray-500">
+                        {commercial.usage.includedCreditsGranted.toLocaleString()} included granted this month
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 p-4">
+                      <p className="text-sm text-gray-500">AI usage</p>
+                      <p className="mt-2 text-2xl text-gray-900">{commercial.usage.aiQueriesUsed.toLocaleString()} queries</p>
+                      <p className="mt-2 text-xs text-gray-500">
+                        Cost {currency(commercial.usage.aiCostTotal)} at {currency(commercial.usage.aiCostPerQuery)} per query
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 p-4">
+                      <p className="text-sm text-gray-500">Messaging usage</p>
+                      <p className="mt-2 text-2xl text-gray-900">{commercial.usage.messagesUsed.toLocaleString()} messages</p>
+                      <p className="mt-2 text-xs text-gray-500">
+                        Cost {currency(commercial.usage.messageCostTotal)} at {currency(commercial.usage.messageCostPerUnit)} per message
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div className="rounded-xl bg-gray-50 p-4">
+                      <p className="text-sm text-gray-500">Base plan revenue</p>
+                      <p className="mt-2 text-xl text-gray-900">{currency(commercial.usage.basePlanRevenue)}</p>
+                    </div>
+                    <div className="rounded-xl bg-gray-50 p-4">
+                      <p className="text-sm text-gray-500">Top-up credits purchased</p>
+                      <p className="mt-2 text-xl text-gray-900">{commercial.usage.topupCreditsPurchased.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-xl bg-gray-50 p-4">
+                      <p className="text-sm text-gray-500">Infra cost per clinic</p>
+                      <p className="mt-2 text-xl text-gray-900">{currency(commercial.platformInfra.infraCostPerClinic)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+                  <div className="border-b border-gray-200 px-6 py-4">
+                    <h2 className="text-gray-900">Recent Credit Transactions</h2>
+                    <p className="mt-1 text-sm text-gray-500">Latest grants, usage debits, and top-ups on this clinic wallet.</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-sm text-gray-600">Type</th>
+                          <th className="px-6 py-3 text-left text-sm text-gray-600">Credits</th>
+                          <th className="px-6 py-3 text-left text-sm text-gray-600">Amount</th>
+                          <th className="px-6 py-3 text-left text-sm text-gray-600">Source</th>
+                          <th className="px-6 py-3 text-left text-sm text-gray-600">Created</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {commercial.transactions.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="px-6 py-4 text-sm text-gray-500">
+                              No wallet transactions recorded yet.
+                            </td>
+                          </tr>
+                        )}
+                        {commercial.transactions.map((transaction) => (
+                          <tr key={transaction.id} className="border-t border-gray-100">
+                            <td className="px-6 py-4 text-sm text-gray-800">
+                              <p className="capitalize">{transaction.transactionType.replace(/_/g, " ")}</p>
+                              <p className="mt-1 text-xs text-gray-500">{transaction.note || transaction.actorName || "System"}</p>
+                            </td>
+                            <td className={`px-6 py-4 text-sm ${transaction.creditsDelta >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                              {transaction.creditsDelta > 0 ? "+" : ""}
+                              {transaction.creditsDelta}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-800">{currency(transaction.rupeeAmount)}</td>
+                            <td className="px-6 py-4 text-sm text-gray-500">{transaction.sourceFeature || "-"}</td>
+                            <td className="px-6 py-4 text-sm text-gray-500">{formatTimestamp(transaction.createdAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <div className="rounded-2xl border border-gray-200 bg-white p-5">
@@ -549,6 +1050,265 @@ export default function ReportsPage() {
               </div>
             </div>
           </div>
+
+          {commercial && (
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+              <form onSubmit={handleSavePricing} className="rounded-2xl border border-gray-200 bg-white p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-gray-900">Pricing and Usage Rules</h2>
+                    <p className="mt-1 text-sm text-gray-500">Set the plan, credit pack, and default unit costs used for profitability.</p>
+                  </div>
+                  <TrendingUp className="h-5 w-5 text-emerald-600" />
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="text-sm text-gray-600">
+                    <span>Plan tier</span>
+                    <select
+                      value={pricingForm.planTier}
+                      onChange={(event) => {
+                        const nextPlanTier = event.target.value;
+                        setPricingForm((current) => ({
+                          ...current,
+                          planTier: nextPlanTier,
+                          ...(PLAN_PRICING_DEFAULTS[nextPlanTier] || {})
+                        }));
+                      }}
+                      className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+                    >
+                      {PLAN_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm text-gray-600">
+                    <span>Base plan price</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricingForm.basePlanPrice}
+                      onChange={(event) => setPricingForm((current) => ({ ...current, basePlanPrice: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="text-sm text-gray-600">
+                    <span>Monthly included credits</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={pricingForm.monthlyIncludedCredits}
+                      onChange={(event) => setPricingForm((current) => ({ ...current, monthlyIncludedCredits: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="text-sm text-gray-600">
+                    <span>Low balance threshold</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={pricingForm.lowBalanceThreshold}
+                      onChange={(event) => setPricingForm((current) => ({ ...current, lowBalanceThreshold: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="text-sm text-gray-600">
+                    <span>Top-up price</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricingForm.topupPrice}
+                      onChange={(event) => setPricingForm((current) => ({ ...current, topupPrice: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="text-sm text-gray-600">
+                    <span>Top-up credits</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={pricingForm.topupCreditAmount}
+                      onChange={(event) => setPricingForm((current) => ({ ...current, topupCreditAmount: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="text-sm text-gray-600">
+                    <span>AI credits per query</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={pricingForm.aiCreditsPerQuery}
+                      onChange={(event) => setPricingForm((current) => ({ ...current, aiCreditsPerQuery: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="text-sm text-gray-600">
+                    <span>Message credits per unit</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={pricingForm.messageCreditsPerUnit}
+                      onChange={(event) => setPricingForm((current) => ({ ...current, messageCreditsPerUnit: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="text-sm text-gray-600">
+                    <span>AI cost per query</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricingForm.defaultAiCostPerQuery}
+                      onChange={(event) => setPricingForm((current) => ({ ...current, defaultAiCostPerQuery: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="text-sm text-gray-600">
+                    <span>Message cost per unit</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricingForm.defaultMessageCostPerUnit}
+                      onChange={(event) => setPricingForm((current) => ({ ...current, defaultMessageCostPerUnit: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingPricing}
+                  className="mt-5 inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {savingPricing ? "Saving..." : "Save pricing"}
+                </button>
+              </form>
+
+              <form onSubmit={handleCreateTopUp} className="rounded-2xl border border-gray-200 bg-white p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-gray-900">Manual Top-up</h2>
+                    <p className="mt-1 text-sm text-gray-500">Add credits to the clinic wallet and capture the matching revenue.</p>
+                  </div>
+                  <IndianRupee className="h-5 w-5 text-emerald-600" />
+                </div>
+
+                <div className="mt-5 space-y-4">
+                  <label className="block text-sm text-gray-600">
+                    <span>Packs</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={topUpForm.packs}
+                      onChange={(event) => setTopUpForm((current) => ({ ...current, packs: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="block text-sm text-gray-600">
+                    <span>Override credits</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={topUpForm.credits}
+                      onChange={(event) => setTopUpForm((current) => ({ ...current, credits: event.target.value }))}
+                      placeholder={`Default ${commercial.pricing.topupCreditAmount} credits per pack`}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="block text-sm text-gray-600">
+                    <span>Override rupee amount</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={topUpForm.rupeeAmount}
+                      onChange={(event) => setTopUpForm((current) => ({ ...current, rupeeAmount: event.target.value }))}
+                      placeholder={`Default ${currency(commercial.pricing.topupPrice)} per pack`}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="block text-sm text-gray-600">
+                    <span>Note</span>
+                    <textarea
+                      rows={4}
+                      value={topUpForm.note}
+                      onChange={(event) => setTopUpForm((current) => ({ ...current, note: event.target.value }))}
+                      placeholder="Optional operator note"
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={addingTopUp}
+                  className="mt-5 inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {addingTopUp ? "Adding..." : "Add credits"}
+                </button>
+              </form>
+
+              <form onSubmit={handleSavePlatformInfra} className="rounded-2xl border border-gray-200 bg-white p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-gray-900">Platform Infra Input</h2>
+                    <p className="mt-1 text-sm text-gray-500">Update the monthly infra pool so clinic-level profitability stays grounded.</p>
+                  </div>
+                  <FileText className="h-5 w-5 text-emerald-600" />
+                </div>
+
+                <div className="mt-5 space-y-4">
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Usage Month</p>
+                    <p className="mt-2 text-lg text-gray-900">{commercial.platformInfra.usageMonth}</p>
+                  </div>
+                  <label className="block text-sm text-gray-600">
+                    <span>Total infra cost</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={platformInfraForm.totalInfraCost}
+                      onChange={(event) => setPlatformInfraForm((current) => ({ ...current, totalInfraCost: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="block text-sm text-gray-600">
+                    <span>Active clinics</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={platformInfraForm.activeClinics}
+                      onChange={(event) => setPlatformInfraForm((current) => ({ ...current, activeClinics: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                  <label className="block text-sm text-gray-600">
+                    <span>Notes</span>
+                    <textarea
+                      rows={5}
+                      value={platformInfraForm.notes}
+                      onChange={(event) => setPlatformInfraForm((current) => ({ ...current, notes: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                    />
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingPlatformInfra}
+                  className="mt-5 inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {savingPlatformInfra ? "Saving..." : "Update infra"}
+                </button>
+              </form>
+            </div>
+          )}
         </>
       )}
     </div>

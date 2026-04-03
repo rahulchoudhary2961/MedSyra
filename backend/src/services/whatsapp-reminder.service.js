@@ -1,5 +1,6 @@
 const env = require("../config/env");
 const ApiError = require("../utils/api-error");
+const commercialService = require("./commercial.service");
 
 const normalizePhone = (value) => String(value || "").replace(/\D/g, "");
 
@@ -37,8 +38,22 @@ const ensureReminderConfig = () => {
   }
 };
 
-const sendWhatsAppText = async ({ phone, body }) => {
+const sendWhatsAppText = async ({
+  phone,
+  body,
+  organizationId = null,
+  actorUserId = null,
+  sourceFeature = "whatsapp_message",
+  referenceId = null,
+  note = null
+}) => {
   ensureReminderConfig();
+
+  if (organizationId) {
+    await commercialService.ensureUsageAllowed(organizationId, {
+      messagesUsed: 1
+    });
+  }
 
   const to = formatWhatsAppRecipient(phone);
   if (!to) {
@@ -69,17 +84,50 @@ const sendWhatsAppText = async ({ phone, body }) => {
     throw new ApiError(response.status >= 400 && response.status < 500 ? response.status : 502, reason, payload);
   }
 
-  return {
+  const result = {
     provider: "ycloud",
     recipient: to,
     message: body,
     providerResponse: payload
   };
+
+  if (!organizationId) {
+    return result;
+  }
+
+  const usage = await commercialService.recordUsage(organizationId, {
+    actorUserId,
+    messagesUsed: 1,
+    sourceFeature,
+    referenceId,
+    note
+  });
+
+  return {
+    ...result,
+    usage
+  };
 };
 
-const sendFollowUpReminder = async ({ patientPhone, patientName, clinicName, doctorName }) => {
+const sendFollowUpReminder = async ({
+  organizationId,
+  actorUserId = null,
+  referenceId = null,
+  patientPhone,
+  patientName,
+  clinicName,
+  doctorName
+}) => {
   const body = buildReminderMessage({ patientName, clinicName, doctorName });
-  return sendWhatsAppText({ phone: patientPhone, body });
+  return sendWhatsAppText({
+    phone: patientPhone,
+    body,
+    organizationId,
+    actorUserId,
+    sourceFeature: "medical_record_follow_up_reminder",
+    referenceId,
+    note: "Medical record follow-up reminder"
+  });
 };
 
 module.exports = {

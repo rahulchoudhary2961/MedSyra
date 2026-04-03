@@ -384,6 +384,40 @@ const dashboardSchemas = {
   }
 };
 
+const commercialSchemas = {
+  updatePricingBody: {
+    fields: {
+      planTier: optional(stringRule({ enumValues: ["starter", "growth", "enterprise"], maxLength: 20 })),
+      basePlanPrice: optional(numberRule({ min: 0, max: 10000000 })),
+      monthlyIncludedCredits: optional(integerRule({ min: 0, max: 1000000 })),
+      lowBalanceThreshold: optional(integerRule({ min: 0, max: 1000000 })),
+      topupPrice: optional(numberRule({ min: 0, max: 10000000 })),
+      topupCreditAmount: optional(integerRule({ min: 1, max: 1000000 })),
+      aiCreditsPerQuery: optional(integerRule({ min: 0, max: 1000 })),
+      messageCreditsPerUnit: optional(integerRule({ min: 0, max: 1000 })),
+      defaultAiCostPerQuery: optional(numberRule({ min: 0, max: 1000000 })),
+      defaultMessageCostPerUnit: optional(numberRule({ min: 0, max: 1000000 }))
+    },
+    requireAtLeastOne: true
+  },
+  createTopUpBody: {
+    fields: {
+      packs: optional(integerRule({ min: 1, max: 1000 })),
+      credits: optional(integerRule({ min: 1, max: 1000000 })),
+      rupeeAmount: optional(numberRule({ min: 0, max: 10000000 })),
+      note: optional(stringRule({ maxLength: 300 }))
+    }
+  },
+  updatePlatformInfraBody: {
+    fields: {
+      usageMonth: optional(dateRule()),
+      totalInfraCost: numberRule({ min: 0, max: 100000000 }),
+      activeClinics: optional(integerRule({ min: 0, max: 1000000 })),
+      notes: optional(stringRule({ maxLength: 500 }))
+    }
+  }
+};
+
 const aiSchemas = {
   askAssistantBody: {
     fields: {
@@ -396,12 +430,18 @@ const aiSchemas = {
 const publicSchemas = {
   submitLeadBody: {
     fields: {
+      activationType: optional(stringRule({ enumValues: ["demo", "trial"], maxLength: 20 })),
       fullName: stringRule({ minLength: 2, maxLength: 100, pattern: /^[a-zA-Z\s.'-]+$/ }),
       email: emailRule(),
       phone: phoneRule(),
       clinicName: stringRule({ minLength: 2, maxLength: 120 }),
       city: optional(stringRule({ minLength: 2, maxLength: 80 })),
-      message: optional(stringRule({ minLength: 2, maxLength: 500 }))
+      message: optional(stringRule({ minLength: 2, maxLength: 500 })),
+      requestedPlanTier: optional(stringRule({ enumValues: ["starter", "growth", "enterprise"], maxLength: 20 })),
+      demoDate: optional(dateRule()),
+      demoTime: optional(timeRule()),
+      demoTimezone: optional(stringRule({ minLength: 2, maxLength: 80, safe: false })),
+      password: optional(passwordRule())
     }
   }
 };
@@ -414,6 +454,7 @@ module.exports = {
   medicalRecordsSchemas,
   billingsSchemas,
   dashboardSchemas,
+  commercialSchemas,
   aiSchemas,
   publicSchemas
 };

@@ -93,6 +93,7 @@ const testGuardContracts = () => {
   const recordsPage = readFile("src/app/dashboard/medical-records/page.tsx");
   assert.match(recordsPage, /canAccessMedicalRecords/);
   assert.match(recordsPage, /You do not have access to medical records\./);
+  assert.match(recordsPage, /\/medical-records\/\$\{recordId\}\/attachment/);
 
   const assistantPage = readFile("src/app/dashboard/assistant/page.tsx");
   assert.match(assistantPage, /canAccessAssistant/);
