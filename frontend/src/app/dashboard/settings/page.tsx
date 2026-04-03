@@ -484,8 +484,7 @@ export default function SettingsPage() {
                   </div>
 
                   <p className="text-xs text-gray-500">
-                    Profile updates API is not exposed yet. This section currently reflects live account data from
-                    `/auth/me`.
+                    This section shows your current account details.
                   </p>
                 </div>
               )}

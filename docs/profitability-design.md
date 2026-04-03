@@ -28,14 +28,12 @@ Recommended commercial model:
 
 - `Starter: Rs. 799 / month`
 - `Growth: Rs. 1499 / month`
-- `Scale: Rs. 3500 / month`
 - `Enterprise: custom pricing`
 
 Recommended included credit bundles:
 
 - `Starter: 100 monthly credits`
 - `Growth: 400 monthly credits`
-- `Scale: 1200 monthly credits`
 - `Enterprise: custom`
 
 Recommended credit upsell:
@@ -243,9 +241,6 @@ Use the subscription tier as the primary sale and credits as the expansion reven
 - `Growth`
   - `Rs. 1499 / month`
   - suitable for multi-doctor clinics and busier admin workflows
-- `Scale`
-  - `Rs. 3500 / month`
-  - suitable for larger clinic teams and heavier daily usage
 - `Enterprise`
   - custom pricing
   - suitable for chains, hospital groups, and tailored rollouts

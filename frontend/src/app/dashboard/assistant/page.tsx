@@ -235,7 +235,7 @@ export default function AssistantPage() {
                   {message.role === "assistant" && (
                     <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
                       <Sparkles className="h-3.5 w-3.5" />
-                      <span>{message.mode === "nvidia" ? "NVIDIA-backed response" : "Local data fallback"}</span>
+                      <span>Clinic data answer</span>
                     </div>
                   )}
                 </div>
