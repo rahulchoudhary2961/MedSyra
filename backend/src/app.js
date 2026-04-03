@@ -1,7 +1,6 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
-const path = require("path");
 const env = require("./config/env");
 const routes = require("./routes");
 const notFoundHandler = require("./middlewares/not-found");
@@ -34,7 +33,6 @@ app.use(requestSecurityMonitor);
 app.use(globalApiLimiter);
 app.use(enforceJsonContentType);
 app.use(express.json({ limit: "10mb" }));
-app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.get("/health", async (_req, res) => {
   const health = await getHealthStatus();

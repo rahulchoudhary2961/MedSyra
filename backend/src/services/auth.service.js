@@ -61,7 +61,7 @@ const buildSetupResetToken = async (userId) => {
   return resetToken;
 };
 
-const signup = async (payload) => {
+const provisionSignupAccount = async (payload) => {
   const { fullName, email, phone, role, hospitalName, password } = payload;
 
   if (!ALLOWED_ROLES.has(role)) {
@@ -99,8 +99,18 @@ const signup = async (payload) => {
   await sendVerificationEmail({ email: normalizedEmail, token: verificationToken });
 
   return {
+    organizationId,
+    userId: user.id,
     message: "Account created. Please verify your email before signing in.",
     email: normalizedEmail
+  };
+};
+
+const signup = async (payload) => {
+  const result = await provisionSignupAccount(payload);
+  return {
+    message: result.message,
+    email: result.email
   };
 };
 
@@ -317,6 +327,7 @@ const resendStaffSetup = async (organizationId, userId) => {
 };
 
 module.exports = {
+  provisionSignupAccount,
   signup,
   signin,
   verifyEmail,

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Eye, FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import { getAuthToken } from "@/lib/auth";
 import { canAccessMedicalRecords, canDeleteMedicalRecords, isFullAccessRole } from "@/lib/roles";
 import { Doctor, MedicalRecord, Patient } from "@/types/api";
 
@@ -74,6 +75,12 @@ type MeResponse = {
   };
 };
 
+type MedicalRecordAttachment = {
+  blob: Blob | null;
+  externalUrl: string | null;
+  fileName: string;
+};
+
 export default function MedicalRecordsPage() {
   const searchParams = useSearchParams();
   const patientFilterId = searchParams.get("patientId") || "";
@@ -126,13 +133,27 @@ export default function MedicalRecordsPage() {
     setSelectedFile(null);
   };
 
-  const resolveAttachmentUrl = (fileUrl: string) => {
-    if (/^https?:\/\//i.test(fileUrl)) {
-      return fileUrl;
+  const getAttachmentEndpoint = (recordId: string) => {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1";
+    return `${apiBaseUrl.replace(/\/$/, "")}/medical-records/${recordId}/attachment`;
+  };
+
+  const getAttachmentFallbackFileName = (recordId: string, fileUrl?: string | null) => {
+    const storedFileName = fileUrl?.split("/").pop();
+    if (storedFileName) {
+      return storedFileName.replace(/^\d{13}-[0-9a-f-]{36}-/i, "");
     }
 
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1";
-    return `${apiBaseUrl.replace(/\/api\/v1\/?$/, "")}${fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`}`;
+    return `medical-record-${recordId}.pdf`;
+  };
+
+  const extractFileNameFromDisposition = (headerValue: string | null, fallbackFileName: string) => {
+    if (!headerValue) {
+      return fallbackFileName;
+    }
+
+    const match = headerValue.match(/filename="?([^";]+)"?/i);
+    return match?.[1] || fallbackFileName;
   };
 
   const fileToBase64 = (file: File) =>
@@ -150,6 +171,44 @@ export default function MedicalRecordsPage() {
       reader.onerror = () => reject(new Error("Failed to read file"));
       reader.readAsDataURL(file);
     });
+
+  const fetchAttachment = async (recordId: string, fileUrl?: string | null): Promise<MedicalRecordAttachment> => {
+    if (fileUrl && /^https?:\/\//i.test(fileUrl)) {
+      return {
+        blob: null,
+        externalUrl: fileUrl,
+        fileName: getAttachmentFallbackFileName(recordId, fileUrl)
+      };
+    }
+
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(getAttachmentEndpoint(recordId), {
+      method: "GET",
+      headers,
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.message || "Failed to load attachment");
+    }
+
+    const fallbackFileName = getAttachmentFallbackFileName(recordId, fileUrl);
+
+    return {
+      blob: await response.blob(),
+      externalUrl: null,
+      fileName: extractFileNameFromDisposition(
+        response.headers.get("content-disposition"),
+        fallbackFileName
+      )
+    };
+  };
 
   const loadRecords = useCallback(() => {
     setLoading(true);
@@ -300,6 +359,48 @@ export default function MedicalRecordsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const openAttachment = async (recordId: string, fileUrl?: string | null) => {
+    const previewWindow = window.open("", "_blank");
+    if (!previewWindow) {
+      throw new Error("Allow pop-ups to preview this attachment");
+    }
+
+    try {
+      const attachment = await fetchAttachment(recordId, fileUrl);
+
+      if (attachment.externalUrl) {
+        previewWindow.location.href = attachment.externalUrl;
+        return;
+      }
+
+      if (!attachment.blob) {
+        throw new Error("Attachment preview is unavailable");
+      }
+
+      const url = URL.createObjectURL(attachment.blob);
+      previewWindow.location.href = url;
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      previewWindow.close();
+      throw error;
+    }
+  };
+
+  const downloadAttachment = async (recordId: string, fileUrl?: string | null) => {
+    const attachment = await fetchAttachment(recordId, fileUrl);
+
+    if (attachment.externalUrl) {
+      window.open(attachment.externalUrl, "_blank");
+      return;
+    }
+
+    if (!attachment.blob) {
+      throw new Error("Attachment download is unavailable");
+    }
+
+    triggerBlobDownload(attachment.blob, attachment.fileName);
+  };
+
   const handleView = async (record: MedicalRecord) => {
     setError("");
     setSelectedRecord(record);
@@ -353,9 +454,14 @@ export default function MedicalRecordsPage() {
     }
   };
 
-  const handleDownload = (record: MedicalRecord) => {
+  const handleDownload = async (record: MedicalRecord) => {
     if (record.file_url) {
-      window.open(resolveAttachmentUrl(record.file_url), "_blank", "noopener,noreferrer");
+      try {
+        await downloadAttachment(record.id, record.file_url);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to download attachment";
+        setError(message);
+      }
       return;
     }
 
@@ -509,7 +615,7 @@ export default function MedicalRecordsPage() {
                         <Eye className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDownload(record)}
+                        onClick={() => void handleDownload(record)}
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
                         title="Download"
                       >
@@ -658,15 +764,20 @@ export default function MedicalRecordsPage() {
               />
               {selectedFile ? (
                 <p className="mt-2 text-xs text-emerald-700">Selected: {selectedFile.name}</p>
-              ) : form.fileUrl ? (
-                <a
-                  href={resolveAttachmentUrl(form.fileUrl)}
-                  target="_blank"
-                  rel="noreferrer"
+              ) : form.fileUrl && editingRecordId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    void openAttachment(editingRecordId, form.fileUrl).catch((err) => {
+                      const message = err instanceof Error ? err.message : "Failed to open attachment";
+                      setError(message);
+                    });
+                  }}
                   className="mt-2 inline-block text-xs text-emerald-700 hover:underline"
                 >
                   Open current attachment
-                </a>
+                </button>
               ) : (
                 <p className="mt-2 text-xs text-gray-500">Accepted: JPG, PNG, WEBP, GIF, PDF up to 5MB.</p>
               )}
@@ -722,16 +833,21 @@ export default function MedicalRecordsPage() {
               <p className="sm:col-span-2"><span className="text-gray-500">Prescription:</span> {selectedRecord.prescription || "-"}</p>
               <p className="sm:col-span-2"><span className="text-gray-500">Notes:</span> {selectedRecord.notes || "-"}</p>
               <p className="sm:col-span-2">
-                <span className="text-gray-500">File URL:</span>{" "}
+                <span className="text-gray-500">Attachment:</span>{" "}
                 {selectedRecord.file_url ? (
-                  <a
-                    href={resolveAttachmentUrl(selectedRecord.file_url)}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError("");
+                      void openAttachment(selectedRecord.id, selectedRecord.file_url).catch((err) => {
+                        const message = err instanceof Error ? err.message : "Failed to open attachment";
+                        setError(message);
+                      });
+                    }}
                     className="text-emerald-700 hover:underline"
                   >
                     Open attachment
-                  </a>
+                  </button>
                 ) : (
                   "-"
                 )}

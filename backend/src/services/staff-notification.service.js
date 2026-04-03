@@ -87,7 +87,11 @@ const sendDailyScheduleNotifications = async ({ date, organizationId = null }) =
       try {
         const result = await sendWhatsAppText({
           phone: recipient.phone,
-          body: schedule.body
+          body: schedule.body,
+          organizationId: recipient.organization_id,
+          referenceId: recipient.id,
+          sourceFeature: "daily_staff_schedule_notification",
+          note: "Daily staff schedule WhatsApp notification"
         });
 
         results.push({

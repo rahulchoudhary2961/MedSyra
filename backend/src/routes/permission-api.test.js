@@ -192,6 +192,37 @@ const run = async () => {
   }
 
   {
+    const routePath = path.resolve(__dirname, "./commercial.routes.js");
+    const controllerPath = require.resolve(path.resolve(__dirname, "../controllers/commercial.controller.js"));
+    const validatePath = require.resolve(path.resolve(__dirname, "../middlewares/validate-request.js"));
+    const schemasPath = require.resolve(path.resolve(__dirname, "../validators/schemas.js"));
+
+    const router = loadWithMocks(routePath, {
+      [controllerPath]: buildOkController(["getOverview", "updatePricing", "createTopUp", "updatePlatformInfra"]),
+      [validatePath]: () => noopMiddleware,
+      [schemasPath]: { commercialSchemas: { updatePricingBody: {}, createTopUpBody: {}, updatePlatformInfraBody: {} } }
+    });
+
+    const server = await startErrorHandledServer(router);
+    try {
+      let response = await fetch(`${server.baseUrl}/overview`, { headers: { "x-test-role": "admin" } });
+      assert.equal(response.status, 200);
+
+      response = await fetch(`${server.baseUrl}/overview`, { headers: { "x-test-role": "billing" } });
+      assert.equal(response.status, 403);
+
+      response = await fetch(`${server.baseUrl}/top-ups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-test-role": "management" },
+        body: JSON.stringify({})
+      });
+      assert.equal(response.status, 200);
+    } finally {
+      await server.close();
+    }
+  }
+
+  {
     const routePath = path.resolve(__dirname, "./auth.routes.js");
     const controllerPath = require.resolve(path.resolve(__dirname, "../controllers/auth.controller.js"));
     const requireAuthPath = require.resolve(path.resolve(__dirname, "../middlewares/require-auth.js"));

@@ -521,6 +521,7 @@ const markAppointmentNoShow = async (organizationId, appointmentId, payload = {}
   const notifications = await sendNoShowNotifications({
     appointment: updatedAppointment,
     context: reminderContext,
+    organizationId,
     notifySms: payload.notifySms === true,
     notifyEmail: payload.notifyEmail === true
   });

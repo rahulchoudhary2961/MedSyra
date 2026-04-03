@@ -7,8 +7,11 @@ const tests = [
   path.resolve(__dirname, "../models/billings.model.test.js"),
   path.resolve(__dirname, "../services/billings.service.test.js"),
   path.resolve(__dirname, "../services/auth.service.test.js"),
+  path.resolve(__dirname, "../services/leads.service.test.js"),
+  path.resolve(__dirname, "../services/commercial.service.test.js"),
   path.resolve(__dirname, "../services/appointments.service.test.js"),
-  path.resolve(__dirname, "../services/staff-notification.service.test.js")
+  path.resolve(__dirname, "../services/staff-notification.service.test.js"),
+  path.resolve(__dirname, "../utils/file-storage.test.js")
 ];
 
 const run = async () => {

@@ -3,7 +3,10 @@ const medicalRecordsRepository = require("../models/medical-records.model");
 const patientsModel = require("../models/patients.model");
 const doctorsModel = require("../models/doctors.model");
 const cache = require("../utils/cache");
-const { saveMedicalRecordAttachment } = require("../utils/file-storage");
+const {
+  saveMedicalRecordAttachment,
+  loadMedicalRecordAttachment
+} = require("../utils/file-storage");
 const { sendFollowUpReminder } = require("./whatsapp-reminder.service");
 
 const listCachePrefix = (organizationId) => `medical-records:list:${organizationId}:`;
@@ -208,6 +211,20 @@ const uploadMedicalRecordAttachment = async (_organizationId, payload) => {
   return saveMedicalRecordAttachment(payload);
 };
 
+const getMedicalRecordAttachmentDownload = async (organizationId, id, actor = null) => {
+  const record = await getMedicalRecordById(organizationId, id, actor);
+
+  if (!record.file_url) {
+    throw new ApiError(404, "Medical record attachment not found");
+  }
+
+  if (/^https?:\/\//i.test(record.file_url)) {
+    throw new ApiError(400, "External medical record attachments cannot be downloaded through MedSyra");
+  }
+
+  return loadMedicalRecordAttachment(record.file_url);
+};
+
 const createAppointmentRecordIfMissing = async (organizationId, payload) => {
   if (!payload.appointmentId) {
     return null;
@@ -262,6 +279,9 @@ const sendMedicalRecordFollowUpReminder = async (organizationId, id, actor = nul
   }
 
   const result = await sendFollowUpReminder({
+    organizationId,
+    actorUserId: actor?.sub || null,
+    referenceId: record.id,
     patientPhone: reminderContext.patient_phone,
     patientName: reminderContext.patient_name,
     clinicName: reminderContext.clinic_name,
@@ -290,6 +310,8 @@ const processDueFollowUpReminders = async (organizationId = null) => {
   for (const record of records) {
     try {
       const reminder = await sendFollowUpReminder({
+        organizationId: record.organization_id || organizationId,
+        referenceId: record.id,
         patientPhone: record.patient_phone,
         patientName: record.patient_name,
         clinicName: record.clinic_name,
@@ -332,6 +354,7 @@ module.exports = {
   updateMedicalRecord,
   deleteMedicalRecord,
   uploadMedicalRecordAttachment,
+  getMedicalRecordAttachmentDownload,
   createAppointmentRecordIfMissing,
   upsertAppointmentConsultationRecord,
   ensureMedicalRecordAccess,

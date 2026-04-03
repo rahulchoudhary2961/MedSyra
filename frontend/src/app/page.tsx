@@ -177,20 +177,48 @@ const pricingPlans = [
   }
 ];
 
+type ActivationMode = "demo" | "trial";
+
+type LeadActivationResponse = {
+  success: boolean;
+  message: string;
+  data: {
+    activationType: ActivationMode;
+    status: string;
+    leadId: string;
+    nextFollowUpAt: string;
+    email?: string;
+  };
+};
+
 export default function Home() {
   const router = useRouter();
   const [isReady, setIsReady] = useState(false);
-  const [leadForm, setLeadForm] = useState({
+  const [activationMode, setActivationMode] = useState<ActivationMode>("demo");
+  const [demoForm, setDemoForm] = useState({
     fullName: "",
     email: "",
     phone: "",
     clinicName: "",
     city: "",
+    demoDate: "",
+    demoTime: "",
+    demoTimezone: "Asia/Calcutta",
     message: ""
   });
-  const [isSubmittingLead, setIsSubmittingLead] = useState(false);
-  const [leadSuccess, setLeadSuccess] = useState("");
-  const [leadError, setLeadError] = useState("");
+  const [trialForm, setTrialForm] = useState({
+    fullName: "",
+    email: "",
+    phone: "",
+    clinicName: "",
+    city: "",
+    requestedPlanTier: "starter",
+    password: "",
+    message: ""
+  });
+  const [isSubmittingActivation, setIsSubmittingActivation] = useState(false);
+  const [activationSuccess, setActivationSuccess] = useState("");
+  const [activationError, setActivationError] = useState("");
 
   useEffect(() => {
     const token = getAuthToken();
@@ -215,30 +243,72 @@ export default function Home() {
     );
   }
 
-  const submitLead = async (event: React.FormEvent<HTMLFormElement>) => {
+  const submitDemoRequest = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setLeadError("");
-    setLeadSuccess("");
-    setIsSubmittingLead(true);
+    setActivationError("");
+    setActivationSuccess("");
+    setIsSubmittingActivation(true);
 
     try {
-      const response = await apiRequest<{ success: boolean; message: string }>("/leads", {
+      const response = await apiRequest<LeadActivationResponse>("/leads", {
         method: "POST",
-        body: leadForm
+        body: {
+          activationType: "demo",
+          ...demoForm
+        }
       });
-      setLeadSuccess(response.message);
-      setLeadForm({
+      setActivationSuccess(response.message);
+      setDemoForm({
         fullName: "",
         email: "",
         phone: "",
         clinicName: "",
         city: "",
+        demoDate: "",
+        demoTime: "",
+        demoTimezone: "Asia/Calcutta",
         message: ""
       });
     } catch (error) {
-      setLeadError(error instanceof Error ? error.message : "Unable to send your details right now");
+      setActivationError(error instanceof Error ? error.message : "Unable to schedule your demo right now");
     } finally {
-      setIsSubmittingLead(false);
+      setIsSubmittingActivation(false);
+    }
+  };
+
+  const submitTrialRequest = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setActivationError("");
+    setActivationSuccess("");
+    setIsSubmittingActivation(true);
+
+    try {
+      const response = await apiRequest<LeadActivationResponse>("/leads", {
+        method: "POST",
+        body: {
+          activationType: "trial",
+          ...trialForm
+        }
+      });
+      setActivationSuccess(response.message);
+      setTrialForm({
+        fullName: "",
+        email: "",
+        phone: "",
+        clinicName: "",
+        city: "",
+        requestedPlanTier: "starter",
+        password: "",
+        message: ""
+      });
+
+      if (response.data.email) {
+        router.push(`/auth/verify-email?email=${encodeURIComponent(response.data.email)}`);
+      }
+    } catch (error) {
+      setActivationError(error instanceof Error ? error.message : "Unable to start your trial right now");
+    } finally {
+      setIsSubmittingActivation(false);
     }
   };
 
@@ -265,6 +335,7 @@ export default function Home() {
               </Link>
               <Link
                 href="#demo-form"
+                onClick={() => setActivationMode("demo")}
                 className="rounded-full bg-slate-950 px-5 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
               >
                 Book Free Demo
@@ -287,6 +358,7 @@ export default function Home() {
               <div className="animate-fade-up animation-delay-300 mt-10 flex flex-col gap-4 sm:flex-row">
                 <Link
                   href="#demo-form"
+                  onClick={() => setActivationMode("demo")}
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-7 py-4 text-base font-semibold text-white transition hover:bg-emerald-700"
                 >
                   Book Free Demo
@@ -294,6 +366,7 @@ export default function Home() {
                 </Link>
                 <Link
                   href="#demo-form"
+                  onClick={() => setActivationMode("trial")}
                   className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-7 py-4 text-base font-semibold text-slate-800 transition hover:border-emerald-300 hover:text-emerald-700"
                 >
                   Start Free Trial
@@ -591,12 +664,14 @@ export default function Home() {
             <div className="flex flex-col gap-3 sm:flex-row">
               <Link
                 href="#demo-form"
+                onClick={() => setActivationMode("demo")}
                 className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
               >
                 Book a Free Demo
               </Link>
               <Link
                 href="#demo-form"
+                onClick={() => setActivationMode("trial")}
                 className="inline-flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white transition hover:border-emerald-300 hover:text-emerald-300"
               >
                 Start Free Trial
@@ -609,106 +684,268 @@ export default function Home() {
       <section id="demo-form" className="mx-auto max-w-6xl scroll-mt-24 px-6 pb-28 lg:px-10">
         <div className="animate-fade-up grid gap-8 rounded-[2rem] border border-slate-200 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.06)] lg:grid-cols-[0.9fr_1.1fr] md:p-10">
           <div>
-            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Request a callback</p>
+            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Activation flow</p>
             <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-4xl">
-              Share your practice details and we will reach out to you
+              {activationMode === "demo"
+                ? "Pick a demo slot and we will confirm it"
+                : "Start a clinic trial immediately"}
             </h2>
             <p className="mt-4 text-base leading-8 text-slate-600">
-              Fill in your basic details below. We will contact you on email or phone to schedule a demo.
+              {activationMode === "demo"
+                ? "Choose your preferred demo date and time. We will record it, schedule follow-up automatically, and confirm the session on email or phone."
+                : "Create your clinic admin account here. Your trial is provisioned immediately and you only need to verify your email to continue."}
             </p>
             <div className="mt-8 space-y-3 text-sm text-slate-600">
-              <p>Best for independent doctors, clinics, and hospitals.</p>
-              <p>Use this if you want a guided demo before starting the trial.</p>
+              <p>Best for independent doctors, clinics, and small multi-doctor practices.</p>
+              <p>{activationMode === "demo" ? "Use this if you want a guided walkthrough first." : "Use this if you want direct product access without waiting for a callback."}</p>
             </div>
           </div>
 
-          <form onSubmit={submitLead} className="grid gap-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm text-slate-700">Full Name</label>
-                <input
-                  type="text"
-                  value={leadForm.fullName}
-                  onChange={(e) => setLeadForm((current) => ({ ...current, fullName: e.target.value }))}
-                  className="theme-input w-full rounded-xl px-4 py-3"
-                  placeholder="Dr. Amit Sharma"
-                  required
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm text-slate-700">Doctor / Clinic / Hospital Name</label>
-                <input
-                  type="text"
-                  value={leadForm.clinicName}
-                  onChange={(e) => setLeadForm((current) => ({ ...current, clinicName: e.target.value }))}
-                  className="theme-input w-full rounded-xl px-4 py-3"
-                  placeholder="Sharma Care Clinic"
-                  required
-                />
-              </div>
+          <div className="grid gap-4">
+            <div className="grid grid-cols-2 gap-3 rounded-[1.5rem] bg-slate-100 p-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setActivationMode("demo");
+                  setActivationError("");
+                  setActivationSuccess("");
+                }}
+                className={`rounded-[1rem] px-4 py-3 text-sm font-semibold transition ${
+                  activationMode === "demo" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600"
+                }`}
+              >
+                Book Demo
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActivationMode("trial");
+                  setActivationError("");
+                  setActivationSuccess("");
+                }}
+                className={`rounded-[1rem] px-4 py-3 text-sm font-semibold transition ${
+                  activationMode === "trial" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600"
+                }`}
+              >
+                Start Trial
+              </button>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm text-slate-700">Email</label>
-                <input
-                  type="email"
-                  value={leadForm.email}
-                  onChange={(e) => setLeadForm((current) => ({ ...current, email: e.target.value }))}
-                  className="theme-input w-full rounded-xl px-4 py-3"
-                  placeholder="doctor@practice.com"
-                  required
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm text-slate-700">Phone Number</label>
-                <input
-                  type="tel"
-                  value={leadForm.phone}
-                  onChange={(e) => setLeadForm((current) => ({ ...current, phone: e.target.value }))}
-                  className="theme-input w-full rounded-xl px-4 py-3"
-                  placeholder="+91 9876543210"
-                  required
-                />
-              </div>
-            </div>
+            {activationMode === "demo" ? (
+              <form onSubmit={submitDemoRequest} className="grid gap-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Full Name</label>
+                    <input
+                      type="text"
+                      value={demoForm.fullName}
+                      onChange={(e) => setDemoForm((current) => ({ ...current, fullName: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="Dr. Amit Sharma"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Clinic Name</label>
+                    <input
+                      type="text"
+                      value={demoForm.clinicName}
+                      onChange={(e) => setDemoForm((current) => ({ ...current, clinicName: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="Sharma Care Clinic"
+                      required
+                    />
+                  </div>
+                </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm text-slate-700">City</label>
-                <input
-                  type="text"
-                  value={leadForm.city}
-                  onChange={(e) => setLeadForm((current) => ({ ...current, city: e.target.value }))}
-                  className="theme-input w-full rounded-xl px-4 py-3"
-                  placeholder="Mumbai"
-                />
-              </div>
-              <div className="flex items-end">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Email</label>
+                    <input
+                      type="email"
+                      value={demoForm.email}
+                      onChange={(e) => setDemoForm((current) => ({ ...current, email: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="doctor@practice.com"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Phone Number</label>
+                    <input
+                      type="tel"
+                      value={demoForm.phone}
+                      onChange={(e) => setDemoForm((current) => ({ ...current, phone: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="+91 9876543210"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Preferred Date</label>
+                    <input
+                      type="date"
+                      value={demoForm.demoDate}
+                      onChange={(e) => setDemoForm((current) => ({ ...current, demoDate: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Preferred Time</label>
+                    <input
+                      type="time"
+                      value={demoForm.demoTime}
+                      onChange={(e) => setDemoForm((current) => ({ ...current, demoTime: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">City</label>
+                    <input
+                      type="text"
+                      value={demoForm.city}
+                      onChange={(e) => setDemoForm((current) => ({ ...current, city: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="Mumbai"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-700">What do you want to see in the demo?</label>
+                  <textarea
+                    rows={4}
+                    value={demoForm.message}
+                    onChange={(e) => setDemoForm((current) => ({ ...current, message: e.target.value }))}
+                    className="theme-input w-full rounded-xl px-4 py-3"
+                    placeholder="Appointments, billing, reminders, doctor workflows, or multi-doctor reporting."
+                  />
+                </div>
+
                 <button
                   type="submit"
-                  disabled={isSubmittingLead}
+                  disabled={isSubmittingActivation}
                   className="theme-button-primary w-full rounded-xl px-6 py-3 text-sm font-semibold disabled:opacity-60"
                 >
-                  {isSubmittingLead ? "Sending..." : "Send My Details"}
+                  {isSubmittingActivation ? "Scheduling..." : "Schedule My Demo"}
                 </button>
-              </div>
-            </div>
+              </form>
+            ) : (
+              <form onSubmit={submitTrialRequest} className="grid gap-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Full Name</label>
+                    <input
+                      type="text"
+                      value={trialForm.fullName}
+                      onChange={(e) => setTrialForm((current) => ({ ...current, fullName: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="Dr. Amit Sharma"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Clinic Name</label>
+                    <input
+                      type="text"
+                      value={trialForm.clinicName}
+                      onChange={(e) => setTrialForm((current) => ({ ...current, clinicName: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="Sharma Care Clinic"
+                      required
+                    />
+                  </div>
+                </div>
 
-            <div>
-              <label className="mb-2 block text-sm text-slate-700">Message</label>
-              <textarea
-                rows={4}
-                value={leadForm.message}
-                onChange={(e) => setLeadForm((current) => ({ ...current, message: e.target.value }))}
-                className="theme-input w-full rounded-xl px-4 py-3"
-                placeholder="Tell us a little about your practice, clinic, or hospital and what you need help with."
-              />
-            </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Email</label>
+                    <input
+                      type="email"
+                      value={trialForm.email}
+                      onChange={(e) => setTrialForm((current) => ({ ...current, email: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="doctor@practice.com"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Phone Number</label>
+                    <input
+                      type="tel"
+                      value={trialForm.phone}
+                      onChange={(e) => setTrialForm((current) => ({ ...current, phone: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="+91 9876543210"
+                      required
+                    />
+                  </div>
+                </div>
 
-            {leadSuccess && <p className="text-sm text-emerald-700">{leadSuccess}</p>}
-            {leadError && <p className="text-sm text-red-600">{leadError}</p>}
-          </form>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">City</label>
+                    <input
+                      type="text"
+                      value={trialForm.city}
+                      onChange={(e) => setTrialForm((current) => ({ ...current, city: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="Mumbai"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Preferred Plan</label>
+                    <select
+                      value={trialForm.requestedPlanTier}
+                      onChange={(e) => setTrialForm((current) => ({ ...current, requestedPlanTier: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                    >
+                      <option value="starter">Starter</option>
+                      <option value="growth">Growth</option>
+                      <option value="enterprise">Enterprise</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-700">Create Password</label>
+                    <input
+                      type="password"
+                      value={trialForm.password}
+                      onChange={(e) => setTrialForm((current) => ({ ...current, password: e.target.value }))}
+                      className="theme-input w-full rounded-xl px-4 py-3"
+                      placeholder="Minimum 8 characters"
+                      minLength={8}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-700">Notes</label>
+                  <textarea
+                    rows={4}
+                    value={trialForm.message}
+                    onChange={(e) => setTrialForm((current) => ({ ...current, message: e.target.value }))}
+                    className="theme-input w-full rounded-xl px-4 py-3"
+                    placeholder="Tell us about your clinic size or any onboarding help you need."
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingActivation}
+                  className="theme-button-primary w-full rounded-xl px-6 py-3 text-sm font-semibold disabled:opacity-60"
+                >
+                  {isSubmittingActivation ? "Provisioning..." : "Create My Trial"}
+                </button>
+              </form>
+            )}
+
+            {activationSuccess && <p className="text-sm text-emerald-700">{activationSuccess}</p>}
+            {activationError && <p className="text-sm text-red-600">{activationError}</p>}
+          </div>
         </div>
       </section>
     </main>

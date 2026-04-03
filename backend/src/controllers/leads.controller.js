@@ -8,12 +8,16 @@ const submitLead = asyncHandler(async (req, res) => {
     logInfo("landing_lead_submitted", {
       ...getRequestMeta(req),
       email: req.body.email,
-      clinicName: req.body.clinicName
+      clinicName: req.body.clinicName,
+      activationType: req.body.activationType || "demo",
+      leadId: result.leadId,
+      status: result.status
     });
 
     res.status(201).json({
       success: true,
-      message: result.message
+      message: result.message,
+      data: result
     });
   } catch (error) {
     logWarn("landing_lead_failed", {

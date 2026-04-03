@@ -25,6 +25,12 @@ router.post(
   controller.uploadMedicalRecordAttachment
 );
 router.get(
+  "/:id/attachment",
+  authorizeRoles("full_access", "reception_access", "doctor"),
+  validateRequest({ params: medicalRecordsSchemas.idParams }),
+  controller.downloadMedicalRecordAttachment
+);
+router.get(
   "/:id",
   authorizeRoles("full_access", "reception_access", "doctor"),
   validateRequest({ params: medicalRecordsSchemas.idParams }),

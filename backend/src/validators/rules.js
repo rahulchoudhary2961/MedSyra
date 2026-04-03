@@ -208,7 +208,7 @@ const urlRule = () => (value, fieldName) => {
 const relativeUploadPathRule = () => (value, fieldName) => {
   const normalized = stringRule({ minLength: 2, maxLength: 2048, safe: false })(value, fieldName);
 
-  if (!normalized.startsWith("/uploads/")) {
+  if (!normalized.startsWith("/uploads/") && !normalized.startsWith("/private-uploads/")) {
     throw new ApiError(400, `${fieldName} must be a valid upload path`);
   }
 

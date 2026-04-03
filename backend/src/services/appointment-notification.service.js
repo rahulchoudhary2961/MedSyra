@@ -30,7 +30,7 @@ const buildNoShowSms = ({ patientName, clinicName, appointmentDate, appointmentT
   ].join("\n");
 };
 
-const sendNoShowNotifications = async ({ appointment, context, notifySms, notifyEmail }) => {
+const sendNoShowNotifications = async ({ appointment, context, notifySms, notifyEmail, organizationId }) => {
   const notifications = [];
 
   if (notifyEmail) {
@@ -75,7 +75,11 @@ const sendNoShowNotifications = async ({ appointment, context, notifySms, notify
       });
       const result = await sendWhatsAppText({
         phone: appointment.mobile_number,
-        body
+        body,
+        organizationId,
+        sourceFeature: "appointment_no_show_notification",
+        referenceId: appointment.id,
+        note: "Appointment no-show WhatsApp notification"
       });
       notifications.push({
         channel: "sms",
