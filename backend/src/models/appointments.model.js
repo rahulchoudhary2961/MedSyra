@@ -399,12 +399,35 @@ const markAppointmentReminderSent = async (organizationId, id, stage) => {
   return getAppointmentById(organizationId, id);
 };
 
+const listAppointmentsForDate = async (organizationId, date) => {
+  const query = `
+    SELECT
+      a.id,
+      a.title,
+      a.patient_name,
+      a.appointment_time,
+      a.status,
+      d.full_name AS doctor_name
+    FROM appointments a
+    LEFT JOIN doctors d
+      ON d.id = a.doctor_id
+     AND d.organization_id = a.organization_id
+    WHERE a.organization_id = $1
+      AND a.appointment_date = $2
+    ORDER BY a.appointment_time ASC, a.created_at ASC
+  `;
+
+  const { rows } = await pool.query(query, [organizationId, date]);
+  return rows;
+};
+
 module.exports = {
   listAppointments,
   createAppointment,
   getAppointmentById,
   getAppointmentReminderContext,
   markAppointmentReminderSent,
+  listAppointmentsForDate,
   findDoctorConflicts,
   updateAppointment,
   deleteAppointment,

@@ -2,7 +2,13 @@
 
 import { CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { canAccessBilling, canManageAppointments, isFullAccessRole, isReceptionRole } from "@/lib/roles";
+import {
+  canAccessBilling,
+  canAccessReports,
+  canAccessSettings,
+  canManageAppointments,
+  canManageDoctors
+} from "@/lib/roles";
 import { AuthUser } from "@/types/api";
 
 type TourPlacement = "top" | "bottom" | "left" | "right" | "center";
@@ -113,7 +119,7 @@ const buildTourSteps = (role?: string | null): TourStep[] => {
     placement: "top"
   });
 
-  if (isFullAccessRole(role) || isReceptionRole(role)) {
+  if (canManageDoctors(role)) {
     steps.push({
       id: "doctors-add",
       path: "/dashboard/doctors",
@@ -125,27 +131,28 @@ const buildTourSteps = (role?: string | null): TourStep[] => {
   }
 
   if (canAccessBilling(role)) {
-    steps.push(
-      {
-        id: "billings-overview",
-        path: "/dashboard/billings",
-        selector: '[data-tour-id="tour-billings-overview"]',
-        title: "Track billing and collections",
-        description: "Billing shows revenue, pending invoices, and payment status so your team can follow money without leaving the workflow.",
-        placement: "bottom"
-      },
-      {
-        id: "reports-overview",
-        path: "/dashboard/reports",
-        selector: '[data-tour-id="tour-reports-overview"]',
-        title: "Use reports for business visibility",
-        description: "Reports combine operational cards, trends, doctor performance, invoices, and clinical workload so you can review the organization in one place.",
-        placement: "bottom"
-      }
-    );
+    steps.push({
+      id: "billings-overview",
+      path: "/dashboard/billings",
+      selector: '[data-tour-id="tour-billings-overview"]',
+      title: "Track billing and collections",
+      description: "Billing shows revenue, pending invoices, and payment status so your team can follow money without leaving the workflow.",
+      placement: "bottom"
+    });
   }
 
-  if (isFullAccessRole(role) || isReceptionRole(role)) {
+  if (canAccessReports(role)) {
+    steps.push({
+      id: "reports-overview",
+      path: "/dashboard/reports",
+      selector: '[data-tour-id="tour-reports-overview"]',
+      title: "Use reports for business visibility",
+      description: "Reports combine operational cards, trends, doctor performance, invoices, and clinical workload so you can review the organization in one place.",
+      placement: "bottom"
+    });
+  }
+
+  if (canAccessSettings(role)) {
     steps.push({
       id: "settings-tabs",
       path: "/dashboard/settings",

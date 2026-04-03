@@ -21,7 +21,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { clearAuthToken, getAuthToken } from "@/lib/auth";
 import { clearLoginIntroPending, shouldShowLoginIntro } from "@/lib/onboarding";
-import { canAccessBilling, canDeleteMedicalRecords, isFullAccessRole, isReceptionRole } from "@/lib/roles";
+import {
+  canAccessAssistant,
+  canAccessBilling,
+  canAccessMedicalRecords,
+  canAccessPatients,
+  canAccessReports,
+  canAccessSettings,
+  canManageAppointments,
+  canManageDoctors,
+  isFullAccessRole,
+  isReceptionRole
+} from "@/lib/roles";
 import { AuthUser } from "@/types/api";
 import BrandLogo from "./BrandLogo";
 import DashboardTour from "./DashboardTour";
@@ -312,24 +323,40 @@ export default function DashboardLayout({
   }, []);
 
   const visibleNavigation = navigation.filter((item) => {
-    if (currentUser?.role === "receptionist" && ["/dashboard", "/dashboard/reports", "/dashboard/settings"].includes(item.path)) {
-      return false;
-    }
-
     if (currentUser?.role === "doctor") {
       return ["/dashboard/assistant", "/dashboard/patients", "/dashboard/appointments", "/dashboard/medical-records"].includes(item.path);
     }
 
-    if (item.path === "/dashboard/billings" || item.path === "/dashboard/reports") {
+    if (item.path === "/dashboard/appointments") {
+      return canManageAppointments(currentUser?.role);
+    }
+
+    if (item.path === "/dashboard/billings") {
       return canAccessBilling(currentUser?.role);
     }
 
-    if (item.path === "/dashboard/doctors" || item.path === "/dashboard/settings") {
-      return isFullAccessRole(currentUser?.role) || isReceptionRole(currentUser?.role);
+    if (item.path === "/dashboard/reports") {
+      return canAccessReports(currentUser?.role);
+    }
+
+    if (item.path === "/dashboard/doctors") {
+      return canManageDoctors(currentUser?.role);
+    }
+
+    if (item.path === "/dashboard/settings") {
+      return canAccessSettings(currentUser?.role);
     }
 
     if (item.path === "/dashboard/medical-records") {
-      return canDeleteMedicalRecords(currentUser?.role) || currentUser?.role === "doctor" || isReceptionRole(currentUser?.role);
+      return canAccessMedicalRecords(currentUser?.role);
+    }
+
+    if (item.path === "/dashboard/patients") {
+      return canAccessPatients(currentUser?.role);
+    }
+
+    if (item.path === "/dashboard/assistant") {
+      return canAccessAssistant(currentUser?.role);
     }
 
     return true;

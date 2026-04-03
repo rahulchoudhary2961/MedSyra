@@ -136,33 +136,53 @@ const aiHighlights = [
 
 const pricingPlans = [
   {
-    name: "Base Plan",
+    name: "Starter",
     price: "Rs. 799 / month",
-    description: "Core healthcare system with shared infra coverage and a starter credit wallet for light AI and reminder usage.",
+    description: "Entry plan for solo doctors and small clinics that need the full operating workflow without a heavy monthly commitment.",
     points: [
-      "Covers core workflow and fixed platform cost",
-      "Includes monthly credits for light automation usage",
-      "Simple entry plan for growing practices"
+      "Appointments, patients, billing, reminders, and core reports",
+      "Designed for one doctor with a light staff setup",
+      "Includes a starter monthly credit wallet for AI and messaging"
     ]
   },
   {
-    name: "Credit Top-Up",
-    price: "Rs. 199 / 200 credits",
-    description: "One shared wallet for MedSyra Copilot, AI patient summaries, and WhatsApp reminders.",
+    name: "Growth",
+    price: "Rs. 1499 / month",
+    description: "For growing clinics with multiple doctors, more staff coordination, and higher reporting and automation needs.",
     points: [
-      "One purchase works across AI and messaging",
-      "Easy for teams to understand and track",
-      "Scales cleanly as usage grows"
+      "Advanced reporting, MedSyra Copilot, and fuller staff workflows",
+      "Built for multi-doctor practices and busier front desks",
+      "Includes a larger monthly credit bundle than Starter"
     ]
   },
   {
-    name: "Credit Usage",
-    price: "1 credit per action",
-    description: "Keep usage transparent with a simple rule for every metered action.",
+    name: "Scale",
+    price: "Rs. 3500 / month",
+    description: "For larger clinic teams that need stronger controls, heavier automation, and higher-volume operations in one account.",
     points: [
-      "1 AI query = 1 credit",
-      "1 WhatsApp reminder = 1 credit",
-      "New metered features can use the same wallet"
+      "Priority-ready workflows for larger teams and daily volume",
+      "Best fit for clinics with multiple coordinators and billing staff",
+      "Comes with the strongest included credit allowance in standard plans"
+    ]
+  },
+  {
+    name: "Enterprise",
+    price: "Custom",
+    description: "For hospital groups, chains, or multi-location setups that need onboarding support, custom rollout, and tailored commercials.",
+    points: [
+      "Custom pricing, onboarding, and operational setup",
+      "Flexible commercials for larger account structures",
+      "Best for chains, hospital groups, and special integrations"
+    ]
+  },
+  {
+    name: "Usage Credits",
+    price: "Upsell as needed",
+    description: "Keep AI and messaging monetization separate from the core subscription so clinics only pay more when usage expands.",
+    points: [
+      "One shared wallet across AI and messaging features",
+      "Top up credits only when usage grows beyond the included bundle",
+      "Simple rule: metered automation consumes credits from the same wallet"
     ]
   }
 ];
@@ -519,7 +539,7 @@ export default function Home() {
               Start with a free trial
             </h2>
             <p className="mt-4 text-base leading-8 text-slate-600">
-              Free trial available with a simple monthly plan for growing practices and teams.
+              Free trial available with tiered clinic plans and credit-based usage upsells.
             </p>
           </div>
         </div>
@@ -529,14 +549,14 @@ export default function Home() {
         <div className="animate-fade-up mx-auto max-w-3xl text-center">
           <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Pricing Logic</p>
           <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
-            One base plan, one credit wallet
+            Tiered plans with one shared credit wallet
           </h2>
           <p className="mt-4 text-base leading-8 text-slate-600">
-            Keep pricing simple: the monthly plan covers your core product and shared infra, and one credit wallet handles AI and messaging usage without separate packs for every feature.
+            Keep subscription pricing simple across Starter, Growth, Scale, and Enterprise, then use one shared credit wallet as the usage upsell for AI and messaging.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-6 xl:grid-cols-3">
+        <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-5">
           {pricingPlans.map((plan, index) => (
             <div
               key={plan.name}

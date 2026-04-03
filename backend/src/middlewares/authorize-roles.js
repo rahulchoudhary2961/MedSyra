@@ -2,7 +2,8 @@ const ApiError = require("../utils/api-error");
 const { USER_ROLES } = require("../constants/roles");
 
 const FULL_ACCESS_ROLES = new Set([USER_ROLES.ADMIN, USER_ROLES.MANAGEMENT]);
-const RECEPTION_ROLES = new Set([USER_ROLES.RECEPTIONIST, USER_ROLES.BILLING, USER_ROLES.NURSE]);
+const RECEPTION_ROLES = new Set([USER_ROLES.RECEPTIONIST, USER_ROLES.NURSE]);
+const BILLING_ROLES = new Set([USER_ROLES.BILLING]);
 
 const normalizeAllowedRoles = (allowedRoles) => {
   const expanded = new Set();
@@ -15,6 +16,11 @@ const normalizeAllowedRoles = (allowedRoles) => {
 
     if (role === "reception_access") {
       RECEPTION_ROLES.forEach((item) => expanded.add(item));
+      return;
+    }
+
+    if (role === "billing_access") {
+      BILLING_ROLES.forEach((item) => expanded.add(item));
       return;
     }
 

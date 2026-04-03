@@ -7,7 +7,7 @@ const listInvoices = asyncHandler(async (req, res) => {
 });
 
 const createInvoice = asyncHandler(async (req, res) => {
-  const data = await billingsService.createInvoice(req.user.organizationId, req.body);
+  const data = await billingsService.createInvoice(req.user.organizationId, req.body, req.user);
   res.status(201).json({ success: true, message: "Invoice created", data });
 });
 
@@ -17,23 +17,33 @@ const getInvoice = asyncHandler(async (req, res) => {
 });
 
 const updateInvoice = asyncHandler(async (req, res) => {
-  const data = await billingsService.updateInvoice(req.user.organizationId, req.params.id, req.body);
+  const data = await billingsService.updateInvoice(req.user.organizationId, req.params.id, req.body, req.user);
   res.json({ success: true, message: "Invoice updated", data });
 });
 
 const issueInvoice = asyncHandler(async (req, res) => {
-  const data = await billingsService.issueInvoice(req.user.organizationId, req.params.id, req.body);
+  const data = await billingsService.issueInvoice(req.user.organizationId, req.params.id, req.body, req.user);
   res.json({ success: true, message: "Invoice issued", data });
 });
 
 const recordPayment = asyncHandler(async (req, res) => {
-  const data = await billingsService.recordPayment(req.user.organizationId, req.params.id, req.body);
+  const data = await billingsService.recordPayment(req.user.organizationId, req.params.id, req.body, req.user);
   res.status(201).json({ success: true, message: "Payment recorded", data });
 });
 
+const refundPayment = asyncHandler(async (req, res) => {
+  const data = await billingsService.refundPayment(req.user.organizationId, req.params.id, req.body, req.user);
+  res.json({ success: true, message: "Payment refunded", data });
+});
+
 const markInvoicePaid = asyncHandler(async (req, res) => {
-  const data = await billingsService.markInvoicePaid(req.user.organizationId, req.params.id, req.body);
+  const data = await billingsService.markInvoicePaid(req.user.organizationId, req.params.id, req.body, req.user);
   res.json({ success: true, message: "Invoice marked as paid", data });
+});
+
+const getReconciliationReport = asyncHandler(async (req, res) => {
+  const data = await billingsService.getReconciliationReport(req.user.organizationId);
+  res.json({ success: true, data });
 });
 
 const downloadInvoicePdf = asyncHandler(async (req, res) => {
@@ -44,7 +54,7 @@ const downloadInvoicePdf = asyncHandler(async (req, res) => {
 });
 
 const deleteInvoice = asyncHandler(async (req, res) => {
-  await billingsService.deleteInvoice(req.user.organizationId, req.params.id);
+  await billingsService.deleteInvoice(req.user.organizationId, req.params.id, req.user);
   res.json({ success: true, message: "Invoice deleted" });
 });
 
@@ -55,6 +65,8 @@ module.exports = {
   updateInvoice,
   issueInvoice,
   recordPayment,
+  refundPayment,
+  getReconciliationReport,
   markInvoicePaid,
   downloadInvoicePdf,
   deleteInvoice

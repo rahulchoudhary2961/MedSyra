@@ -6,6 +6,8 @@ export interface AuthUser {
   email: string;
   phone: string;
   role: string;
+  notify_daily_schedule_sms?: boolean;
+  notify_daily_schedule_email?: boolean;
 }
 
 export interface Patient {

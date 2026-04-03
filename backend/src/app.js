@@ -11,6 +11,7 @@ const enforceHttps = require("./middlewares/enforce-https");
 const requestSecurityMonitor = require("./middlewares/request-security-monitor");
 const botProtection = require("./middlewares/bot-protection");
 const { globalApiLimiter } = require("./middlewares/abuse-protection");
+const { getHealthStatus } = require("./services/health.service");
 
 const app = express();
 
@@ -35,8 +36,12 @@ app.use(enforceJsonContentType);
 app.use(express.json({ limit: "10mb" }));
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
-app.get("/health", (_req, res) => {
-  res.json({ success: true, message: "API is healthy" });
+app.get("/health", async (_req, res) => {
+  const health = await getHealthStatus();
+  res.status(health.ok ? 200 : 503).json({
+    success: health.ok,
+    data: health
+  });
 });
 
 app.use("/api/v1", routes);

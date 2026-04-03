@@ -24,11 +24,24 @@ Profit = Total Revenue - Total Cost
 
 ## Commercial Model
 
-Recommended MVP pricing:
+Recommended commercial model:
 
-- `Rs. 799 / month` base plan
-- `100` monthly included credits
-- `Rs. 199 / 200 credits` top-up
+- `Starter: Rs. 799 / month`
+- `Growth: Rs. 1499 / month`
+- `Scale: Rs. 3500 / month`
+- `Enterprise: custom pricing`
+
+Recommended included credit bundles:
+
+- `Starter: 100 monthly credits`
+- `Growth: 400 monthly credits`
+- `Scale: 1200 monthly credits`
+- `Enterprise: custom`
+
+Recommended credit upsell:
+
+- `Rs. 199 / 200 credits` standard top-up
+- optional bulk packs can be added later without changing the core model
 
 Recommended usage mapping:
 
@@ -124,13 +137,14 @@ CREATE TABLE organization_usage_monthly (
 
 ### 4. `organization_pricing_config`
 
-Commercial defaults per clinic.
+Commercial defaults per clinic. `base_plan_price` stores the assigned subscription price for the clinic's tier.
 
 ```sql
 CREATE TABLE organization_pricing_config (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL UNIQUE REFERENCES organizations(id) ON DELETE CASCADE,
 
+  plan_tier TEXT NOT NULL DEFAULT 'starter',
   base_plan_price NUMERIC(12,2) NOT NULL DEFAULT 799,
   monthly_included_credits INT NOT NULL DEFAULT 100,
   topup_price NUMERIC(12,2) NOT NULL DEFAULT 199,
@@ -208,7 +222,7 @@ Run daily or month-end:
 2. Count messaging usage for the clinic.
 3. Compute `credits_consumed = ai_queries_used + messages_used`.
 4. Read credit purchases from `credit_transactions`.
-5. Read the clinic's pricing config for included credits and top-up pricing.
+5. Read the clinic's pricing config for its assigned tier, included credits, and top-up pricing.
 6. Read the shared infra pool for the same month.
 7. Compute:
    - `ai_cost_total = ai_queries_used * ai_cost_per_query`
@@ -218,6 +232,25 @@ Run daily or month-end:
    - `total_revenue = base_plan_revenue + topup_revenue`
    - `profit_amount = total_revenue - total_cost`
 8. Upsert into `organization_usage_monthly`.
+
+## Pricing Recommendation
+
+Use the subscription tier as the primary sale and credits as the expansion revenue layer:
+
+- `Starter`
+  - `Rs. 799 / month`
+  - suitable for solo and early-stage clinics
+- `Growth`
+  - `Rs. 1499 / month`
+  - suitable for multi-doctor clinics and busier admin workflows
+- `Scale`
+  - `Rs. 3500 / month`
+  - suitable for larger clinic teams and heavier daily usage
+- `Enterprise`
+  - custom pricing
+  - suitable for chains, hospital groups, and tailored rollouts
+
+This keeps entry pricing accessible while still letting MedSyra grow revenue through automation and messaging usage.
 
 ## MVP Recommendation
 

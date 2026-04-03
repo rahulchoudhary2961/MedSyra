@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   phone TEXT NOT NULL,
   role TEXT NOT NULL,
+  notify_daily_schedule_sms BOOLEAN NOT NULL DEFAULT false,
+  notify_daily_schedule_email BOOLEAN NOT NULL DEFAULT true,
   password_hash TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -147,7 +149,9 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS password_reset_expires_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS failed_login_attempts INT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS notify_daily_schedule_sms BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS notify_daily_schedule_email BOOLEAN NOT NULL DEFAULT true;
 
 UPDATE users
 SET email_verified_at = COALESCE(email_verified_at, NOW())
@@ -207,6 +211,7 @@ CREATE TABLE IF NOT EXISTS payments (
   reference TEXT,
   status TEXT NOT NULL DEFAULT 'completed',
   paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  refunded_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT payments_amount_positive CHECK (amount > 0),
@@ -214,5 +219,35 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payments_org_invoice ON payments (organization_id, invoice_id, paid_at DESC);
+
+CREATE TABLE IF NOT EXISTS billing_audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL,
+  payment_id UUID REFERENCES payments(id) ON DELETE SET NULL,
+  actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  before_state JSONB,
+  after_state JSONB,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT billing_audit_logs_action_check CHECK (
+    action IN (
+      'invoice_created',
+      'invoice_updated',
+      'invoice_issued',
+      'payment_recorded',
+      'payment_refunded',
+      'invoice_marked_paid',
+      'invoice_deleted'
+    )
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_billing_audit_logs_org_time
+  ON billing_audit_logs (organization_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_billing_audit_logs_invoice_time
+  ON billing_audit_logs (invoice_id, created_at DESC);
 
 

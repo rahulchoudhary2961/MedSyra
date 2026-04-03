@@ -6,7 +6,7 @@ const { doctorsSchemas } = require("../validators/schemas");
 
 const router = express.Router();
 
-router.get("/", validateRequest({ query: doctorsSchemas.listQuery }), controller.listDoctors);
+router.get("/", authorizeRoles("full_access", "reception_access", "doctor"), validateRequest({ query: doctorsSchemas.listQuery }), controller.listDoctors);
 router.post("/", authorizeRoles("full_access"), validateRequest({ body: doctorsSchemas.createBody }), controller.createDoctor);
 router.delete(
   "/:id",

@@ -44,6 +44,27 @@ router.post(
   validateRequest({ body: authSchemas.resetPasswordBody }),
   controller.resetPassword
 );
+router.post(
+  "/staff",
+  requireAuth,
+  authorizeRoles("full_access"),
+  validateRequest({ body: authSchemas.createStaffBody }),
+  controller.createStaff
+);
+router.post(
+  "/staff/:id/resend-setup",
+  requireAuth,
+  authorizeRoles("full_access"),
+  validateRequest({ params: authSchemas.idParams }),
+  controller.resendStaffSetup
+);
+router.patch(
+  "/staff/:id/notifications",
+  requireAuth,
+  authorizeRoles("full_access"),
+  validateRequest({ params: authSchemas.idParams, body: authSchemas.updateStaffNotificationsBody }),
+  controller.updateStaffNotificationPreferences
+);
 router.get("/users", requireAuth, authorizeRoles("full_access"), validateRequest({ query: authSchemas.listUsersQuery }), controller.listUsers);
 router.get("/me", requireAuth, controller.me);
 

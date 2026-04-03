@@ -47,6 +47,20 @@ const buildAuthToken = (user) => {
   );
 };
 
+const buildSetupResetToken = async (userId) => {
+  const resetToken = generateToken();
+  const resetTokenHash = hashToken(resetToken);
+  const resetExpiresAt = new Date(Date.now() + env.passwordResetTokenMinutes * 60 * 1000);
+
+  await authModel.setPasswordResetToken({
+    userId,
+    tokenHash: resetTokenHash,
+    expiresAt: resetExpiresAt
+  });
+
+  return resetToken;
+};
+
 const signup = async (payload) => {
   const { fullName, email, phone, role, hospitalName, password } = payload;
 
@@ -229,6 +243,79 @@ const listUsers = async (organizationId, query) => {
   return authModel.listUsersByOrganization(organizationId, query.role || null);
 };
 
+const createStaff = async (organizationId, payload) => {
+  const {
+    fullName,
+    email,
+    phone,
+    role,
+    notifyDailyScheduleSms = false,
+    notifyDailyScheduleEmail = true
+  } = payload;
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = await authModel.findUserByEmail(normalizedEmail);
+
+  if (existing) {
+    if (existing.organization_id === organizationId) {
+      throw new ApiError(409, "A staff account with this email already exists in your organization");
+    }
+
+    throw new ApiError(409, "Email is already in use by another organization");
+  }
+
+  const temporaryPassword = generateToken();
+  const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+  const user = await authModel.createUser({
+    organizationId,
+    fullName,
+    email: normalizedEmail,
+    phone,
+    role,
+    passwordHash,
+    emailVerifiedAt: new Date(),
+    notifyDailyScheduleSms,
+    notifyDailyScheduleEmail
+  });
+
+  const resetToken = await buildSetupResetToken(user.id);
+  await sendPasswordResetEmail({ email: normalizedEmail, token: resetToken });
+
+  return {
+    ...user,
+    setup_sent: true
+  };
+};
+
+const updateStaffNotificationPreferences = async (organizationId, userId, payload) => {
+  const updated = await authModel.updateStaffNotificationPreferences({
+    organizationId,
+    userId,
+    notifyDailyScheduleSms: payload.notifyDailyScheduleSms === true,
+    notifyDailyScheduleEmail: payload.notifyDailyScheduleEmail === true
+  });
+
+  if (!updated) {
+    throw new ApiError(404, "Staff member not found");
+  }
+
+  return updated;
+};
+
+const resendStaffSetup = async (organizationId, userId) => {
+  const user = await authModel.findUserByIdAndOrganization(organizationId, userId);
+  if (!user) {
+    throw new ApiError(404, "Staff member not found");
+  }
+
+  const resetToken = await buildSetupResetToken(user.id);
+  await sendPasswordResetEmail({ email: user.email, token: resetToken });
+
+  return {
+    ...user,
+    setup_sent: true
+  };
+};
+
 module.exports = {
   signup,
   signin,
@@ -237,5 +324,8 @@ module.exports = {
   requestPasswordReset,
   resetPassword,
   getMe,
-  listUsers
+  listUsers,
+  createStaff,
+  resendStaffSetup,
+  updateStaffNotificationPreferences
 };

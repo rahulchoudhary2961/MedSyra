@@ -126,5 +126,10 @@ const invalidateByPrefix = async (prefix) => {
 module.exports = {
   get,
   set,
-  invalidateByPrefix
+  invalidateByPrefix,
+  getCacheStatus: () => ({
+    provider: redisEnabled ? "redis" : "memory",
+    configured: Boolean(redisUrl),
+    connected: redisEnabled
+  })
 };

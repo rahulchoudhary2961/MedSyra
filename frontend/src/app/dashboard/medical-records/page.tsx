@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Eye, FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
-import { canDeleteMedicalRecords, isFullAccessRole } from "@/lib/roles";
+import { canAccessMedicalRecords, canDeleteMedicalRecords, isFullAccessRole } from "@/lib/roles";
 import { Doctor, MedicalRecord, Patient } from "@/types/api";
 
 type MedicalRecordsResponse = {
@@ -193,6 +193,10 @@ export default function MedicalRecordsPage() {
     () => patients.find((patient) => patient.id === patientFilterId) || null,
     [patientFilterId, patients]
   );
+
+  if (currentRole && !canAccessMedicalRecords(currentRole)) {
+    return <p className="text-red-600">You do not have access to medical records.</p>;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
