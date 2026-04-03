@@ -8,55 +8,66 @@ const router = express.Router();
 
 router.get(
   "/",
-  authorizeRoles("full_access", "reception_access"),
+  authorizeRoles("full_access", "billing_access"),
   validateRequest({ query: billingsSchemas.listQuery }),
   controller.listInvoices
 );
 router.post(
   "/",
-  authorizeRoles("full_access", "reception_access"),
+  authorizeRoles("full_access", "billing_access"),
   validateRequest({ body: billingsSchemas.createBody }),
   controller.createInvoice
 );
 router.get(
+  "/reconciliation",
+  authorizeRoles("full_access", "billing_access"),
+  controller.getReconciliationReport
+);
+router.get(
   "/:id",
-  authorizeRoles("full_access", "reception_access"),
+  authorizeRoles("full_access", "billing_access"),
   validateRequest({ params: billingsSchemas.idParams }),
   controller.getInvoice
 );
 router.patch(
   "/:id",
-  authorizeRoles("full_access", "reception_access"),
+  authorizeRoles("full_access", "billing_access"),
   validateRequest({ params: billingsSchemas.idParams, body: billingsSchemas.updateBody }),
   controller.updateInvoice
 );
 router.post(
   "/:id/issue",
-  authorizeRoles("full_access", "reception_access"),
+  authorizeRoles("full_access", "billing_access"),
   validateRequest({ params: billingsSchemas.idParams, body: billingsSchemas.issueBody }),
   controller.issueInvoice
 );
 router.post(
   "/:id/payments",
-  authorizeRoles("full_access", "reception_access"),
+  authorizeRoles("full_access", "billing_access"),
   validateRequest({ params: billingsSchemas.idParams, body: billingsSchemas.paymentBody }),
   controller.recordPayment
 );
 router.post(
+  "/:id/refunds",
+  authorizeRoles("full_access", "billing_access"),
+  validateRequest({ params: billingsSchemas.idParams, body: billingsSchemas.refundBody }),
+  controller.refundPayment
+);
+router.post(
   "/:id/mark-paid",
-  authorizeRoles("full_access", "reception_access"),
+  authorizeRoles("full_access", "billing_access"),
   validateRequest({ params: billingsSchemas.idParams, body: billingsSchemas.quickPayBody }),
   controller.markInvoicePaid
 );
 router.get(
   "/:id/pdf",
-  authorizeRoles("full_access", "reception_access"),
+  authorizeRoles("full_access", "billing_access"),
   validateRequest({ params: billingsSchemas.idParams }),
   controller.downloadInvoicePdf
 );
 router.delete(
   "/:id",
-  authorizeRoles("full_access", "reception_access"),
+  authorizeRoles("full_access", "billing_access"),
   validateRequest({ params: billingsSchemas.idParams }),
   controller.deleteInvoice
 );

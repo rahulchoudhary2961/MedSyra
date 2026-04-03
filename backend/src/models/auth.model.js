@@ -7,17 +7,31 @@ const createUser = async ({
   phone,
   role,
   passwordHash,
-  emailVerifiedAt = null
+  emailVerifiedAt = null,
+  notifyDailyScheduleSms = false,
+  notifyDailyScheduleEmail = true
 }) => {
   const query = `
     INSERT INTO users (
-      organization_id, full_name, email, phone, role, password_hash, email_verified_at
+      organization_id, full_name, email, phone, role, password_hash, email_verified_at,
+      notify_daily_schedule_sms, notify_daily_schedule_email
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
-    RETURNING id, organization_id, full_name, email, phone, role, email_verified_at, created_at
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING id, organization_id, full_name, email, phone, role, email_verified_at,
+              notify_daily_schedule_sms, notify_daily_schedule_email, created_at
   `;
 
-  const values = [organizationId, fullName, email.toLowerCase(), phone, role, passwordHash, emailVerifiedAt];
+  const values = [
+    organizationId,
+    fullName,
+    email.toLowerCase(),
+    phone,
+    role,
+    passwordHash,
+    emailVerifiedAt,
+    notifyDailyScheduleSms,
+    notifyDailyScheduleEmail
+  ];
   const { rows } = await pool.query(query, values);
   return rows[0];
 };
@@ -26,7 +40,8 @@ const findUserByEmail = async (email) => {
   const query = `
     SELECT u.id, u.organization_id, u.full_name, u.email, u.phone, u.role, u.password_hash,
            o.name AS organization_name,
-           u.email_verified_at, u.failed_login_attempts, u.locked_until, u.created_at
+           u.email_verified_at, u.failed_login_attempts, u.locked_until, u.created_at,
+           u.notify_daily_schedule_sms, u.notify_daily_schedule_email
     FROM users u
     JOIN organizations o ON o.id = u.organization_id
     WHERE LOWER(u.email) = LOWER($1)
@@ -38,12 +53,23 @@ const findUserByEmail = async (email) => {
 const findUserById = async (id) => {
   const query = `
     SELECT u.id, u.organization_id, u.full_name, u.email, u.phone, u.role, u.email_verified_at, u.created_at,
-           o.name AS organization_name
+           o.name AS organization_name, u.notify_daily_schedule_sms, u.notify_daily_schedule_email
     FROM users u
     JOIN organizations o ON o.id = u.organization_id
     WHERE u.id = $1
   `;
   const { rows } = await pool.query(query, [id]);
+  return rows[0] || null;
+};
+
+const findUserByIdAndOrganization = async (organizationId, userId) => {
+  const query = `
+    SELECT id, organization_id, full_name, email, phone, role, email_verified_at, created_at,
+           notify_daily_schedule_sms, notify_daily_schedule_email
+    FROM users
+    WHERE organization_id = $1 AND id = $2
+  `;
+  const { rows } = await pool.query(query, [organizationId, userId]);
   return rows[0] || null;
 };
 
@@ -57,7 +83,8 @@ const listUsersByOrganization = async (organizationId, role = null) => {
   }
 
   const query = `
-    SELECT id, organization_id, full_name, email, phone, role, email_verified_at, created_at
+    SELECT id, organization_id, full_name, email, phone, role, email_verified_at, created_at,
+           notify_daily_schedule_sms, notify_daily_schedule_email
     FROM users
     WHERE organization_id = $1
       ${roleClause}
@@ -162,15 +189,74 @@ const recordSuccessfulLogin = async (userId) => {
   await pool.query(query, [userId]);
 };
 
+const updateStaffNotificationPreferences = async ({
+  organizationId,
+  userId,
+  notifyDailyScheduleSms,
+  notifyDailyScheduleEmail
+}) => {
+  const query = `
+    UPDATE users
+    SET notify_daily_schedule_sms = $3,
+        notify_daily_schedule_email = $4,
+        updated_at = NOW()
+    WHERE organization_id = $1 AND id = $2
+    RETURNING id, organization_id, full_name, email, phone, role, email_verified_at, created_at,
+              notify_daily_schedule_sms, notify_daily_schedule_email
+  `;
+  const { rows } = await pool.query(query, [
+    organizationId,
+    userId,
+    notifyDailyScheduleSms,
+    notifyDailyScheduleEmail
+  ]);
+  return rows[0] || null;
+};
+
+const listDailyScheduleRecipients = async (organizationId = null) => {
+  const values = [];
+  const conditions = [
+    "(u.notify_daily_schedule_sms = true OR u.notify_daily_schedule_email = true)"
+  ];
+
+  if (organizationId) {
+    values.push(organizationId);
+    conditions.push(`u.organization_id = $${values.length}`);
+  }
+
+  const query = `
+    SELECT
+      u.id,
+      u.organization_id,
+      u.full_name,
+      u.email,
+      u.phone,
+      u.role,
+      u.notify_daily_schedule_sms,
+      u.notify_daily_schedule_email,
+      o.name AS organization_name
+    FROM users u
+    JOIN organizations o ON o.id = u.organization_id
+    WHERE ${conditions.join(" AND ")}
+    ORDER BY o.name ASC, u.full_name ASC
+  `;
+
+  const { rows } = await pool.query(query, values);
+  return rows;
+};
+
 module.exports = {
   createUser,
   findUserByEmail,
   findUserById,
+  findUserByIdAndOrganization,
   listUsersByOrganization,
   setEmailVerificationToken,
   verifyEmailWithToken,
   setPasswordResetToken,
   resetPasswordWithToken,
   recordFailedLoginAttempt,
-  recordSuccessfulLogin
+  recordSuccessfulLogin,
+  updateStaffNotificationPreferences,
+  listDailyScheduleRecipients
 };

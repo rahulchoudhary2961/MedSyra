@@ -36,6 +36,12 @@ router.post(
   validateRequest({ params: appointmentsSchemas.idParams, body: appointmentsSchemas.sendReminderBody }),
   controller.sendAppointmentReminder
 );
+router.post(
+  "/:id/no-show",
+  authorizeRoles("full_access", "reception_access", "doctor"),
+  validateRequest({ params: appointmentsSchemas.idParams, body: appointmentsSchemas.markNoShowBody }),
+  controller.markAppointmentNoShow
+);
 router.patch(
   "/:id",
   authorizeRoles("full_access", "reception_access", "doctor"),

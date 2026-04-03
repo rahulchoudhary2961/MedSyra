@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Clock, Link as LinkIcon, Mail, Phone, Plus, Search, Star, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
-import { isFullAccessRole } from "@/lib/roles";
+import { canManageDoctors, isFullAccessRole } from "@/lib/roles";
 import { Doctor } from "@/types/api";
 
 type DoctorsResponse = {
@@ -322,6 +322,10 @@ export default function DoctorsPage() {
   };
 
   const canDeleteDoctors = isFullAccessRole(currentRole);
+
+  if (currentRole && !canManageDoctors(currentRole)) {
+    return <p className="text-red-600">You do not have access to doctors.</p>;
+  }
 
   const toggleWeeklyOffDay = (weekday: string) => {
     setForm((current) => {

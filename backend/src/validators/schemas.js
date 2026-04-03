@@ -3,6 +3,7 @@ const {
   stringRule,
   integerRule,
   numberRule,
+  booleanRule,
   uuidRule,
   emailRule,
   phoneRule,
@@ -15,6 +16,7 @@ const {
 const { USER_ROLES } = require("../constants/roles");
 
 const roles = Object.values(USER_ROLES);
+const staffRoles = [USER_ROLES.ADMIN, USER_ROLES.RECEPTIONIST, USER_ROLES.NURSE, USER_ROLES.BILLING, USER_ROLES.MANAGEMENT];
 const medicalRecordStatuses = ["completed", "pending review", "in progress"];
 const medicalRecordUploadContentTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"];
 const medicalRecordFileUrlRule = (value, fieldName) => {
@@ -75,13 +77,30 @@ const authSchemas = {
       role: optional(stringRule({ enumValues: roles, maxLength: 50 }))
     }
   },
+  createStaffBody: {
+    fields: {
+      fullName: stringRule({ minLength: 2, maxLength: 100, pattern: /^[a-zA-Z\s.'-]+$/ }),
+      email: emailRule(),
+      phone: phoneRule(),
+      role: stringRule({ enumValues: staffRoles, maxLength: 50 }),
+      notifyDailyScheduleSms: optional(booleanRule()),
+      notifyDailyScheduleEmail: optional(booleanRule())
+    }
+  },
+  updateStaffNotificationsBody: {
+    fields: {
+      notifyDailyScheduleSms: optional(booleanRule()),
+      notifyDailyScheduleEmail: optional(booleanRule())
+    }
+  },
   resetPasswordBody: {
     fields: {
       email: emailRule(),
       token: stringRule({ minLength: 64, maxLength: 64, pattern: /^[a-f0-9]+$/, safe: false, lowercase: true }),
       newPassword: passwordRule()
     }
-  }
+  },
+  idParams: idParamsSchema
 };
 
 const paginationQuerySchema = {
@@ -231,6 +250,12 @@ const appointmentsSchemas = {
   sendReminderBody: {
     fields: {}
   },
+  markNoShowBody: {
+    fields: {
+      notifySms: optional(booleanRule()),
+      notifyEmail: optional(booleanRule())
+    }
+  },
   bulkCancelBody: {
     fields: {
       appointmentDate: dateRule(),
@@ -331,8 +356,15 @@ const billingsSchemas = {
       amount: numberRule({ min: 0.01, max: 10000000 }),
       method: stringRule({ enumValues: paymentMethods, maxLength: 30 }),
       reference: optional(stringRule({ maxLength: 120 })),
-      status: optional(stringRule({ enumValues: ["completed", "failed", "refunded"], maxLength: 20 })),
+      status: optional(stringRule({ enumValues: ["completed", "failed"], maxLength: 20 })),
       paidAt: optional(stringRule({ minLength: 10, maxLength: 40, safe: false }))
+    }
+  },
+  refundBody: {
+    fields: {
+      paymentId: uuidRule(),
+      reason: optional(stringRule({ maxLength: 300 })),
+      refundedAt: optional(stringRule({ minLength: 10, maxLength: 40, safe: false }))
     }
   },
   quickPayBody: {

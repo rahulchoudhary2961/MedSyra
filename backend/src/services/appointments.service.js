@@ -3,6 +3,7 @@ const appointmentsRepository = require("../models/appointments.model");
 const doctorsModel = require("../models/doctors.model");
 const patientsModel = require("../models/patients.model");
 const medicalRecordsService = require("../services/medical-records.service");
+const { sendNoShowNotifications } = require("./appointment-notification.service");
 const cache = require("../utils/cache");
 const { isDoctorAvailableForSlot } = require("../utils/doctor-availability");
 
@@ -483,12 +484,60 @@ const generateAppointmentReminder = async (organizationId, appointmentId, actor 
   };
 };
 
+const markAppointmentNoShow = async (organizationId, appointmentId, payload = {}, actor = null) => {
+  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId);
+  if (!current) {
+    throw new ApiError(404, "Appointment not found");
+  }
+
+  const actorDoctor = await resolveActorDoctor(organizationId, actor);
+  if (actorDoctor && current.doctor_id !== actorDoctor.id) {
+    throw new ApiError(403, "You can only update your own appointments");
+  }
+
+  const status = (current.status || "").toLowerCase();
+  if (["completed", "cancelled", "no-show"].includes(status)) {
+    throw new ApiError(400, "This appointment cannot be marked as no-show");
+  }
+
+  const updatedAppointment = await appointmentsRepository.updateAppointment(organizationId, appointmentId, {
+    patientName: current.patient_name || current.title,
+    patientId: current.patient_id,
+    mobileNumber: current.mobile_number,
+    email: current.email,
+    doctorId: current.doctor_id,
+    category: current.category || "consultation",
+    status: "no-show",
+    appointmentDate: current.appointment_date,
+    appointmentTime: current.appointment_time,
+    durationMinutes: current.duration_minutes,
+    plannedProcedures: current.planned_procedures,
+    notes: current.notes
+  });
+
+  await invalidateAppointmentCaches(organizationId);
+
+  const reminderContext = await appointmentsRepository.getAppointmentReminderContext(organizationId, appointmentId);
+  const notifications = await sendNoShowNotifications({
+    appointment: updatedAppointment,
+    context: reminderContext,
+    notifySms: payload.notifySms === true,
+    notifyEmail: payload.notifyEmail === true
+  });
+
+  return {
+    appointment: updatedAppointment,
+    notifications
+  };
+};
+
 module.exports = {
   listAppointments,
   createAppointment,
   updateAppointment,
   completeConsultation,
   generateAppointmentReminder,
+  markAppointmentNoShow,
   deleteAppointment,
   bulkCancelAppointments
 };

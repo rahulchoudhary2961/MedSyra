@@ -26,6 +26,19 @@ type AppointmentMutationResponse = {
   data: Appointment;
 };
 
+type NoShowResponse = {
+  success: boolean;
+  data: {
+    appointment: Appointment;
+    notifications: Array<{
+      channel: "sms" | "email";
+      status: "sent" | "failed" | "fallback";
+      recipient?: string;
+      error?: string;
+    }>;
+  };
+};
+
 type DoctorsResponse = {
   success: boolean;
   data: {
@@ -538,6 +551,7 @@ export default function AppointmentsPage() {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [selectedConsultationRecord, setSelectedConsultationRecord] = useState<MedicalRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Appointment | null>(null);
+  const [noShowTarget, setNoShowTarget] = useState<Appointment | null>(null);
   const [pendingDeletedIds, setPendingDeletedIds] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWalkInSubmitting, setIsWalkInSubmitting] = useState(false);
@@ -560,6 +574,11 @@ export default function AppointmentsPage() {
   const [consultationForm, setConsultationForm] = useState<ConsultationForm>(initialConsultationForm);
   const [isSendingReminder, setIsSendingReminder] = useState(false);
   const [isSendingAppointmentReminder, setIsSendingAppointmentReminder] = useState(false);
+  const [isSavingNoShow, setIsSavingNoShow] = useState(false);
+  const [noShowNotificationOptions, setNoShowNotificationOptions] = useState({
+    sms: true,
+    email: true
+  });
 
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
@@ -1260,6 +1279,52 @@ export default function AppointmentsPage() {
       const message = err instanceof Error ? err.message : "Failed to update appointment";
       setError(message);
       setToast({ type: "error", message });
+    }
+  };
+
+  const confirmNoShow = async () => {
+    if (!noShowTarget) {
+      return;
+    }
+
+    setIsSavingNoShow(true);
+    setError("");
+    try {
+      const response = await apiRequest<NoShowResponse>(`/appointments/${noShowTarget.id}/no-show`, {
+        method: "POST",
+        authenticated: true,
+        body: {
+          notifySms: noShowNotificationOptions.sms,
+          notifyEmail: noShowNotificationOptions.email
+        }
+      });
+
+      const updatedAppointment = response.data.appointment;
+      setAppointments((prev) =>
+        prev.map((item) => (item.id === updatedAppointment.id ? { ...item, ...updatedAppointment } : item))
+      );
+      setSelectedAppointment((prev) =>
+        prev && prev.id === updatedAppointment.id ? { ...prev, ...updatedAppointment } : prev
+      );
+
+      const notificationSummary = response.data.notifications
+        .map((item) => `${item.channel.toUpperCase()}: ${item.status}`)
+        .join(", ");
+
+      setToast({
+        type: "success",
+        message: notificationSummary
+          ? `Appointment marked no-show. ${notificationSummary}`
+          : "Appointment marked no-show"
+      });
+      setNoShowTarget(null);
+      void fetchAppointments();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to mark appointment as no-show";
+      setError(message);
+      setToast({ type: "error", message });
+    } finally {
+      setIsSavingNoShow(false);
     }
   };
 
@@ -2874,7 +2939,10 @@ export default function AppointmentsPage() {
                 {!["completed", "cancelled", "no-show"].includes((selectedAppointment.status || "").toLowerCase()) && (
                   <button
                     type="button"
-                    onClick={() => void updateAppointmentStatus(selectedAppointment, "no-show")}
+                    onClick={() => {
+                      setNoShowNotificationOptions({ sms: true, email: true });
+                      setNoShowTarget(selectedAppointment);
+                    }}
                     className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700"
                   >
                     Mark No-show
@@ -2944,6 +3012,72 @@ export default function AppointmentsPage() {
                 className="rounded-lg border border-red-300 bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
               >
                 Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {noShowTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-xl">
+            <div className="border-b border-gray-200 px-6 py-5">
+              <h2 className="text-xl text-gray-900">
+                Patient No Show - {noShowTarget.patient_name || noShowTarget.title}
+              </h2>
+            </div>
+
+            <div className="space-y-5 px-6 py-6">
+              <p className="text-base text-gray-800">
+                Once marked PNS, action can&apos;t be reverted. Are you sure you want to mark no show?
+              </p>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <span className="text-sm text-gray-700">Notify Patient via</span>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={noShowNotificationOptions.sms}
+                    onChange={(e) =>
+                      setNoShowNotificationOptions((prev) => ({ ...prev, sms: e.target.checked }))
+                    }
+                  />
+                  <span>SMS</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={noShowNotificationOptions.email}
+                    onChange={(e) =>
+                      setNoShowNotificationOptions((prev) => ({ ...prev, email: e.target.checked }))
+                    }
+                  />
+                  <span>EMAIL</span>
+                </label>
+              </div>
+
+              <p className="text-sm leading-7 text-gray-600">
+                Patient will be informed about no show. As the patient did not book via Practo.com,{" "}
+                <span className="text-sky-600 underline">PNS Policy</span> is not applicable for them.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-gray-200 bg-gray-50 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setNoShowTarget(null)}
+                disabled={isSavingNoShow}
+                className="rounded-lg border border-gray-300 bg-white px-5 py-2 text-sm text-gray-700 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmNoShow()}
+                disabled={isSavingNoShow}
+                className="rounded-lg bg-amber-400 px-5 py-2 text-sm text-white disabled:opacity-60"
+              >
+                {isSavingNoShow ? "Saving..." : "Save"}
               </button>
             </div>
           </div>

@@ -18,6 +18,7 @@ import {
   YAxis
 } from "recharts";
 import { apiRequest } from "@/lib/api";
+import { canAccessReports } from "@/lib/roles";
 
 type ReportsResponse = {
   success: boolean;
@@ -84,6 +85,13 @@ type ReportsResponse = {
   };
 };
 
+type MeResponse = {
+  success: boolean;
+  data: {
+    role: string;
+  };
+};
+
 const PIE_COLORS = ["#059669", "#10b981", "#34d399", "#6ee7b7", "#047857", "#22c55e", "#f59e0b", "#ef4444"];
 const PERIOD_OPTIONS = [
   { value: "7d", label: "Last 7 days" },
@@ -143,10 +151,17 @@ const createSimplePdfBlob = (title: string, lines: string[]) => {
 };
 
 export default function ReportsPage() {
+  const [currentRole, setCurrentRole] = useState("");
   const [period, setPeriod] = useState<string>("90d");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [report, setReport] = useState<ReportsResponse["data"] | null>(null);
+
+  useEffect(() => {
+    apiRequest<MeResponse>("/auth/me", { authenticated: true })
+      .then((response) => setCurrentRole(response.data.role || ""))
+      .catch(() => setCurrentRole(""));
+  }, []);
 
   useEffect(() => {
     apiRequest<ReportsResponse>(`/dashboard/reports?period=${period}`, { authenticated: true })
@@ -280,6 +295,10 @@ export default function ReportsPage() {
     () => (report?.paymentMethods || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[(index + 2) % PIE_COLORS.length] })),
     [report]
   );
+
+  if (currentRole && !canAccessReports(currentRole)) {
+    return <p className="text-red-600">You do not have access to reports.</p>;
+  }
 
   return (
     <div className="space-y-6">

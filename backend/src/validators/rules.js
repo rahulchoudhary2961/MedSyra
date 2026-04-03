@@ -122,6 +122,14 @@ const numberRule = (options = {}) => (value, fieldName) => {
   return parsed;
 };
 
+const booleanRule = () => (value, fieldName) => {
+  if (typeof value !== "boolean") {
+    throw new ApiError(400, `${fieldName} must be a boolean`);
+  }
+
+  return value;
+};
+
 const uuidRule = () => (value, fieldName) => {
   const normalized = stringRule({ minLength: 36, maxLength: 36, safe: false })(value, fieldName);
   if (!UUID_REGEX.test(normalized)) {
@@ -216,6 +224,7 @@ module.exports = {
   stringRule,
   integerRule,
   numberRule,
+  booleanRule,
   uuidRule,
   emailRule,
   phoneRule,

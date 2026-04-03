@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Loader2, Send, Sparkles } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import { canAccessAssistant } from "@/lib/roles";
 import { Patient } from "@/types/api";
 
 type AssistantResponse = {
@@ -23,6 +24,13 @@ type PatientsResponse = {
   success: boolean;
   data: {
     items: Patient[];
+  };
+};
+
+type MeResponse = {
+  success: boolean;
+  data: {
+    role: string;
   };
 };
 
@@ -54,8 +62,15 @@ export default function AssistantPage() {
   const [loadingPatients, setLoadingPatients] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [currentRole, setCurrentRole] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>(initialPrompts);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    apiRequest<MeResponse>("/auth/me", { authenticated: true })
+      .then((response) => setCurrentRole(response.data.role || ""))
+      .catch(() => setCurrentRole(""));
+  }, []);
 
   useEffect(() => {
     apiRequest<PatientsResponse>("/patients?limit=100", { authenticated: true })
@@ -121,6 +136,10 @@ export default function AssistantPage() {
     e.preventDefault();
     await submitPrompt(input);
   };
+
+  if (currentRole && !canAccessAssistant(currentRole)) {
+    return <p className="text-red-600">You do not have access to the AI assistant.</p>;
+  }
 
   return (
     <div className="space-y-6">

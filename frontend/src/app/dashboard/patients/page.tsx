@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Edit2, Eye, Plus, Search, Trash2 } from "lucide-react";
 import { apiRequest, ApiRequestError } from "@/lib/api";
+import { canAccessPatients } from "@/lib/roles";
 import { isUuid } from "@/lib/uuid";
 import { Patient } from "@/types/api";
 
@@ -34,6 +35,13 @@ type UpdatePatientResponse = {
 type GetPatientResponse = {
   success: boolean;
   data: Patient;
+};
+
+type MeResponse = {
+  success: boolean;
+  data: {
+    role: string;
+  };
 };
 
 type CreatePatientForm = {
@@ -78,6 +86,7 @@ export default function PatientsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showModal, setShowModal] = useState(false);
+  const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingPatientId, setDeletingPatientId] = useState<string | null>(null);
@@ -92,6 +101,7 @@ export default function PatientsPage() {
   const [formData, setFormData] = useState<CreatePatientForm>(initialForm);
   const [editingPatientId, setEditingPatientId] = useState<string | null>(null);
   const [existingPatientIdHint, setExistingPatientIdHint] = useState<string | null>(null);
+  const [currentRole, setCurrentRole] = useState("");
   const initialQuery = searchParams.get("q") || "";
 
   const openEditModal = useCallback((patient: Patient) => {
@@ -150,6 +160,12 @@ export default function PatientsPage() {
     setQuery(initialQuery);
     fetchPatients(1, initialQuery);
   }, [fetchPatients, initialQuery]);
+
+  useEffect(() => {
+    apiRequest<MeResponse>("/auth/me", { authenticated: true })
+      .then((response) => setCurrentRole(response.data.role || ""))
+      .catch(() => setCurrentRole(""));
+  }, []);
 
   useEffect(() => {
     if (search === query) {
@@ -304,14 +320,16 @@ export default function PatientsPage() {
   };
 
   const handleDeletePatient = async (patient: Patient) => {
-    const confirmed = window.confirm(`Delete patient "${patient.full_name}"? This action can be reverted only from database.`);
-    if (!confirmed) return;
+    setPatientToDelete(patient);
+  };
 
-    setDeletingPatientId(patient.id);
+  const confirmDeletePatient = async () => {
+    if (!patientToDelete) return;
+    setDeletingPatientId(patientToDelete.id);
     setError("");
 
     try {
-      await apiRequest<{ success: boolean; message: string }>(`/patients/${patient.id}`, {
+      await apiRequest<{ success: boolean; message: string }>(`/patients/${patientToDelete.id}`, {
         method: "DELETE",
         authenticated: true
       });
@@ -321,9 +339,19 @@ export default function PatientsPage() {
       const message = err instanceof Error ? err.message : "Failed to delete patient";
       setError(message);
     } finally {
+      setPatientToDelete(null);
       setDeletingPatientId(null);
     }
   };
+
+  const updateAge = (nextValue: number) => {
+    const bounded = Math.max(0, Math.min(130, nextValue));
+    setFormData({ ...formData, age: bounded === 0 ? "" : String(bounded) });
+  };
+
+  if (currentRole && !canAccessPatients(currentRole)) {
+    return <p className="text-red-600">You do not have access to patients.</p>;
+  }
 
   return (
     <div className="space-y-6">
@@ -530,16 +558,34 @@ export default function PatientsPage() {
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Age</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="\d*"
-                      value={formData.age}
-                      onChange={(e) =>
-                        setFormData({ ...formData, age: e.target.value.replace(/\D/g, "").slice(0, 3) })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateAge((Number(formData.age) || 0) - 1)}
+                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                        aria-label="Decrease age"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="\d*"
+                        value={formData.age}
+                        onChange={(e) =>
+                          setFormData({ ...formData, age: e.target.value.replace(/\D/g, "").slice(0, 3) })
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg text-center"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateAge((Number(formData.age) || 0) + 1)}
+                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                        aria-label="Increase age"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Gender</label>
@@ -638,6 +684,36 @@ export default function PatientsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {patientToDelete && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4">
+            <div>
+              <h2 className="text-lg text-gray-900">Delete Patient</h2>
+              <p className="mt-2 text-sm text-gray-600">
+                Delete <span className="text-gray-900">{patientToDelete.full_name}</span>? This action can be reverted only from database.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPatientToDelete(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeletePatient}
+                disabled={deletingPatientId === patientToDelete.id}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg disabled:opacity-60"
+              >
+                {deletingPatientId === patientToDelete.id ? "Deleting..." : "Delete Patient"}
+              </button>
+            </div>
           </div>
         </div>
       )}

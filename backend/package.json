@@ -10,7 +10,10 @@
     "seed": "node src/scripts/seed.js",
     "db:reset": "node src/scripts/reset-db.js",
     "lint": "node src/scripts/lint.js",
-    "reminders:send": "node src/scripts/send-follow-up-reminders.js"
+    "test": "node src/scripts/test.js",
+    "org-stats": "node src/scripts/org-stats.js",
+    "reminders:send": "node src/scripts/send-follow-up-reminders.js",
+    "staff-notifications:send": "node src/scripts/send-daily-staff-schedules.js"
   },
   "keywords": [
     "healthcare",

@@ -37,15 +37,13 @@ const ensureReminderConfig = () => {
   }
 };
 
-const sendFollowUpReminder = async ({ patientPhone, patientName, clinicName, doctorName }) => {
+const sendWhatsAppText = async ({ phone, body }) => {
   ensureReminderConfig();
 
-  const to = formatWhatsAppRecipient(patientPhone);
+  const to = formatWhatsAppRecipient(phone);
   if (!to) {
-    throw new ApiError(400, "Patient phone number is missing or invalid for WhatsApp reminders");
+    throw new ApiError(400, "Phone number is missing or invalid for WhatsApp notifications");
   }
-
-  const body = buildReminderMessage({ patientName, clinicName, doctorName });
 
   const response = await fetch("https://api.ycloud.com/v2/whatsapp/messages/sendDirectly", {
     method: "POST",
@@ -67,7 +65,7 @@ const sendFollowUpReminder = async ({ patientPhone, patientName, clinicName, doc
       payload?.error?.message ||
       payload?.error?.whatsappApiError?.message ||
       payload?.message ||
-      "Failed to send WhatsApp reminder";
+      "Failed to send WhatsApp notification";
     throw new ApiError(response.status >= 400 && response.status < 500 ? response.status : 502, reason, payload);
   }
 
@@ -79,7 +77,13 @@ const sendFollowUpReminder = async ({ patientPhone, patientName, clinicName, doc
   };
 };
 
+const sendFollowUpReminder = async ({ patientPhone, patientName, clinicName, doctorName }) => {
+  const body = buildReminderMessage({ patientName, clinicName, doctorName });
+  return sendWhatsAppText({ phone: patientPhone, body });
+};
+
 module.exports = {
   sendFollowUpReminder,
-  buildReminderMessage
+  buildReminderMessage,
+  sendWhatsAppText
 };

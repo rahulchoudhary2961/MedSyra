@@ -30,6 +30,16 @@ const sendAppointmentReminder = asyncHandler(async (req, res) => {
   res.json({ success: true, message: "Appointment reminder generated", data });
 });
 
+const markAppointmentNoShow = asyncHandler(async (req, res) => {
+  const data = await appointmentsService.markAppointmentNoShow(
+    req.user.organizationId,
+    req.params.id,
+    req.body,
+    req.user
+  );
+  res.json({ success: true, message: "Appointment marked as no-show", data });
+});
+
 const deleteAppointment = asyncHandler(async (req, res) => {
   await appointmentsService.deleteAppointment(req.user.organizationId, req.params.id, req.user);
   res.json({ success: true, message: "Appointment deleted" });
@@ -46,6 +56,7 @@ module.exports = {
   updateAppointment,
   completeConsultation,
   sendAppointmentReminder,
+  markAppointmentNoShow,
   deleteAppointment,
   bulkCancelAppointments
 };

@@ -118,6 +118,33 @@ const listUsers = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { items: data } });
 });
 
+const createStaff = asyncHandler(async (req, res) => {
+  const data = await authService.createStaff(req.user.organizationId, req.body);
+  res.status(201).json({
+    success: true,
+    message: "Staff member added and setup email sent",
+    data
+  });
+});
+
+const resendStaffSetup = asyncHandler(async (req, res) => {
+  const data = await authService.resendStaffSetup(req.user.organizationId, req.params.id);
+  res.json({
+    success: true,
+    message: "Setup email sent",
+    data
+  });
+});
+
+const updateStaffNotificationPreferences = asyncHandler(async (req, res) => {
+  const data = await authService.updateStaffNotificationPreferences(req.user.organizationId, req.params.id, req.body);
+  res.json({
+    success: true,
+    message: "Staff notification preferences updated",
+    data
+  });
+});
+
 module.exports = {
   signup,
   signin,
@@ -126,5 +153,8 @@ module.exports = {
   requestPasswordReset,
   resetPassword,
   me,
-  listUsers
+  listUsers,
+  createStaff,
+  resendStaffSetup,
+  updateStaffNotificationPreferences
 };
