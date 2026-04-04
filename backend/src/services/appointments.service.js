@@ -54,7 +54,7 @@ const determineAppointmentReminderStage = (appointmentDate) => {
   const today = startOfToday();
 
   if (!targetDate) {
-    return { key: "manual_preview", label: "Manual Reminder", tracked: false, dayDelta: null };
+    return { key: "unavailable", label: "Reminder available only on appointment day", tracked: false, dayDelta: null };
   }
 
   const dayDelta = diffInDays(targetDate, today);
@@ -63,16 +63,10 @@ const determineAppointmentReminderStage = (appointmentDate) => {
     return { key: "past", label: "Past Appointment", tracked: false, dayDelta };
   }
   if (dayDelta === 0) {
-    return { key: "same_day", label: "Today Reminder", tracked: true, dayDelta };
-  }
-  if (dayDelta === 1) {
-    return { key: "one_day", label: "Tomorrow Reminder", tracked: true, dayDelta };
-  }
-  if (dayDelta === 3) {
-    return { key: "three_day", label: "3-Day Reminder", tracked: true, dayDelta };
+    return { key: "same_day", label: "Same-Day Reminder", tracked: true, dayDelta };
   }
 
-  return { key: "manual_preview", label: "Manual Reminder", tracked: false, dayDelta };
+  return { key: "upcoming", label: "Reminder available only on appointment day", tracked: false, dayDelta };
 };
 
 const buildAppointmentReminderMessage = ({ patientName, clinicName, doctorName, appointmentDate, appointmentTime, stage }) => {
@@ -86,11 +80,7 @@ const buildAppointmentReminderMessage = ({ patientName, clinicName, doctorName, 
     : appointmentDate;
 
   let timingLine = `You have an appointment at ${clinic} on ${formattedDate} at ${timeLabel}.`;
-  if (stage.key === "three_day") {
-    timingLine = `This is a reminder that you have an appointment at ${clinic} in 3 days on ${formattedDate} at ${timeLabel}.`;
-  } else if (stage.key === "one_day") {
-    timingLine = `This is a reminder that you have an appointment at ${clinic} tomorrow at ${timeLabel}.`;
-  } else if (stage.key === "same_day") {
+  if (stage.key === "same_day") {
     timingLine = `This is a reminder that you have an appointment at ${clinic} today at ${timeLabel}.`;
   }
 
@@ -391,6 +381,7 @@ const completeConsultation = async (organizationId, appointmentId, payload, acto
     prescription: payload.prescription || null,
     followUpDate: payload.followUpDate,
     followUpInDays: payload.followUpInDays,
+    sendFollowUpReminder: payload.sendFollowUpReminder === true,
     notes: payload.notes || updatedAppointment.notes || null
   });
 
@@ -454,6 +445,9 @@ const generateAppointmentReminder = async (organizationId, appointmentId, actor 
   const stage = determineAppointmentReminderStage(context.appointment_date);
   if (stage.key === "past") {
     throw new ApiError(400, "Cannot send reminders for past appointments");
+  }
+  if (stage.key !== "same_day") {
+    throw new ApiError(400, "Appointment reminders are available only on the appointment day");
   }
 
   const message = buildAppointmentReminderMessage({

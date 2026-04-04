@@ -128,6 +128,7 @@ type ConsultationForm = {
   diagnosis: string;
   prescription: string;
   followUpInDays: string;
+  sendFollowUpReminder: boolean;
   notes: string;
 };
 
@@ -195,6 +196,7 @@ const initialConsultationForm: ConsultationForm = {
   diagnosis: "",
   prescription: "",
   followUpInDays: "",
+  sendFollowUpReminder: false,
   notes: ""
 };
 
@@ -490,16 +492,10 @@ const getAppointmentReminderWindow = (appointmentDate: string) => {
     return { key: "past", label: "Past appointment" };
   }
   if (dayDelta === 0) {
-    return { key: "same_day", label: "Today reminder" };
-  }
-  if (dayDelta === 1) {
-    return { key: "one_day", label: "Tomorrow reminder" };
-  }
-  if (dayDelta === 3) {
-    return { key: "three_day", label: "3-day reminder" };
+    return { key: "same_day", label: "Same-day reminder" };
   }
 
-  return { key: "manual_preview", label: "Manual reminder" };
+  return { key: "upcoming", label: "Available only on appointment day" };
 };
 
 const formatTimestamp = (value?: string | null) => {
@@ -899,9 +895,10 @@ export default function AppointmentsPage() {
   };
 
   const jumpToToday = () => {
-    setSelectedDay(todayKey);
-    setSelectedMonth(today.getMonth());
-    setSelectedYear(today.getFullYear());
+    const now = new Date();
+    setSelectedDay(toDateKey(now));
+    setSelectedMonth(now.getMonth());
+    setSelectedYear(now.getFullYear());
     setViewMode("day");
   };
 
@@ -988,20 +985,22 @@ export default function AppointmentsPage() {
                   ),
                   1
                 )
-              )
-            : "",
+                )
+              : "",
+        sendFollowUpReminder: matchingRecord.follow_up_reminder_status !== "disabled" && Boolean(matchingRecord.follow_up_date),
         notes: matchingRecord.notes || selectedAppointment.notes || ""
       });
       return;
     }
 
-    setConsultationForm({
-      symptoms: "",
-      diagnosis: "",
-      prescription: "",
-      followUpInDays: "",
-      notes: selectedAppointment.notes || ""
-    });
+      setConsultationForm({
+        symptoms: "",
+        diagnosis: "",
+        prescription: "",
+        followUpInDays: "",
+        sendFollowUpReminder: false,
+        notes: selectedAppointment.notes || ""
+      });
 
     apiRequest<MedicalRecordsResponse>(`/medical-records?appointmentId=${selectedAppointment.id}&limit=1`, {
       authenticated: true
@@ -1013,21 +1012,22 @@ export default function AppointmentsPage() {
         }
 
         setSelectedConsultationRecord(record);
-        setConsultationForm({
-          symptoms: record.symptoms || "",
-          diagnosis: record.diagnosis || "",
-          prescription: record.prescription || "",
-          followUpInDays:
+          setConsultationForm({
+            symptoms: record.symptoms || "",
+            diagnosis: record.diagnosis || "",
+            prescription: record.prescription || "",
+            followUpInDays:
             record.follow_up_date
               ? String(
                   Math.max(
                     diffDaysFromDateKey(record.follow_up_date, toAppointmentDateKey(selectedAppointment.appointment_date)),
                     1
                   )
-                )
-              : "",
-          notes: record.notes || selectedAppointment.notes || ""
-        });
+                  )
+                : "",
+            sendFollowUpReminder: record.follow_up_reminder_status !== "disabled" && Boolean(record.follow_up_date),
+            notes: record.notes || selectedAppointment.notes || ""
+          });
       })
       .catch(() => {
         setConsultationForm((current) => ({
@@ -1183,7 +1183,6 @@ export default function AppointmentsPage() {
         appointmentDate: form.appointmentDate
       });
       setToast({ type: "success", message: wasEditing ? "Appointment updated" : "Appointment created" });
-      void fetchAppointments();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save appointment";
       setError(message);
@@ -1474,6 +1473,7 @@ export default function AppointmentsPage() {
             diagnosis: consultationForm.diagnosis.trim() || null,
             prescription: consultationForm.prescription.trim() || null,
             followUpInDays: consultationForm.followUpInDays ? Number(consultationForm.followUpInDays) : null,
+            sendFollowUpReminder: consultationForm.sendFollowUpReminder,
             notes: consultationForm.notes.trim() || null
           }
         }
@@ -1503,8 +1503,9 @@ export default function AppointmentsPage() {
                   ),
                   1
                 )
-              )
-            : "",
+                )
+              : "",
+        sendFollowUpReminder: updatedRecord.follow_up_reminder_status !== "disabled" && Boolean(updatedRecord.follow_up_date),
         notes: updatedRecord.notes || updatedAppointment.notes || ""
       });
       setShowConsultationModal(false);
@@ -2704,6 +2705,24 @@ export default function AppointmentsPage() {
                 />
               </label>
 
+              <label className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={consultationForm.sendFollowUpReminder}
+                  onChange={(e) =>
+                    setConsultationForm((prev) => ({
+                      ...prev,
+                      sendFollowUpReminder: e.target.checked
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-gray-300 text-emerald-600"
+                />
+                <div>
+                  <p className="text-sm text-emerald-900">Send follow-up reminder on the follow-up day</p>
+                  <p className="text-xs text-emerald-700">Only same-day follow-up reminders will be scheduled.</p>
+                </div>
+              </label>
+
               <label className="block space-y-2 md:col-span-2">
                 <span className="text-sm text-gray-700">Clinical Notes</span>
                 <textarea
@@ -2759,6 +2778,7 @@ export default function AppointmentsPage() {
                 const canSendAppointmentReminder = !["completed", "cancelled", "no-show"].includes(
                   (selectedAppointment.status || "").toLowerCase()
                 );
+                const canOpenSameDayReminder = reminderWindow.key === "same_day";
 
                 if (!canSendAppointmentReminder) {
                   return null;
@@ -2770,13 +2790,13 @@ export default function AppointmentsPage() {
                       <div>
                         <p className="text-xs uppercase tracking-[0.14em] text-sky-700">Appointment Reminder</p>
                         <p className="mt-1 text-sm text-sky-900">
-                          Use WhatsApp for 3-day, 1-day, same-day, or manual appointment reminders.
+                          Use WhatsApp for same-day appointment reminders only.
                         </p>
                       </div>
                       <button
                         type="button"
                         onClick={() => void sendAppointmentReminder()}
-                        disabled={isSendingAppointmentReminder}
+                        disabled={isSendingAppointmentReminder || !canOpenSameDayReminder}
                         className="rounded-lg border border-sky-200 bg-white px-4 py-2 text-sm text-sky-700 hover:bg-sky-100 disabled:opacity-60"
                       >
                         {isSendingAppointmentReminder ? "Opening..." : "Send Appointment Reminder"}
@@ -2784,20 +2804,12 @@ export default function AppointmentsPage() {
                     </div>
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
                       <div>
-                        <p className="text-xs text-sky-700">Current Window</p>
+                        <p className="text-xs text-sky-700">Reminder Availability</p>
                         <p className="mt-1 text-sm text-sky-950">{reminderWindow.label}</p>
                       </div>
                       <div>
                         <p className="text-xs text-sky-700">Patient Phone</p>
                         <p className="mt-1 text-sm text-sky-950">{selectedAppointment.mobile_number || "-"}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-sky-700">3-Day Sent</p>
-                        <p className="mt-1 text-sm text-sky-950">{formatTimestamp(selectedAppointment.reminder_3d_sent_at)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-sky-700">1-Day Sent</p>
-                        <p className="mt-1 text-sm text-sky-950">{formatTimestamp(selectedAppointment.reminder_1d_sent_at)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-sky-700">Same-Day Sent</p>

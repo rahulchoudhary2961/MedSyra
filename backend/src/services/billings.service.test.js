@@ -54,7 +54,7 @@ const run = async () => {
           invoice_id: null
         })
       },
-      [pdfPath]: { createSimplePdfBuffer: () => Buffer.from("") },
+      [pdfPath]: { createInvoicePdfBuffer: () => Buffer.from("") },
       [cachePath]: { invalidateByPrefix: async () => {}, get: async () => null, set: async () => {} }
     });
 
@@ -80,7 +80,7 @@ const run = async () => {
       [patientsModelPath]: {},
       [doctorsModelPath]: {},
       [appointmentsModelPath]: {},
-      [pdfPath]: { createSimplePdfBuffer: () => Buffer.from("") },
+      [pdfPath]: { createInvoicePdfBuffer: () => Buffer.from("") },
       [cachePath]: { invalidateByPrefix: async () => {}, get: async () => null, set: async () => {} }
     });
 
@@ -101,7 +101,7 @@ const run = async () => {
       [patientsModelPath]: {},
       [doctorsModelPath]: {},
       [appointmentsModelPath]: {},
-      [pdfPath]: { createSimplePdfBuffer: () => Buffer.from("") },
+      [pdfPath]: { createInvoicePdfBuffer: () => Buffer.from("") },
       [cachePath]: { invalidateByPrefix: async () => {}, get: async () => null, set: async () => {} }
     });
 
@@ -123,7 +123,7 @@ const run = async () => {
       [patientsModelPath]: {},
       [doctorsModelPath]: {},
       [appointmentsModelPath]: {},
-      [pdfPath]: { createSimplePdfBuffer: () => Buffer.from("") },
+      [pdfPath]: { createInvoicePdfBuffer: () => Buffer.from("") },
       [cachePath]: { invalidateByPrefix: async () => {}, get: async () => null, set: async () => {} }
     });
 
@@ -150,7 +150,7 @@ const run = async () => {
       [patientsModelPath]: {},
       [doctorsModelPath]: {},
       [appointmentsModelPath]: {},
-      [pdfPath]: { createSimplePdfBuffer: () => Buffer.from("") },
+      [pdfPath]: { createInvoicePdfBuffer: () => Buffer.from("") },
       [cachePath]: { invalidateByPrefix: async () => {}, get: async () => null, set: async () => {} }
     });
 
@@ -185,7 +185,7 @@ const run = async () => {
         getDoctorById: async () => ({ id: "doctor-1", consultation_fee: 500 })
       },
       [appointmentsModelPath]: {},
-      [pdfPath]: { createSimplePdfBuffer: () => Buffer.from("") },
+      [pdfPath]: { createInvoicePdfBuffer: () => Buffer.from("") },
       [cachePath]: { invalidateByPrefix: async () => {}, get: async () => null, set: async () => {} }
     });
 
@@ -214,12 +214,57 @@ const run = async () => {
       [patientsModelPath]: {},
       [doctorsModelPath]: {},
       [appointmentsModelPath]: {},
-      [pdfPath]: { createSimplePdfBuffer: () => Buffer.from("") },
+      [pdfPath]: { createInvoicePdfBuffer: () => Buffer.from("") },
       [cachePath]: { invalidateByPrefix: async () => {}, get: async () => null, set: async () => {} }
     });
 
     const result = await service.getReconciliationReport("org-1");
     assert.equal(result, reconciliationReport);
+  }
+
+  {
+    let receivedInvoice = null;
+    const pdfBuffer = Buffer.from("invoice-pdf");
+    const invoice = {
+      id: "inv-7",
+      invoice_number: "INV-0007",
+      organization_name: "City Clinic",
+      patient_name: "Amit Sharma",
+      doctor_name: "Dr. Rao",
+      issue_date: "2026-04-04",
+      due_date: "2026-04-05",
+      status: "issued",
+      total_amount: 500,
+      paid_amount: 200,
+      balance_amount: 300,
+      currency: "INR",
+      notes: "Consultation",
+      items: [{ description: "Consultation", quantity: 1, unit_price: 500, total_amount: 500 }]
+    };
+    const service = loadWithMocks(servicePath, {
+      [modelPath]: {
+        getInvoiceById: async () => invoice
+      },
+      [patientsModelPath]: {},
+      [doctorsModelPath]: {},
+      [appointmentsModelPath]: {},
+      [pdfPath]: {
+        createInvoicePdfBuffer: (invoice) => {
+          receivedInvoice = invoice;
+          return pdfBuffer;
+        }
+      },
+      [cachePath]: {
+        invalidateByPrefix: async () => {},
+        get: async () => null,
+        set: async () => {}
+      }
+    });
+
+    const result = await service.generateInvoicePdf("org-1", "inv-7");
+    assert.equal(result.filename, "INV-0007.pdf");
+    assert.equal(result.buffer, pdfBuffer);
+    assert.equal(receivedInvoice.organization_name, "City Clinic");
   }
 };
 

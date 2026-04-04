@@ -270,8 +270,9 @@ const listDueFollowUpReminders = async (organizationId = null) => {
   const values = [];
   const conditions = [
     "mr.follow_up_date IS NOT NULL",
-    "mr.follow_up_date <= CURRENT_DATE + INTERVAL '1 day'",
-    "mr.follow_up_reminder_status <> 'sent'"
+    "mr.follow_up_date = CURRENT_DATE",
+    "COALESCE(mr.follow_up_reminder_status, 'pending') <> 'sent'",
+    "COALESCE(mr.follow_up_reminder_status, 'pending') <> 'disabled'"
   ];
 
   if (organizationId) {

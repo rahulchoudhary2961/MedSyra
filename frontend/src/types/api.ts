@@ -106,6 +106,7 @@ export interface ActivityLog {
 export interface Invoice {
   id: string;
   invoice_number: string;
+  organization_name?: string;
   patient_id: string;
   patient_name: string;
   doctor_id: string | null;
@@ -119,6 +120,8 @@ export interface Invoice {
   balance_amount: number;
   currency: string;
   notes: string | null;
+  items?: InvoiceItem[];
+  payments?: Payment[];
 }
 
 export interface Payment {

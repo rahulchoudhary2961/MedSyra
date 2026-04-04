@@ -14,6 +14,7 @@ const {
   relativeUploadPathRule
 } = require("./rules");
 const { USER_ROLES } = require("../constants/roles");
+const ApiError = require("../utils/api-error");
 
 const roles = Object.values(USER_ROLES);
 const staffRoles = [USER_ROLES.ADMIN, USER_ROLES.RECEPTIONIST, USER_ROLES.NURSE, USER_ROLES.BILLING, USER_ROLES.MANAGEMENT];
@@ -32,6 +33,29 @@ const bloodTypes = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const invoiceStatuses = ["draft", "issued", "partially_paid", "paid", "overdue", "void"];
 const paymentMethods = ["cash", "card", "bank_transfer", "insurance", "upi", "other"];
 const reportPeriods = ["7d", "30d", "90d", "12m"];
+const invoiceItemsRule = (value, fieldName) => {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new ApiError(400, `${fieldName} must be a non-empty array`);
+  }
+
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new ApiError(400, `${fieldName}[${index}] must be an object`);
+    }
+
+    const allowedKeys = new Set(["description", "quantity", "unitPrice"]);
+    const unknownKeys = Object.keys(item).filter((key) => !allowedKeys.has(key));
+    if (unknownKeys.length > 0) {
+      throw new ApiError(400, `Unknown ${fieldName}[${index}] fields: ${unknownKeys.join(", ")}`);
+    }
+
+    return {
+      description: stringRule({ minLength: 2, maxLength: 200 })(item.description, `${fieldName}[${index}].description`),
+      quantity: numberRule({ min: 0.01, max: 100000 })(item.quantity, `${fieldName}[${index}].quantity`),
+      unitPrice: numberRule({ min: 0.01, max: 10000000 })(item.unitPrice, `${fieldName}[${index}].unitPrice`)
+    };
+  });
+};
 
 const idParamsSchema = {
   fields: {
@@ -242,7 +266,8 @@ const appointmentsSchemas = {
       prescription: optional(stringRule({ maxLength: 2000 })),
       notes: optional(stringRule({ maxLength: 2000 })),
       followUpDate: optional(dateRule()),
-      followUpInDays: optional(integerRule({ min: 1, max: 365, coerceString: true }))
+      followUpInDays: optional(integerRule({ min: 1, max: 365, coerceString: true })),
+      sendFollowUpReminder: optional(booleanRule())
     },
     requireAtLeastOne: true
   },
@@ -327,8 +352,9 @@ const billingsSchemas = {
       patientId: uuidRule(),
       doctorId: optional(uuidRule()),
       appointmentId: optional(uuidRule()),
-      description: stringRule({ minLength: 2, maxLength: 200 }),
+      description: optional(stringRule({ minLength: 2, maxLength: 200 })),
       amount: optional(numberRule({ min: 0.01, max: 10000000 })),
+      items: optional(invoiceItemsRule),
       currency: optional(stringRule({ minLength: 3, maxLength: 3, pattern: /^[A-Z]{3}$/, safe: false })),
       issueDate: optional(dateRule()),
       dueDate: optional(dateRule()),
@@ -340,6 +366,7 @@ const billingsSchemas = {
     fields: {
       description: optional(stringRule({ minLength: 2, maxLength: 200 })),
       amount: optional(numberRule({ min: 0.01, max: 10000000 })),
+      items: optional(invoiceItemsRule),
       dueDate: optional(dateRule()),
       status: optional(stringRule({ enumValues: invoiceStatuses, maxLength: 20 })),
       notes: optional(stringRule({ maxLength: 1000 }))
