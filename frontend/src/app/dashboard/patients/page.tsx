@@ -281,9 +281,6 @@ export default function PatientsPage() {
       setFormData(initialForm);
       setEditingPatientId(null);
 
-      if (!editingPatientId) {
-        fetchPatients(1, query);
-      }
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 409) {
         const details = (err.details || {}) as { existingPatientId?: string };
@@ -342,11 +339,6 @@ export default function PatientsPage() {
       setPatientToDelete(null);
       setDeletingPatientId(null);
     }
-  };
-
-  const updateAge = (nextValue: number) => {
-    const bounded = Math.max(0, Math.min(130, nextValue));
-    setFormData({ ...formData, age: bounded === 0 ? "" : String(bounded) });
   };
 
   if (currentRole && !canAccessPatients(currentRole)) {
@@ -558,34 +550,16 @@ export default function PatientsPage() {
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Age</label>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => updateAge((Number(formData.age) || 0) - 1)}
-                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
-                        aria-label="Decrease age"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="\d*"
-                        value={formData.age}
-                        onChange={(e) =>
-                          setFormData({ ...formData, age: e.target.value.replace(/\D/g, "").slice(0, 3) })
-                        }
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg text-center"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => updateAge((Number(formData.age) || 0) + 1)}
-                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
-                        aria-label="Increase age"
-                      >
-                        +
-                      </button>
-                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="\d*"
+                      value={formData.age}
+                      onChange={(e) =>
+                        setFormData({ ...formData, age: e.target.value.replace(/\D/g, "").slice(0, 3) })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    />
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Gender</label>

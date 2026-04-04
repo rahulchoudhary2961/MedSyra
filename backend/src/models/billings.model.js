@@ -7,6 +7,7 @@ const getInvoiceByIdWithDb = async (db, organizationId, id) => {
     SELECT
       i.id,
       i.invoice_number,
+      o.name AS organization_name,
       i.patient_id,
       p.full_name AS patient_name,
       i.doctor_id,
@@ -23,6 +24,7 @@ const getInvoiceByIdWithDb = async (db, organizationId, id) => {
       i.created_at,
       i.updated_at
     FROM invoices i
+    JOIN organizations o ON o.id = i.organization_id
     LEFT JOIN patients p ON p.id = i.patient_id AND p.organization_id = i.organization_id
     LEFT JOIN doctors d ON d.id = i.doctor_id AND d.organization_id = i.organization_id
     WHERE i.organization_id = $1 AND i.id = $2
@@ -101,6 +103,7 @@ const listInvoices = async (organizationId, query) => {
     SELECT
       i.id,
       i.invoice_number,
+      o.name AS organization_name,
       i.patient_id,
       p.full_name AS patient_name,
       i.doctor_id,
@@ -117,6 +120,7 @@ const listInvoices = async (organizationId, query) => {
       i.created_at,
       i.updated_at
     FROM invoices i
+    JOIN organizations o ON o.id = i.organization_id
     LEFT JOIN patients p ON p.id = i.patient_id AND p.organization_id = i.organization_id
     LEFT JOIN doctors d ON d.id = i.doctor_id AND d.organization_id = i.organization_id
     WHERE ${where}
@@ -223,7 +227,8 @@ const createInvoice = async (organizationId, payload, actor = null) => {
 
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [organizationId]);
     const invoiceNumber = await getNextInvoiceNumber(client, organizationId);
-    const amount = Number(payload.amount);
+    const items = Array.isArray(payload.items) && payload.items.length > 0 ? payload.items : [];
+    const amount = Number(items.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0));
     const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
 
     const invoiceQuery = `
@@ -257,11 +262,20 @@ const createInvoice = async (organizationId, payload, actor = null) => {
       VALUES ($1,$2,$3,$4,$5)
       RETURNING *
     `;
-    const description = payload.description || "Consultation";
-    const itemRes = await client.query(itemQuery, [invoice.id, description, 1, amount, amount]);
+    const itemRows = [];
+    for (const item of items) {
+      const itemRes = await client.query(itemQuery, [
+        invoice.id,
+        item.description,
+        Number(item.quantity),
+        Number(item.unitPrice),
+        Number(item.totalAmount)
+      ]);
+      itemRows.push(itemRes.rows[0]);
+    }
     const createdInvoice = {
       ...invoice,
-      items: itemRes.rows,
+      items: itemRows,
       payments: []
     };
 
@@ -298,7 +312,13 @@ const updateInvoice = async (organizationId, id, payload, actor = null) => {
       return null;
     }
 
-    const amount = payload.amount !== undefined ? Number(payload.amount) : Number(current.total_amount);
+    const nextItems = Array.isArray(payload.items) && payload.items.length > 0 ? payload.items : null;
+    const amount =
+      nextItems !== null
+        ? Number(nextItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0))
+        : payload.amount !== undefined
+          ? Number(payload.amount)
+          : Number(current.total_amount);
     const paid = Number(current.paid_amount);
     const balance = Math.max(amount - paid, 0);
     let status = current.status;
@@ -331,17 +351,28 @@ const updateInvoice = async (organizationId, id, payload, actor = null) => {
       status
     ]);
 
-    if (payload.description || payload.amount !== undefined) {
+    if (nextItems !== null) {
+      await client.query("DELETE FROM invoice_items WHERE invoice_id = $1", [id]);
+      for (const item of nextItems) {
+        await client.query(
+          `
+          INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total_amount)
+          VALUES ($1,$2,$3,$4,$5)
+          `,
+          [id, item.description, Number(item.quantity), Number(item.unitPrice), Number(item.totalAmount)]
+        );
+      }
+    } else if (payload.description || payload.amount !== undefined) {
       await client.query(
         `
         UPDATE invoice_items
         SET description = COALESCE($2, description),
             unit_price = $3,
-            total_amount = $3,
+            total_amount = $4,
             updated_at = NOW()
         WHERE invoice_id = $1
         `,
-        [id, payload.description || null, amount]
+        [id, payload.description || null, amount, amount]
       );
     }
 

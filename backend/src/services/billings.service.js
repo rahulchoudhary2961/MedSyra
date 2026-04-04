@@ -3,7 +3,7 @@ const billingsModel = require("../models/billings.model");
 const patientsModel = require("../models/patients.model");
 const doctorsModel = require("../models/doctors.model");
 const appointmentsModel = require("../models/appointments.model");
-const { createSimplePdfBuffer } = require("../utils/pdf");
+const { createInvoicePdfBuffer } = require("../utils/pdf");
 const cache = require("../utils/cache");
 
 const VALID_STATUSES = new Set(["draft", "issued", "partially_paid", "paid", "overdue", "void"]);
@@ -21,6 +21,33 @@ const invalidateBillingCaches = async (organizationId) => {
     cache.invalidateByPrefix(dashboardSummaryCachePrefix(organizationId)),
     cache.invalidateByPrefix(dashboardReportsCachePrefix(organizationId))
   ]);
+};
+
+const roundMoney = (value) => Number(Number(value || 0).toFixed(2));
+
+const normalizeInvoiceItems = ({ items, description, amount, fallbackAmount, fallbackDescription = "Consultation" }) => {
+  if (Array.isArray(items) && items.length > 0) {
+    return items.map((item) => ({
+      description: item.description,
+      quantity: Number(item.quantity),
+      unitPrice: roundMoney(item.unitPrice),
+      totalAmount: roundMoney(Number(item.quantity) * Number(item.unitPrice))
+    }));
+  }
+
+  const resolvedAmount = amount ?? fallbackAmount;
+  if (!resolvedAmount) {
+    return [];
+  }
+
+  return [
+    {
+      description: description || fallbackDescription,
+      quantity: 1,
+      unitPrice: roundMoney(resolvedAmount),
+      totalAmount: roundMoney(resolvedAmount)
+    }
+  ];
 };
 
 const listInvoices = async (organizationId, query) => {
@@ -44,8 +71,8 @@ const listInvoices = async (organizationId, query) => {
 };
 
 const createInvoice = async (organizationId, payload, actor = null) => {
-  if (!payload.patientId || !payload.description) {
-    throw new ApiError(400, "patientId and description are required");
+  if (!payload.patientId) {
+    throw new ApiError(400, "patientId is required");
   }
 
   const patient = await patientsModel.getPatientById(organizationId, payload.patientId);
@@ -80,12 +107,19 @@ const createInvoice = async (organizationId, payload, actor = null) => {
     }
   }
 
-  const amount = payload.amount ?? doctor?.consultation_fee;
-  if (!amount) {
-    throw new ApiError(400, "amount is required when the doctor has no consultation fee");
+  const normalizedItems = normalizeInvoiceItems({
+    items: payload.items,
+    description: payload.description,
+    amount: payload.amount,
+    fallbackAmount: doctor?.consultation_fee,
+    fallbackDescription: doctor?.full_name ? `Consultation - ${doctor.full_name}` : "Consultation"
+  });
+
+  if (normalizedItems.length === 0) {
+    throw new ApiError(400, "Add at least one invoice item or provide an amount");
   }
 
-  const created = await billingsModel.createInvoice(organizationId, { ...payload, amount }, actor);
+  const created = await billingsModel.createInvoice(organizationId, { ...payload, items: normalizedItems }, actor);
   await invalidateBillingCaches(organizationId);
   return created;
 };
@@ -119,7 +153,23 @@ const updateInvoice = async (organizationId, id, payload, actor = null) => {
     throw new ApiError(400, "Only draft invoices can be edited");
   }
 
-  const invoice = await billingsModel.updateInvoice(organizationId, id, payload, actor);
+  const normalizedPayload = { ...payload };
+  if (payload.items || payload.description || payload.amount !== undefined) {
+    normalizedPayload.items = normalizeInvoiceItems({
+      items: payload.items,
+      description: payload.description || current.items?.[0]?.description,
+      amount: payload.amount,
+      fallbackAmount:
+        payload.amount !== undefined
+          ? payload.amount
+          : current.items?.length === 1
+            ? current.items[0].unit_price
+            : Number(current.total_amount),
+      fallbackDescription: current.items?.[0]?.description || "Consultation"
+    });
+  }
+
+  const invoice = await billingsModel.updateInvoice(organizationId, id, normalizedPayload, actor);
   await invalidateBillingCaches(organizationId);
   return invoice;
 };
@@ -239,24 +289,10 @@ const getReconciliationReport = async (organizationId) => {
 
 const generateInvoicePdf = async (organizationId, id) => {
   const invoice = await getInvoiceById(organizationId, id);
-  const lineItems = invoice.items.length > 0 ? invoice.items : [{ description: "-", total_amount: 0 }];
-  const lines = [
-    `Invoice No: ${invoice.invoice_number}`,
-    `Patient: ${invoice.patient_name || "-"}`,
-    `Doctor: ${invoice.doctor_name || "-"}`,
-    `Issue Date: ${invoice.issue_date}`,
-    `Due Date: ${invoice.due_date || "-"}`,
-    `Status: ${invoice.status}`,
-    `Total: ${invoice.currency} ${invoice.total_amount}`,
-    `Paid: ${invoice.currency} ${invoice.paid_amount}`,
-    `Balance: ${invoice.currency} ${invoice.balance_amount}`,
-    `Items: ${lineItems.map((item) => `${item.description} (${item.total_amount})`).join(", ")}`,
-    `Notes: ${invoice.notes || "-"}`
-  ];
 
   return {
     filename: `${invoice.invoice_number}.pdf`,
-    buffer: createSimplePdfBuffer("Invoice", lines)
+    buffer: createInvoicePdfBuffer(invoice)
   };
 };
 

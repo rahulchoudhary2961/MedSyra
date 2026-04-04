@@ -2,15 +2,31 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CalendarDays, CreditCard, FileText, Pencil } from "lucide-react";
+import { CalendarDays, CreditCard, Download, Eye, FileText, Pencil } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api";
+import { getAuthToken } from "@/lib/auth";
 import { isUuid } from "@/lib/uuid";
-import { Patient } from "@/types/api";
+import { MedicalRecord, Patient } from "@/types/api";
 
 type PatientResponse = {
   success: boolean;
   data: Patient;
+};
+
+type MedicalRecordsResponse = {
+  success: boolean;
+  data: {
+    items: MedicalRecord[];
+  };
+};
+
+type AttachmentPreview = {
+  recordId: string;
+  url: string | null;
+  fileName: string;
+  contentType: string;
+  externalUrl: string | null;
 };
 
 const formatDate = (value: string | null) => {
@@ -39,6 +55,42 @@ const getInitials = (value: string) =>
     .slice(0, 2)
     .toUpperCase();
 
+const getAttachmentEndpoint = (recordId: string) => {
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1";
+  return `${apiBaseUrl.replace(/\/$/, "")}/medical-records/${recordId}/attachment`;
+};
+
+const getAttachmentFileName = (recordId: string, fileUrl?: string | null) => {
+  const storedFileName = fileUrl?.split("/").pop();
+  if (storedFileName) {
+    return storedFileName.replace(/^\d{13}-[0-9a-f-]{36}-/i, "");
+  }
+
+  return `medical-record-${recordId}`;
+};
+
+const inferContentType = (fileUrl?: string | null) => {
+  const normalized = fileUrl?.toLowerCase() || "";
+  if (normalized.endsWith(".pdf")) return "application/pdf";
+  if (normalized.endsWith(".png")) return "image/png";
+  if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg")) return "image/jpeg";
+  if (normalized.endsWith(".webp")) return "image/webp";
+  if (normalized.endsWith(".gif")) return "image/gif";
+  return "application/octet-stream";
+};
+
+const isImageContentType = (contentType: string) => contentType.startsWith("image/");
+
+const triggerDownload = (url: string, fileName: string) => {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.target = "_blank";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+};
+
 export default function PatientProfilePage() {
   const params = useParams<{ id: string }>();
   const patientId = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -46,15 +98,121 @@ export default function PatientProfilePage() {
   const [loading, setLoading] = useState(Boolean(patientId) && !hasInvalidPatientId);
   const [error, setError] = useState("");
   const [patient, setPatient] = useState<Patient | null>(null);
+  const [records, setRecords] = useState<MedicalRecord[]>([]);
+  const [previews, setPreviews] = useState<Record<string, AttachmentPreview>>({});
 
   useEffect(() => {
     if (!patientId || hasInvalidPatientId) return;
 
-    apiRequest<PatientResponse>(`/patients/${patientId}`, { authenticated: true })
-      .then((response) => setPatient(response.data))
+    Promise.all([
+      apiRequest<PatientResponse>(`/patients/${patientId}`, { authenticated: true }),
+      apiRequest<MedicalRecordsResponse>(`/medical-records?patientId=${patientId}&limit=24`, { authenticated: true })
+    ])
+      .then(([patientResponse, recordsResponse]) => {
+        setPatient(patientResponse.data);
+        setRecords(recordsResponse.data.items || []);
+      })
       .catch((err: Error) => setError(err.message || "Failed to load patient profile"))
       .finally(() => setLoading(false));
   }, [patientId, hasInvalidPatientId]);
+
+  useEffect(() => {
+    const attachmentRecords = records.filter((record) => record.file_url);
+    if (attachmentRecords.length === 0) {
+      setPreviews({});
+      return;
+    }
+
+    let revokedUrls: string[] = [];
+    let cancelled = false;
+
+    const loadPreviews = async () => {
+      const token = getAuthToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const items = await Promise.all(
+        attachmentRecords.map(async (record) => {
+          const fileUrl = record.file_url || "";
+          const fallbackFileName = getAttachmentFileName(record.id, fileUrl);
+          const fallbackContentType = inferContentType(fileUrl);
+
+          if (/^https?:\/\//i.test(fileUrl)) {
+            return [
+              record.id,
+              {
+                recordId: record.id,
+                url: fileUrl,
+                fileName: fallbackFileName,
+                contentType: fallbackContentType,
+                externalUrl: fileUrl
+              }
+            ] as const;
+          }
+
+          try {
+            const response = await fetch(getAttachmentEndpoint(record.id), {
+              method: "GET",
+              headers,
+              cache: "no-store"
+            });
+
+            if (!response.ok) {
+              return null;
+            }
+
+            const blob = await response.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            revokedUrls.push(objectUrl);
+
+            return [
+              record.id,
+              {
+                recordId: record.id,
+                url: objectUrl,
+                fileName: fallbackFileName,
+                contentType: blob.type || fallbackContentType,
+                externalUrl: null
+              }
+            ] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const nextPreviews: Record<string, AttachmentPreview> = {};
+      items.forEach((item) => {
+        if (!item) {
+          return;
+        }
+
+        const [recordId, preview] = item;
+        nextPreviews[recordId] = preview;
+      });
+
+      if (cancelled) {
+        revokedUrls.forEach((url) => URL.revokeObjectURL(url));
+        return;
+      }
+
+      setPreviews(nextPreviews);
+    };
+
+    void loadPreviews();
+
+    return () => {
+      cancelled = true;
+      revokedUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [records]);
+
+  const attachmentRecords = useMemo(
+    () => records.filter((record) => record.file_url).sort((left, right) => right.record_date.localeCompare(left.record_date)),
+    [records]
+  );
 
   const profileFields = useMemo(() => {
     if (!patient) return [];
@@ -217,6 +375,98 @@ export default function PatientProfilePage() {
             <p className="mt-3 text-base leading-7 text-gray-900">{field.value}</p>
           </div>
         ))}
+      </section>
+
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Reports & Notes</p>
+            <h2 className="mt-2 text-xl text-gray-900">Uploaded Files</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Photos and documents attached to this patient&apos;s medical records.
+            </p>
+          </div>
+          <Link
+            href={`/dashboard/medical-records?patientId=${encodeURIComponent(patient.id)}`}
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            View All Records
+          </Link>
+        </div>
+
+        {attachmentRecords.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-5 py-10 text-center text-sm text-gray-500">
+            No uploaded photos or documents for this patient yet.
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {attachmentRecords.map((record) => {
+              const preview = previews[record.id];
+              const previewUrl = preview?.url || "";
+              const openUrl = preview?.externalUrl || preview?.url || (/^https?:\/\//i.test(record.file_url || "") ? record.file_url || "" : "");
+              const downloadUrl = preview?.url || preview?.externalUrl || "";
+              const fileName = preview?.fileName || getAttachmentFileName(record.id, record.file_url);
+              const isImage = isImageContentType(preview?.contentType || inferContentType(record.file_url));
+
+              return (
+                <article key={record.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                  <div className="relative aspect-[4/3] bg-gray-100">
+                    {previewUrl && isImage ? (
+                      <img
+                        src={previewUrl}
+                        alt={record.record_type || "Medical record attachment"}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-br from-stone-50 via-white to-emerald-50 px-4 text-center">
+                        <div className="rounded-2xl bg-white p-3 text-emerald-600 shadow-sm ring-1 ring-gray-200">
+                          <FileText className="h-8 w-8" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{record.record_type || "Document"}</p>
+                          <p className="mt-1 text-xs uppercase tracking-[0.14em] text-gray-500">
+                            {(preview?.contentType || inferContentType(record.file_url)).includes("pdf") ? "PDF file" : "Attachment"}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{formatDate(record.record_date)}</p>
+                      <p className="truncate text-xs text-gray-500">{preview?.fileName || getAttachmentFileName(record.id, record.file_url)}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {openUrl && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => window.open(openUrl, "_blank", "noopener,noreferrer")}
+                            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                            title="Open attachment"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          {downloadUrl && (
+                            <button
+                              type="button"
+                              onClick={() => triggerDownload(downloadUrl, fileName)}
+                              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                              title="Download attachment"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
     </div>
   );

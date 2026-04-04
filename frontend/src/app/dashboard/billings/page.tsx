@@ -34,11 +34,25 @@ const formatRupee = (value: number) => `Rs. ${Number(value || 0).toLocaleString(
 const formatInvoiceMoney = (amount: number, currency?: string | null) =>
   currency && currency !== "INR" ? `${currency} ${Number(amount || 0).toFixed(2)}` : `Rs. ${Number(amount || 0).toFixed(2)}`;
 
+type InvoiceFormItem = {
+  id: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+};
+
+const createInvoiceFormItem = (overrides: Partial<InvoiceFormItem> = {}): InvoiceFormItem => ({
+  id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  description: "",
+  quantity: "1",
+  unitPrice: "",
+  ...overrides
+});
+
 const initialInvoiceForm = {
   patientId: "",
   doctorId: "",
-  description: "",
-  amount: "",
+  items: [createInvoiceFormItem()],
   dueDate: "",
   notes: ""
 };
@@ -87,6 +101,16 @@ export default function BillingsPage() {
   const [appliedSearch, setAppliedSearch] = useState("");
   const [appliedStatusFilter, setAppliedStatusFilter] = useState("");
   const [currentRole, setCurrentRole] = useState("");
+
+  const invoiceDraftTotal = useMemo(
+    () =>
+      invoiceForm.items.reduce((sum, item) => {
+        const quantity = Number(item.quantity || 0);
+        const unitPrice = Number(item.unitPrice || 0);
+        return sum + (Number.isFinite(quantity) ? quantity : 0) * (Number.isFinite(unitPrice) ? unitPrice : 0);
+      }, 0),
+    [invoiceForm.items]
+  );
 
   const loadInvoices = useCallback(() => {
     setLoading(true);
@@ -180,14 +204,25 @@ export default function BillingsPage() {
     setIsSubmitting(true);
     setError("");
     try {
+      const normalizedItems = invoiceForm.items
+        .map((item) => ({
+          description: item.description.trim(),
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.unitPrice)
+        }))
+        .filter((item) => item.description && item.quantity > 0 && item.unitPrice > 0);
+
+      if (normalizedItems.length === 0) {
+        throw new Error("Add at least one valid treatment, medicine, or other charge.");
+      }
+
       const response = await apiRequest<CreateInvoiceResponse>("/billings", {
         method: "POST",
         authenticated: true,
         body: {
           patientId: invoiceForm.patientId,
           doctorId: invoiceForm.doctorId || null,
-          description: invoiceForm.description.trim(),
-          amount: invoiceForm.amount ? Number(invoiceForm.amount) : undefined,
+          items: normalizedItems,
           dueDate: invoiceForm.dueDate || null,
           notes: invoiceForm.notes.trim() || null
         }
@@ -197,13 +232,37 @@ export default function BillingsPage() {
       setInvoices((previous) => [createdInvoice, ...previous.filter((invoice) => invoice.id !== createdInvoice.id)]);
 
       setShowCreate(false);
-      setInvoiceForm(initialInvoiceForm);
+      setInvoiceForm({
+        ...initialInvoiceForm,
+        items: [createInvoiceFormItem()]
+      });
       loadInvoices();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create invoice");
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleInvoiceItemChange = (itemId: string, field: keyof InvoiceFormItem, value: string) => {
+    setInvoiceForm((current) => ({
+      ...current,
+      items: current.items.map((item) => (item.id === itemId ? { ...item, [field]: value } : item))
+    }));
+  };
+
+  const handleAddInvoiceItem = () => {
+    setInvoiceForm((current) => ({
+      ...current,
+      items: [...current.items, createInvoiceFormItem()]
+    }));
+  };
+
+  const handleRemoveInvoiceItem = (itemId: string) => {
+    setInvoiceForm((current) => ({
+      ...current,
+      items: current.items.length > 1 ? current.items.filter((item) => item.id !== itemId) : current.items
+    }));
   };
 
   const handleIssue = async (invoice: Invoice) => {
@@ -313,7 +372,8 @@ export default function BillingsPage() {
           onClick={() => {
             setInvoiceForm({
               ...initialInvoiceForm,
-              patientId: patientFilterId
+              patientId: patientFilterId,
+              items: [createInvoiceFormItem()]
             });
             setShowCreate(true);
           }}
@@ -519,7 +579,7 @@ export default function BillingsPage() {
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
-          <form onSubmit={handleCreateInvoice} className="bg-white rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
+          <form onSubmit={handleCreateInvoice} className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-lg text-gray-900">Create Invoice</h2>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Patient</label>
@@ -547,11 +607,21 @@ export default function BillingsPage() {
                   setInvoiceForm((p) => ({
                     ...p,
                     doctorId: nextDoctorId,
-                    amount:
-                      p.amount ||
-                      (doctor && doctor.consultation_fee !== null && doctor.consultation_fee !== undefined
-                        ? String(Number(doctor.consultation_fee).toFixed(2))
-                        : "")
+                    items:
+                      doctor &&
+                      doctor.consultation_fee !== null &&
+                      doctor.consultation_fee !== undefined &&
+                      p.items.length === 1 &&
+                      !p.items[0].description &&
+                      !p.items[0].unitPrice
+                        ? [
+                            {
+                              ...p.items[0],
+                              description: `Consultation - ${doctor.full_name}`,
+                              unitPrice: String(Number(doctor.consultation_fee).toFixed(2))
+                            }
+                          ]
+                        : p.items
                   }));
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
@@ -564,28 +634,87 @@ export default function BillingsPage() {
                 ))}
               </select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm text-gray-700 mb-1">Description</label>
-                <input
-                  type="text"
-                  value={invoiceForm.description}
-                  onChange={(e) => setInvoiceForm((p) => ({ ...p, description: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  required
-                />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <label className="block text-sm text-gray-700">Invoice Items</label>
+                  <p className="mt-1 text-xs text-gray-500">Add treatments, medicines, tests, consumables, or any other charge.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddInvoiceItem}
+                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Item
+                </button>
               </div>
-              <div>
-                <label className="block text-sm text-gray-700 mb-1">Amount</label>
-                <input
-                  type="number"
-                  min={0.01}
-                  step="0.01"
-                  value={invoiceForm.amount}
-                  onChange={(e) => setInvoiceForm((p) => ({ ...p, amount: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  required
-                />
+
+              <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+                {invoiceForm.items.map((item, index) => {
+                  const quantity = Number(item.quantity || 0);
+                  const unitPrice = Number(item.unitPrice || 0);
+                  const lineTotal = (Number.isFinite(quantity) ? quantity : 0) * (Number.isFinite(unitPrice) ? unitPrice : 0);
+
+                  return (
+                    <div key={item.id} className="rounded-xl border border-gray-200 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-gray-900">Item {index + 1}</p>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveInvoiceItem(item.id)}
+                          disabled={invoiceForm.items.length === 1}
+                          className="text-xs text-red-600 disabled:opacity-40"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-[1.6fr_0.6fr_0.8fr]">
+                        <div>
+                          <label className="mb-1 block text-sm text-gray-700">Description</label>
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={(e) => handleInvoiceItemChange(item.id, "description", e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            placeholder="Treatment / Medicine / Other charge"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-sm text-gray-700">Qty</label>
+                          <input
+                            type="number"
+                            min={0.01}
+                            step="0.01"
+                            value={item.quantity}
+                            onChange={(e) => handleInvoiceItemChange(item.id, "quantity", e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-sm text-gray-700">Unit Price</label>
+                          <input
+                            type="number"
+                            min={0.01}
+                            step="0.01"
+                            value={item.unitPrice}
+                            onChange={(e) => handleInvoiceItemChange(item.id, "unitPrice", e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            required
+                          />
+                        </div>
+                      </div>
+                      <p className="mt-3 text-right text-sm text-gray-600">Line Total: {formatRupee(lineTotal)}</p>
+                    </div>
+                  );
+                })}
+
+                <div className="flex items-center justify-between rounded-xl bg-emerald-50 px-4 py-3">
+                  <p className="text-sm text-emerald-800">Invoice Total</p>
+                  <p className="text-lg font-semibold text-emerald-900">{formatRupee(invoiceDraftTotal)}</p>
+                </div>
               </div>
             </div>
             <div>
@@ -611,7 +740,10 @@ export default function BillingsPage() {
                 type="button"
                 onClick={() => {
                   setShowCreate(false);
-                  setInvoiceForm(initialInvoiceForm);
+                  setInvoiceForm({
+                    ...initialInvoiceForm,
+                    items: [createInvoiceFormItem()]
+                  });
                 }}
                 className="px-4 py-2 border border-gray-300 rounded-lg"
               >

@@ -49,6 +49,18 @@ const deriveFollowUpDate = (payload, baseDateValue) => {
   return toDateKey(baseDate);
 };
 
+const deriveFollowUpReminderStatus = (payload, followUpDate, fallbackStatus = null) => {
+  if (!followUpDate) {
+    return null;
+  }
+
+  if (typeof payload.sendFollowUpReminder === "boolean") {
+    return payload.sendFollowUpReminder ? "pending" : "disabled";
+  }
+
+  return fallbackStatus ?? "pending";
+};
+
 const listMedicalRecords = async (organizationId, query, actor = null) => {
   const page = Number.parseInt(query.page, 10) || 1;
   const limit = Number.parseInt(query.limit, 10) || 10;
@@ -106,6 +118,11 @@ const createMedicalRecord = async (organizationId, payload, actor = null) => {
     doctorId: allowedDoctorId || payload.doctorId,
     followUpDate: deriveFollowUpDate(payload, payload.recordDate)
   };
+  normalizedPayload.followUpReminderStatus = deriveFollowUpReminderStatus(
+    payload,
+    normalizedPayload.followUpDate,
+    payload.followUpReminderStatus
+  );
 
   const [patient, doctor] = await Promise.all([
     patientsModel.getPatientById(organizationId, normalizedPayload.patientId),
@@ -172,6 +189,12 @@ const updateMedicalRecord = async (organizationId, id, payload, actor = null) =>
   if (!("followUpDate" in normalizedPayload) && "followUpInDays" in payload) {
     normalizedPayload.followUpDate = deriveFollowUpDate(payload, current.record_date);
   }
+
+  normalizedPayload.followUpReminderStatus = deriveFollowUpReminderStatus(
+    payload,
+    normalizedPayload.followUpDate,
+    current.follow_up_reminder_status
+  );
 
   if (normalizedPayload.patientId || normalizedPayload.doctorId) {
     const [patient, doctor] = await Promise.all([
@@ -256,6 +279,13 @@ const upsertAppointmentConsultationRecord = async (organizationId, payload) => {
         payload.followUpDate !== undefined
           ? payload.followUpDate
           : deriveFollowUpDate(payload, payload.recordDate || existing.record_date) ?? existing.follow_up_date,
+      followUpReminderStatus: deriveFollowUpReminderStatus(
+        payload,
+        payload.followUpDate !== undefined
+          ? payload.followUpDate
+          : deriveFollowUpDate(payload, payload.recordDate || existing.record_date) ?? existing.follow_up_date,
+        existing.follow_up_reminder_status
+      ),
       notes: payload.notes
     });
     await invalidateMedicalRecordCaches(organizationId);

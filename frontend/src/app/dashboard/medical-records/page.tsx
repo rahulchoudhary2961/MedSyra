@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Eye, FileText, Pencil, Plus, Trash2 } from "lucide-react";
+import { Download, Eye, FileText, Pencil, Plus, Send, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import { canAccessMedicalRecords, canDeleteMedicalRecords, isFullAccessRole } from "@/lib/roles";
@@ -54,6 +54,18 @@ type UploadAttachmentResponse = {
   };
 };
 
+type MedicalRecordMutationResponse = {
+  success: boolean;
+  data: MedicalRecord;
+};
+
+type FollowUpReminderResponse = {
+  success: boolean;
+  data: {
+    record: MedicalRecord;
+  };
+};
+
 const initialForm = {
   patientId: "",
   doctorId: "",
@@ -95,6 +107,7 @@ export default function MedicalRecordsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MedicalRecord | null>(null);
@@ -109,6 +122,19 @@ export default function MedicalRecordsPage() {
   const doctorsMap = useMemo(
     () => new Map(doctors.map((doctor) => [doctor.id, doctor.full_name])),
     [doctors]
+  );
+
+  const sortRecords = useCallback(
+    (items: MedicalRecord[]) =>
+      [...items].sort((left, right) => {
+        const dateDiff = (right.record_date || "").localeCompare(left.record_date || "");
+        if (dateDiff !== 0) {
+          return dateDiff;
+        }
+
+        return (right.created_at || "").localeCompare(left.created_at || "");
+      }),
+    []
   );
 
   const buildPayload = (): MedicalRecordPayload => ({
@@ -283,22 +309,27 @@ export default function MedicalRecordsPage() {
         fileUrl
       };
       if (editingRecordId) {
-        await apiRequest(`/medical-records/${editingRecordId}`, {
+        const response = await apiRequest<MedicalRecordMutationResponse>(`/medical-records/${editingRecordId}`, {
           method: "PATCH",
           authenticated: true,
           body: payload
         });
+        setRecords((current) =>
+          sortRecords(current.map((record) => (record.id === editingRecordId ? response.data : record)))
+        );
+        setSelectedRecord((current) => (current?.id === editingRecordId ? response.data : current));
       } else {
-        await apiRequest("/medical-records", {
+        const response = await apiRequest<MedicalRecordMutationResponse>("/medical-records", {
           method: "POST",
           authenticated: true,
           body: payload
         });
+        setRecords((current) => sortRecords([response.data, ...current.filter((record) => record.id !== response.data.id)]));
       }
 
       setShowFormModal(false);
       resetForm();
-      loadRecords();
+      void loadRecords();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save medical record";
       setError(message);
@@ -500,6 +531,29 @@ export default function MedicalRecordsPage() {
     }
   };
 
+  const handleSendReminder = async (record: MedicalRecord) => {
+    setSendingReminderId(record.id);
+    setError("");
+
+    try {
+      const response = await apiRequest<FollowUpReminderResponse>(`/medical-records/${record.id}/send-follow-up-reminder`, {
+        method: "POST",
+        authenticated: true,
+        body: {}
+      });
+
+      setRecords((current) =>
+        sortRecords(current.map((item) => (item.id === record.id ? response.data.record : item)))
+      );
+      setSelectedRecord((current) => (current?.id === record.id ? response.data.record : current));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to send reminder";
+      setError(message);
+    } finally {
+      setSendingReminderId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -621,6 +675,16 @@ export default function MedicalRecordsPage() {
                       >
                         <Download className="w-4 h-4" />
                       </button>
+                      {record.follow_up_date && (
+                        <button
+                          onClick={() => void handleSendReminder(record)}
+                          disabled={sendingReminderId === record.id}
+                          className="p-1.5 rounded hover:bg-emerald-50 text-emerald-600 disabled:opacity-60"
+                          title="Send Reminder"
+                        >
+                          <Send className="w-4 h-4" />
+                        </button>
+                      )}
                       {(isFullAccessRole(currentRole) || currentRole === "doctor") && (
                         <button
                           onClick={() => handleEdit(record)}
@@ -828,6 +892,8 @@ export default function MedicalRecordsPage() {
               <p><span className="text-gray-500">Doctor:</span> {doctorsMap.get(selectedRecord.doctor_id) || selectedRecord.doctor_name}</p>
               <p><span className="text-gray-500">Status:</span> {selectedRecord.status}</p>
               <p><span className="text-gray-500">Date:</span> {selectedRecord.record_date}</p>
+              <p><span className="text-gray-500">Follow-up Date:</span> {selectedRecord.follow_up_date || "-"}</p>
+              <p><span className="text-gray-500">Reminder Status:</span> {selectedRecord.follow_up_reminder_status || "pending"}</p>
               <p className="sm:col-span-2"><span className="text-gray-500">Symptoms:</span> {selectedRecord.symptoms || "-"}</p>
               <p className="sm:col-span-2"><span className="text-gray-500">Diagnosis:</span> {selectedRecord.diagnosis || "-"}</p>
               <p className="sm:col-span-2"><span className="text-gray-500">Prescription:</span> {selectedRecord.prescription || "-"}</p>
@@ -853,7 +919,17 @@ export default function MedicalRecordsPage() {
                 )}
               </p>
             </div>
-            <div className="p-6 border-t border-gray-200 flex justify-end">
+            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              {selectedRecord.follow_up_date && (
+                <button
+                  type="button"
+                  onClick={() => void handleSendReminder(selectedRecord)}
+                  disabled={sendingReminderId === selectedRecord.id}
+                  className="px-4 py-2 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 disabled:opacity-60"
+                >
+                  {sendingReminderId === selectedRecord.id ? "Sending..." : "Send Reminder"}
+                </button>
+              )}
               <button
                 onClick={() => {
                   setShowViewModal(false);
