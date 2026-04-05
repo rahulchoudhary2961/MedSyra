@@ -12,8 +12,10 @@ export interface AuthUser {
 
 export interface Patient {
   id: string;
+  patient_code: string;
   full_name: string;
   age: number | null;
+  date_of_birth: string | null;
   gender: string;
   phone: string;
   email: string | null;
@@ -139,6 +141,54 @@ export interface InvoiceItem {
   quantity: number;
   unit_price: number;
   total_amount: number;
+}
+
+export interface NotificationDelivery {
+  channel: "whatsapp" | "sms" | "email";
+  status: "sent" | "failed" | "fallback" | "opened" | "skipped";
+  recipient?: string;
+  error?: string;
+}
+
+export interface NotificationPreferencesData {
+  preferences: {
+    appointment_whatsapp_enabled: boolean;
+    appointment_sms_enabled: boolean;
+    follow_up_whatsapp_enabled: boolean;
+    follow_up_sms_enabled: boolean;
+    staff_schedule_email_enabled: boolean;
+    staff_schedule_sms_enabled: boolean;
+    created_at?: string;
+    updated_at?: string;
+  };
+  providers: {
+    whatsapp: {
+      enabled: boolean;
+      configured: boolean;
+    };
+    sms: {
+      enabled: boolean;
+      configured: boolean;
+    };
+    email: {
+      enabled?: boolean;
+      configured: boolean;
+      provider?: string;
+    };
+  };
+}
+
+export interface NotificationLog {
+  id: string;
+  notification_type: string;
+  channel: "whatsapp" | "sms" | "email";
+  status: "sent" | "failed" | "fallback" | "opened" | "skipped";
+  reference_id: string | null;
+  recipient: string | null;
+  message_preview: string | null;
+  error_message: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface SmartSummaryItem {

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Clock, Link as LinkIcon, Mail, Phone, Plus, Search, Star, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
-import { canManageDoctors, isFullAccessRole } from "@/lib/roles";
+import { canAccessDoctors, canManageDoctors, isFullAccessRole } from "@/lib/roles";
 import { Doctor } from "@/types/api";
 
 type DoctorsResponse = {
@@ -239,6 +239,14 @@ export default function DoctorsPage() {
     () => doctorUsers.find((user) => user.id === form.userId) || null,
     [doctorUsers, form.userId]
   );
+  const linkedDoctorsCount = useMemo(
+    () => doctors.filter((doctor) => Boolean(doctor.user_id)).length,
+    [doctors]
+  );
+  const customScheduleCount = useMemo(
+    () => doctors.filter((doctor) => Boolean(doctor.work_start_time && doctor.work_end_time)).length,
+    [doctors]
+  );
 
   const handleFormChange = <K extends keyof DoctorForm>(key: K, value: DoctorForm[K]) => {
     setForm((current) => {
@@ -321,9 +329,10 @@ export default function DoctorsPage() {
     }
   };
 
+  const canCreateDoctors = canManageDoctors(currentRole);
   const canDeleteDoctors = isFullAccessRole(currentRole);
 
-  if (currentRole && !canManageDoctors(currentRole)) {
+  if (currentRole && !canAccessDoctors(currentRole)) {
     return <p className="text-red-600">You do not have access to doctors.</p>;
   }
 
@@ -396,14 +405,31 @@ export default function DoctorsPage() {
           <h1 className="text-gray-900">Doctors</h1>
           <p className="text-gray-600 mt-1">Manage medical staff and link doctor profiles to login accounts</p>
         </div>
-        <button
-          data-tour-id="tour-doctors-add"
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add New Doctor
-        </button>
+        {canCreateDoctors && (
+          <button
+            data-tour-id="tour-doctors-add"
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add New Doctor
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-500">Doctor Profiles</p>
+          <p className="mt-2 text-2xl text-gray-900">{totalDoctors}</p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-500">Linked Login Accounts</p>
+          <p className="mt-2 text-2xl text-gray-900">{linkedDoctorsCount}</p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-500">Custom Work Hours</p>
+          <p className="mt-2 text-2xl text-gray-900">{customScheduleCount}</p>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl p-4 border border-gray-200">
@@ -423,6 +449,11 @@ export default function DoctorsPage() {
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       {loading && <p className="text-sm text-gray-500">Loading doctors...</p>}
+      {!loading && doctors.length === 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-500">
+          No doctor profiles found for the current search.
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {doctors.map((doctor) => (

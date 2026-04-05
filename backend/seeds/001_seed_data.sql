@@ -15,11 +15,11 @@ VALUES (
 )
 ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO patients (id, organization_id, full_name, age, gender, phone, email, blood_type, status, last_visit_at)
+INSERT INTO patients (id, organization_id, patient_code, full_name, age, date_of_birth, gender, phone, email, blood_type, status, last_visit_at)
 VALUES
-  ('33333333-3333-3333-3333-333333333331', '11111111-1111-1111-1111-111111111111', 'Sarah Johnson', 32, 'female', '(555) 123-4567', 'sarah.j@email.com', 'O+', 'active', CURRENT_DATE - INTERVAL '1 day'),
-  ('33333333-3333-3333-3333-333333333332', '11111111-1111-1111-1111-111111111111', 'Mike Chen', 45, 'male', '(555) 234-5678', 'mike.c@email.com', 'A+', 'active', CURRENT_DATE - INTERVAL '2 day'),
-  ('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111', 'Emma Davis', 28, 'female', '(555) 345-6789', 'emma.d@email.com', 'B+', 'follow-up', CURRENT_DATE - INTERVAL '3 day')
+  ('33333333-3333-3333-3333-333333333331', '11111111-1111-1111-1111-111111111111', 'PAT-0001', 'Sarah Johnson', 32, CURRENT_DATE - INTERVAL '32 year', 'female', '(555) 123-4567', 'sarah.j@email.com', 'O+', 'active', CURRENT_DATE - INTERVAL '1 day'),
+  ('33333333-3333-3333-3333-333333333332', '11111111-1111-1111-1111-111111111111', 'PAT-0002', 'Mike Chen', 45, CURRENT_DATE - INTERVAL '45 year', 'male', '(555) 234-5678', 'mike.c@email.com', 'A+', 'active', CURRENT_DATE - INTERVAL '2 day'),
+  ('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111', 'PAT-0003', 'Emma Davis', 28, CURRENT_DATE - INTERVAL '28 year', 'female', '(555) 345-6789', 'emma.d@email.com', 'B+', 'follow-up', CURRENT_DATE - INTERVAL '3 day')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO doctors (
@@ -37,9 +37,9 @@ INSERT INTO appointments (
   doctor_id, category, appointment_date, appointment_time, duration_minutes, planned_procedures, notes
 )
 VALUES
-  ('55555555-5555-5555-5555-555555555551', '11111111-1111-1111-1111-111111111111', 'Sarah Johnson', '33333333-3333-3333-3333-333333333331', 'Sarah Johnson', '33333333-3333-3333-3333-333333333331', '(555) 123-4567', 'sarah.j@email.com', '44444444-4444-4444-4444-444444444441', 'consultation', CURRENT_DATE, '09:00', 15, 'Blood pressure review', 'Check follow-up medication response'),
-  ('55555555-5555-5555-5555-555555555552', '11111111-1111-1111-1111-111111111111', 'Mike Chen', '33333333-3333-3333-3333-333333333332', 'Mike Chen', '33333333-3333-3333-3333-333333333332', '(555) 234-5678', 'mike.c@email.com', '44444444-4444-4444-4444-444444444442', 'follow-up', CURRENT_DATE + INTERVAL '2 day', '11:30', 30, 'Routine child wellness visit', 'General follow-up discussion'),
-  ('55555555-5555-5555-5555-555555555553', '11111111-1111-1111-1111-111111111111', 'Emma Davis', '33333333-3333-3333-3333-333333333333', 'Emma Davis', '33333333-3333-3333-3333-333333333333', '(555) 345-6789', 'emma.d@email.com', '44444444-4444-4444-4444-444444444443', 'procedure', DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '10 day', '15:00', 45, 'Minor orthopedic procedure', 'Operations planning meeting')
+  ('55555555-5555-5555-5555-555555555551', '11111111-1111-1111-1111-111111111111', 'Sarah Johnson', '33333333-3333-3333-3333-333333333331', 'Sarah Johnson', 'PAT-0001', '(555) 123-4567', 'sarah.j@email.com', '44444444-4444-4444-4444-444444444441', 'consultation', CURRENT_DATE, '09:00', 15, 'Blood pressure review', 'Check follow-up medication response'),
+  ('55555555-5555-5555-5555-555555555552', '11111111-1111-1111-1111-111111111111', 'Mike Chen', '33333333-3333-3333-3333-333333333332', 'Mike Chen', 'PAT-0002', '(555) 234-5678', 'mike.c@email.com', '44444444-4444-4444-4444-444444444442', 'follow-up', CURRENT_DATE + INTERVAL '2 day', '11:30', 30, 'Routine child wellness visit', 'General follow-up discussion'),
+  ('55555555-5555-5555-5555-555555555553', '11111111-1111-1111-1111-111111111111', 'Emma Davis', '33333333-3333-3333-3333-333333333333', 'Emma Davis', 'PAT-0003', '(555) 345-6789', 'emma.d@email.com', '44444444-4444-4444-4444-444444444443', 'procedure', DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '10 day', '15:00', 45, 'Minor orthopedic procedure', 'Operations planning meeting')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO medical_records (

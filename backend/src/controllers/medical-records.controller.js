@@ -59,7 +59,7 @@ const sendFollowUpReminder = asyncHandler(async (req, res) => {
     req.params.id,
     req.user
   );
-  res.json({ success: true, message: "WhatsApp reminder sent", data });
+  res.json({ success: true, message: "Follow-up reminder processed", data });
 });
 
 const deleteMedicalRecord = asyncHandler(async (req, res) => {

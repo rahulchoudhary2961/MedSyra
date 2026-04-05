@@ -2,6 +2,25 @@ const pool = require("../config/db");
 
 const PHONE_NORMALIZE_SQL = "regexp_replace(phone, '[^0-9]', '', 'g')";
 
+const getNextPatientCode = async (db, organizationId) => {
+  await db.query("SELECT id FROM organizations WHERE id = $1 FOR UPDATE", [organizationId]);
+
+  const result = await db.query(
+    `
+      SELECT patient_code
+      FROM patients
+      WHERE organization_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `,
+    [organizationId]
+  );
+
+  const lastCode = result.rows[0]?.patient_code || "PAT-0000";
+  const numeric = Number.parseInt(String(lastCode).split("-")[1], 10) || 0;
+  return `PAT-${String(numeric + 1).padStart(4, "0")}`;
+};
+
 const listPatients = async ({ organizationId, search, status, limit, offset }) => {
   const values = [organizationId];
   const conditions = ["p.organization_id = $1", "p.is_active = true"];
@@ -9,7 +28,7 @@ const listPatients = async ({ organizationId, search, status, limit, offset }) =
   if (search) {
     values.push(`%${search}%`);
     const idx = values.length;
-    conditions.push(`(p.full_name ILIKE $${idx} OR p.email ILIKE $${idx} OR p.phone ILIKE $${idx})`);
+    conditions.push(`(p.patient_code ILIKE $${idx} OR p.full_name ILIKE $${idx} OR p.email ILIKE $${idx} OR p.phone ILIKE $${idx})`);
   }
 
   if (status) {
@@ -21,7 +40,7 @@ const listPatients = async ({ organizationId, search, status, limit, offset }) =
   const whereClause = conditions.join(" AND ");
 
   const query = `
-    SELECT p.id, p.full_name, p.age, p.gender, p.phone, p.email, p.blood_type, p.emergency_contact,
+    SELECT p.id, p.patient_code, p.full_name, p.age, p.date_of_birth, p.gender, p.phone, p.email, p.blood_type, p.emergency_contact,
            p.address, p.status, p.last_visit_at,
            p.created_at, p.updated_at
     FROM patients p
@@ -43,31 +62,46 @@ const listPatients = async ({ organizationId, search, status, limit, offset }) =
 };
 
 const createPatient = async (organizationId, payload) => {
-  const query = `
-    INSERT INTO patients (
-      organization_id, full_name, age, gender, phone, email,
-      blood_type, emergency_contact, address, status, last_visit_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-    RETURNING id, full_name, age, gender, phone, email, blood_type, emergency_contact,
-              address, status, last_visit_at, created_at, updated_at
-  `;
+  const client = await pool.connect();
 
-  const values = [
-    organizationId,
-    payload.fullName,
-    payload.age,
-    payload.gender,
-    payload.phone,
-    payload.email,
-    payload.bloodType,
-    payload.emergencyContact,
-    payload.address,
-    payload.status || "active",
-    payload.lastVisitAt || null
-  ];
+  try {
+    await client.query("BEGIN");
+    const patientCode = await getNextPatientCode(client, organizationId);
 
-  const { rows } = await pool.query(query, values);
-  return rows[0];
+    const query = `
+      INSERT INTO patients (
+        organization_id, patient_code, full_name, age, date_of_birth, gender, phone, email,
+        blood_type, emergency_contact, address, status, last_visit_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      RETURNING id, patient_code, full_name, age, date_of_birth, gender, phone, email, blood_type, emergency_contact,
+                address, status, last_visit_at, created_at, updated_at
+    `;
+
+    const values = [
+      organizationId,
+      patientCode,
+      payload.fullName,
+      payload.age,
+      payload.dateOfBirth || null,
+      payload.gender,
+      payload.phone,
+      payload.email,
+      payload.bloodType,
+      payload.emergencyContact,
+      payload.address,
+      payload.status || "active",
+      payload.lastVisitAt || null
+    ];
+
+    const { rows } = await client.query(query, values);
+    await client.query("COMMIT");
+    return rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 const findDuplicatePatient = async (organizationId, { phone, email, excludeId = null }) => {
@@ -105,7 +139,7 @@ const findDuplicatePatient = async (organizationId, { phone, email, excludeId = 
 
 const getPatientById = async (organizationId, id) => {
   const query = `
-    SELECT p.id, p.full_name, p.age, p.gender, p.phone, p.email, p.blood_type, p.emergency_contact,
+    SELECT p.id, p.patient_code, p.full_name, p.age, p.date_of_birth, p.gender, p.phone, p.email, p.blood_type, p.emergency_contact,
            p.address, p.status, p.last_visit_at,
            p.created_at, p.updated_at
     FROM patients p
@@ -144,16 +178,28 @@ const getPatientProfile = async (organizationId, id) => {
     SELECT
       mr.id,
       mr.appointment_id,
+      mr.patient_id,
+      p.full_name AS patient_name,
+      mr.doctor_id,
+      d.full_name AS doctor_name,
       mr.record_date::text AS record_date,
       mr.record_type,
       mr.status,
+      mr.symptoms,
       mr.diagnosis,
       mr.prescription,
       mr.follow_up_date,
       mr.follow_up_reminder_status,
       mr.follow_up_reminder_sent_at,
-      mr.notes
+      mr.notes,
+      mr.file_url
     FROM medical_records mr
+    JOIN patients p
+      ON p.id = mr.patient_id
+     AND p.organization_id = mr.organization_id
+    LEFT JOIN doctors d
+      ON d.id = mr.doctor_id
+     AND d.organization_id = mr.organization_id
     WHERE mr.organization_id = $1
       AND mr.patient_id = $2
     ORDER BY mr.record_date DESC, mr.created_at DESC
@@ -223,6 +269,7 @@ const updatePatient = async (organizationId, id, payload) => {
   const columnMap = {
     fullName: "full_name",
     age: "age",
+    dateOfBirth: "date_of_birth",
     gender: "gender",
     phone: "phone",
     email: "email",
@@ -253,7 +300,7 @@ const updatePatient = async (organizationId, id, payload) => {
     UPDATE patients
     SET ${setClauses.join(", ")}, updated_at = NOW()
     WHERE organization_id = $1 AND id = $2 AND is_active = true
-    RETURNING id, full_name, age, gender, phone, email, blood_type, emergency_contact,
+    RETURNING id, patient_code, full_name, age, date_of_birth, gender, phone, email, blood_type, emergency_contact,
               address, status, last_visit_at, created_at, updated_at
   `;
 

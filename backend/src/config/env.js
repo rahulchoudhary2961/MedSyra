@@ -60,7 +60,11 @@ const env = {
   nvidiaModel: process.env.NVIDIA_MODEL || "openai/gpt-oss-120b",
   ycloudApiKey: process.env.YCLOUD_API_KEY || "",
   ycloudWhatsappFrom: process.env.YCLOUD_WHATSAPP_FROM || "",
-  whatsappReminderEnabled: parseBoolean(process.env.WHATSAPP_REMINDER_ENABLED, false)
+  whatsappReminderEnabled: parseBoolean(process.env.WHATSAPP_REMINDER_ENABLED, false),
+  smsReminderEnabled: parseBoolean(process.env.SMS_REMINDER_ENABLED, false),
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || "",
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || "",
+  twilioFromNumber: process.env.TWILIO_FROM_NUMBER || ""
 };
 
 const weakJwtSecret = env.jwtSecret.length < 32 || env.jwtSecret.toLowerCase().includes("change-this-secret");

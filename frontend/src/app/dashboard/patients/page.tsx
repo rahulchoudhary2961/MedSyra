@@ -47,6 +47,7 @@ type MeResponse = {
 type CreatePatientForm = {
   fullName: string;
   age: string;
+  dateOfBirth: string;
   gender: string;
   phone: string;
   email: string;
@@ -58,6 +59,7 @@ type CreatePatientForm = {
 const initialForm: CreatePatientForm = {
   fullName: "",
   age: "",
+  dateOfBirth: "",
   gender: "",
   phone: "",
   email: "",
@@ -73,11 +75,34 @@ const getStatusClass = (status: string) => {
   return "bg-yellow-50 text-yellow-700";
 };
 
+const calculateAgeFromDateOfBirth = (value: string) => {
+  if (!value) {
+    return "";
+  }
+
+  const dateOfBirth = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(dateOfBirth.getTime())) {
+    return "";
+  }
+
+  const now = new Date();
+  let age = now.getFullYear() - dateOfBirth.getFullYear();
+  const hasBirthdayPassed =
+    now.getMonth() > dateOfBirth.getMonth() ||
+    (now.getMonth() === dateOfBirth.getMonth() && now.getDate() >= dateOfBirth.getDate());
+
+  if (!hasBirthdayPassed) {
+    age -= 1;
+  }
+
+  return String(Math.max(age, 0));
+};
+
 const patientMatchesQuery = (patient: Patient, currentQuery: string) => {
   const normalizedQuery = currentQuery.trim().toLowerCase();
   if (!normalizedQuery) return true;
 
-  return [patient.full_name, patient.phone, patient.email]
+  return [patient.patient_code, patient.full_name, patient.phone, patient.email]
     .filter(Boolean)
     .some((value) => value!.toLowerCase().includes(normalizedQuery));
 };
@@ -111,6 +136,7 @@ export default function PatientsPage() {
     setFormData({
       fullName: patient.full_name || "",
       age: patient.age?.toString() || "",
+      dateOfBirth: patient.date_of_birth || "",
       gender: patient.gender || "",
       phone: patient.phone || "",
       email: patient.email || "",
@@ -225,6 +251,7 @@ export default function PatientsPage() {
       const body = {
         fullName: formData.fullName,
         age: formData.age ? Number(formData.age) : null,
+        ...(formData.dateOfBirth ? { dateOfBirth: formData.dateOfBirth } : {}),
         gender: formData.gender,
         phone: formData.phone,
         email: formData.email || null,
@@ -376,7 +403,7 @@ export default function PatientsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, phone, or email..."
+              placeholder="Search by patient ID, name, phone, or email..."
               className="bg-transparent border-none outline-none flex-1 text-sm"
             />
           </div>
@@ -388,8 +415,9 @@ export default function PatientsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-left text-sm text-gray-600 px-6 py-4">Patient Name</th>
+                <th className="text-left text-sm text-gray-600 px-6 py-4">Patient</th>
                 <th className="text-left text-sm text-gray-600 px-6 py-4">Age</th>
+                <th className="text-left text-sm text-gray-600 px-6 py-4">DOB</th>
                 <th className="text-left text-sm text-gray-600 px-6 py-4">Gender</th>
                 <th className="text-left text-sm text-gray-600 px-6 py-4">Phone</th>
                 <th className="text-left text-sm text-gray-600 px-6 py-4">Email</th>
@@ -401,7 +429,7 @@ export default function PatientsPage() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td className="px-6 py-5 text-sm text-gray-500" colSpan={8}>
+                  <td className="px-6 py-5 text-sm text-gray-500" colSpan={9}>
                     Loading patients...
                   </td>
                 </tr>
@@ -409,7 +437,7 @@ export default function PatientsPage() {
 
               {!isLoading && patients.length === 0 && (
                 <tr>
-                  <td className="px-6 py-5 text-sm text-gray-500" colSpan={8}>
+                  <td className="px-6 py-5 text-sm text-gray-500" colSpan={9}>
                     No patients found.
                   </td>
                 </tr>
@@ -429,11 +457,12 @@ export default function PatientsPage() {
                       </div>
                       <div>
                         <p className="text-gray-900">{patient.full_name}</p>
-                        <p className="text-xs text-gray-500">{patient.blood_type || "-"}</p>
+                        <p className="text-xs text-gray-500">{patient.patient_code}{patient.blood_type ? ` • ${patient.blood_type}` : ""}</p>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-gray-600">{patient.age ?? "-"}</td>
+                  <td className="px-6 py-4 text-gray-600">{formatLastVisitDate(patient.date_of_birth)}</td>
                   <td className="px-6 py-4 text-gray-600">{patient.gender}</td>
                   <td className="px-6 py-4 text-gray-600">{patient.phone}</td>
                   <td className="px-6 py-4 text-gray-600">{patient.email || "-"}</td>
@@ -557,6 +586,22 @@ export default function PatientsPage() {
                       value={formData.age}
                       onChange={(e) =>
                         setFormData({ ...formData, age: e.target.value.replace(/\D/g, "").slice(0, 3) })
+                      }
+                      disabled={Boolean(formData.dateOfBirth)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-700 mb-2">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={formData.dateOfBirth}
+                      onChange={(e) =>
+                        setFormData((current) => ({
+                          ...current,
+                          dateOfBirth: e.target.value,
+                          age: e.target.value ? calculateAgeFromDateOfBirth(e.target.value) : current.age
+                        }))
                       }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                     />

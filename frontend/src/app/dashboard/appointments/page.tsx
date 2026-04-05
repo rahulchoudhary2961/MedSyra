@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { ApiRequestError, apiRequest } from "@/lib/api";
 import { canManageAppointments } from "@/lib/roles";
-import { Appointment, Doctor, Invoice, MedicalRecord, Patient } from "@/types/api";
+import { Appointment, Doctor, Invoice, MedicalRecord, NotificationDelivery, Patient } from "@/types/api";
 
 type AppointmentsResponse = {
   success: boolean;
@@ -82,9 +82,17 @@ type AppointmentReminderResponse = {
       stage: string;
       label: string;
       tracked: boolean;
-      whatsappUrl: string;
       message: string;
+      deliveries: NotificationDelivery[];
     };
+  };
+};
+
+type FollowUpReminderResponse = {
+  success: boolean;
+  data: {
+    record: MedicalRecord;
+    deliveries: NotificationDelivery[];
   };
 };
 
@@ -156,6 +164,7 @@ const SLOT_HEIGHT = 48;
 const initialForm = {
   patientName: "",
   patientId: "",
+  patientCode: "",
   mobileNumber: "",
   email: "",
   doctorId: "",
@@ -742,7 +751,7 @@ export default function AppointmentsPage() {
 
     return patients
       .filter((patient) => {
-        const haystack = `${patient.full_name} ${patient.phone} ${patient.email || ""}`.toLowerCase();
+        const haystack = `${patient.patient_code || ""} ${patient.full_name} ${patient.phone} ${patient.email || ""}`.toLowerCase();
         return haystack.includes(query);
       })
       .slice(0, 50);
@@ -856,6 +865,10 @@ export default function AppointmentsPage() {
     () => doctors.find((doctor) => doctor.id === form.doctorId) || null,
     [doctors, form.doctorId]
   );
+  const selectedFormPatient = useMemo(
+    () => patients.find((patient) => patient.id === form.patientId) || null,
+    [form.patientId, patients]
+  );
 
   const validFormTimeOptions = useMemo(() => {
     const duration = Number(form.durationMinutes) || 15;
@@ -912,6 +925,7 @@ export default function AppointmentsPage() {
     setForm({
       ...initialForm,
       patientId: selectedPatient?.id || patientFilterId,
+      patientCode: selectedPatient?.patient_code || "",
       patientName: selectedPatient?.full_name || "",
       mobileNumber: selectedPatient?.phone || "",
       email: selectedPatient?.email || "",
@@ -1046,7 +1060,8 @@ export default function AppointmentsPage() {
     setAppointmentFormError("");
     setForm({
       patientName: appointment.patient_name || appointment.title || "",
-      patientId: appointment.patient_id || appointment.patient_identifier || "",
+      patientId: appointment.patient_id || "",
+      patientCode: appointment.patient_identifier || "",
       mobileNumber: appointment.mobile_number || "",
       email: appointment.email || "",
       doctorId: appointment.doctor_id || "",
@@ -1071,10 +1086,26 @@ export default function AppointmentsPage() {
     setForm((prev) => ({
       ...prev,
       patientId: patient.id,
+      patientCode: patient.patient_code || "",
       patientName: patient.full_name,
       mobileNumber: patient.phone || "",
       email: patient.email || ""
     }));
+  };
+
+  const handlePatientSearchChange = (value: string) => {
+    setPatientSearch(value);
+
+    if (!value.trim()) {
+      setForm((prev) => ({
+        ...prev,
+        patientId: "",
+        patientCode: "",
+        patientName: "",
+        mobileNumber: "",
+        email: ""
+      }));
+    }
   };
 
   const openInlinePatientForm = () => {
@@ -1113,6 +1144,7 @@ export default function AppointmentsPage() {
       setForm((prev) => ({
         ...prev,
         patientId: createdPatient.id,
+        patientCode: createdPatient.patient_code || "",
         patientName: createdPatient.full_name,
         mobileNumber: createdPatient.phone || "",
         email: createdPatient.email || ""
@@ -1527,32 +1559,37 @@ export default function AppointmentsPage() {
       return;
     }
 
-    const phoneDigits = String(selectedAppointment.mobile_number || "").replace(/\D/g, "");
-    if (phoneDigits.length < 10) {
+    setIsSendingReminder(true);
+    try {
+      const response = await apiRequest<FollowUpReminderResponse>(
+        `/medical-records/${selectedConsultationRecord.id}/send-follow-up-reminder`,
+        {
+          method: "POST",
+          authenticated: true,
+          body: {}
+        }
+      );
+
+      const updatedRecord = response.data.record;
+      const sentChannels = response.data.deliveries
+        .filter((item) => item.status === "sent")
+        .map((item) => item.channel.toUpperCase());
+
+      setSelectedConsultationRecord(updatedRecord);
+      setToast({
+        type: "success",
+        message: sentChannels.length > 0
+          ? `Follow-up reminder sent via ${sentChannels.join(", ")}`
+          : "Follow-up reminder processed"
+      });
+    } catch (err) {
       setToast({
         type: "error",
-        message: "Patient phone number is missing or invalid for WhatsApp"
+        message: err instanceof Error ? err.message : "Failed to send follow-up reminder"
       });
-      return;
+    } finally {
+      setIsSendingReminder(false);
     }
-
-    const firstName = (selectedAppointment.patient_name || selectedAppointment.title || "Patient").split(" ")[0];
-    const doctorName = selectedAppointment.doctor_name || "Doctor";
-    const message = [
-      `Hello ${firstName},`,
-      `This is a reminder for your follow-up visit at ${organizationName}.`,
-      "Please visit today or tomorrow.",
-      "",
-      `- ${doctorName}`
-    ].join("\n");
-
-    const recipient = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
-    const whatsappUrl = `https://wa.me/${recipient}?text=${encodeURIComponent(message)}`;
-
-    setIsSendingReminder(true);
-    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-    setToast({ type: "success", message: "Opened WhatsApp reminder" });
-    setTimeout(() => setIsSendingReminder(false), 300);
   };
 
   const sendAppointmentReminder = async () => {
@@ -1578,18 +1615,20 @@ export default function AppointmentsPage() {
       setSelectedAppointment((prev) =>
         prev && prev.id === updatedAppointment.id ? { ...prev, ...updatedAppointment } : prev
       );
-
-      window.open(reminder.whatsappUrl, "_blank", "noopener,noreferrer");
+      const sentChannels = reminder.deliveries
+        .filter((item) => item.status === "sent")
+        .map((item) => item.channel.toUpperCase());
       setToast({
         type: "success",
-        message: reminder.tracked
-          ? `${reminder.label} opened in WhatsApp`
-          : "Manual appointment reminder opened in WhatsApp"
+        message:
+          sentChannels.length > 0
+            ? `${reminder.label} sent via ${sentChannels.join(", ")}`
+            : "Appointment reminder processed"
       });
     } catch (err) {
       setToast({
         type: "error",
-        message: err instanceof Error ? err.message : "Failed to open appointment reminder"
+        message: err instanceof Error ? err.message : "Failed to send appointment reminder"
       });
     } finally {
       setIsSendingAppointmentReminder(false);
@@ -2136,9 +2175,9 @@ export default function AppointmentsPage() {
                 <input
                   type="text"
                   value={patientSearch}
-                  onChange={(e) => setPatientSearch(e.target.value)}
+                  onChange={(e) => handlePatientSearchChange(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2"
-                  placeholder="Search by name, phone, or email"
+                  placeholder="Search by patient ID, name, phone, or email"
                   required
                 />
               </label>
@@ -2151,10 +2190,10 @@ export default function AppointmentsPage() {
                   className="w-full rounded-lg border border-gray-300 px-3 py-2"
                   required
                 >
-                  <option value="">Select patient</option>
+                    <option value="">Select patient</option>
                   {filteredPatients.map((patient) => (
                     <option key={patient.id} value={patient.id}>
-                      {patient.full_name} | {patient.phone} {patient.email ? `| ${patient.email}` : ""}
+                      {patient.full_name} | {patient.patient_code} | {patient.phone} {patient.email ? `| ${patient.email}` : ""}
                     </option>
                   ))}
                 </select>
@@ -2173,6 +2212,25 @@ export default function AppointmentsPage() {
                   </button>
                 </div>
               </label>
+
+              {selectedFormPatient && (
+                <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 md:col-span-2">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-sky-950">{selectedFormPatient.full_name}</p>
+                      <p className="mt-1 text-xs text-sky-800">
+                        {selectedFormPatient.patient_code}
+                        {selectedFormPatient.gender ? ` • ${selectedFormPatient.gender}` : ""}
+                        {selectedFormPatient.age !== null ? ` • ${selectedFormPatient.age} yrs` : ""}
+                      </p>
+                    </div>
+                    <div className="text-right text-xs text-sky-900">
+                      <p>{selectedFormPatient.phone || "-"}</p>
+                      <p>{selectedFormPatient.email || "No email"}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {showInlinePatientForm && (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
@@ -2295,10 +2353,10 @@ export default function AppointmentsPage() {
                 <span className="text-sm text-gray-700">Patient ID *</span>
                 <input
                   type="text"
-                  value={form.patientId}
+                  value={form.patientCode}
                   readOnly
                   className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-gray-700"
-                  placeholder="Auto-filled from selected patient"
+                  placeholder="Auto-filled from selected patient record"
                 />
               </label>
 

@@ -7,17 +7,41 @@ import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import { isUuid } from "@/lib/uuid";
-import { MedicalRecord, Patient } from "@/types/api";
+import { MedicalRecord, Patient, SmartSummaryItem } from "@/types/api";
 
-type PatientResponse = {
-  success: boolean;
-  data: Patient;
+type PatientVisit = {
+  id: string;
+  appointment_date: string;
+  appointment_time: string;
+  category: string | null;
+  status: string;
+  planned_procedures: string | null;
+  notes: string | null;
+  doctor_id: string | null;
+  doctor_name: string | null;
 };
 
-type MedicalRecordsResponse = {
+type PatientProfileResponse = {
   success: boolean;
   data: {
-    items: MedicalRecord[];
+    patient: Patient;
+    visits: PatientVisit[];
+    medicalRecords: MedicalRecord[];
+    invoices: Array<{
+      id: string;
+      invoice_number: string;
+      total_amount: number;
+      balance_amount: number;
+      status: string;
+      issue_date: string;
+    }>;
+    smartSummary: SmartSummaryItem[];
+    summary: {
+      totalVisits: number;
+      totalSpent: number;
+      lastVisitDate: string | null;
+      pendingAmount: number;
+    };
   };
 };
 
@@ -39,6 +63,23 @@ const formatDate = (value: string | null) => {
     year: "numeric",
     month: "short",
     day: "2-digit"
+  });
+};
+
+const formatCurrency = (value: number | null | undefined) =>
+  `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
+const formatTime = (value: string | null) => {
+  if (!value) return "-";
+
+  const parsed = new Date(`2000-01-01T${value}`);
+  if (Number.isNaN(parsed.getTime())) {
+    return value.slice(0, 5);
+  }
+
+  return parsed.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit"
   });
 };
 
@@ -98,19 +139,27 @@ export default function PatientProfilePage() {
   const [loading, setLoading] = useState(Boolean(patientId) && !hasInvalidPatientId);
   const [error, setError] = useState("");
   const [patient, setPatient] = useState<Patient | null>(null);
+  const [visits, setVisits] = useState<PatientVisit[]>([]);
   const [records, setRecords] = useState<MedicalRecord[]>([]);
+  const [smartSummary, setSmartSummary] = useState<SmartSummaryItem[]>([]);
+  const [summary, setSummary] = useState<{
+    totalVisits: number;
+    totalSpent: number;
+    lastVisitDate: string | null;
+    pendingAmount: number;
+  } | null>(null);
   const [previews, setPreviews] = useState<Record<string, AttachmentPreview>>({});
 
   useEffect(() => {
     if (!patientId || hasInvalidPatientId) return;
 
-    Promise.all([
-      apiRequest<PatientResponse>(`/patients/${patientId}`, { authenticated: true }),
-      apiRequest<MedicalRecordsResponse>(`/medical-records?patientId=${patientId}&limit=24`, { authenticated: true })
-    ])
-      .then(([patientResponse, recordsResponse]) => {
-        setPatient(patientResponse.data);
-        setRecords(recordsResponse.data.items || []);
+    apiRequest<PatientProfileResponse>(`/patients/${patientId}/profile`, { authenticated: true })
+      .then((response) => {
+        setPatient(response.data.patient);
+        setVisits(response.data.visits || []);
+        setRecords(response.data.medicalRecords || []);
+        setSmartSummary(response.data.smartSummary || []);
+        setSummary(response.data.summary || null);
       })
       .catch((err: Error) => setError(err.message || "Failed to load patient profile"))
       .finally(() => setLoading(false));
@@ -218,8 +267,10 @@ export default function PatientProfilePage() {
     if (!patient) return [];
 
     return [
+      { label: "Patient ID", value: patient.patient_code || "-" },
       { label: "Phone", value: patient.phone || "-" },
       { label: "Email", value: patient.email || "-" },
+      { label: "Date of Birth", value: formatDate(patient.date_of_birth) },
       { label: "Age", value: patient.age ?? "-" },
       { label: "Gender", value: formatGender(patient.gender) },
       { label: "Blood Type", value: patient.blood_type || "-" },
@@ -337,6 +388,9 @@ export default function PatientProfilePage() {
                 <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
                   {patient.status || "Active"}
                 </span>
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-600">
+                  {patient.patient_code}
+                </span>
               </div>
               <p className="text-base text-gray-700">{patient.phone || "No phone number saved"}</p>
               <p className="max-w-xl text-sm leading-6 text-gray-600">
@@ -375,6 +429,135 @@ export default function PatientProfilePage() {
             <p className="mt-3 text-base leading-7 text-gray-900">{field.value}</p>
           </div>
         ))}
+      </section>
+
+      {summary && (
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Total Visits</p>
+            <p className="mt-3 text-base leading-7 text-gray-900">{summary.totalVisits}</p>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Total Spent</p>
+            <p className="mt-3 text-base leading-7 text-gray-900">{formatCurrency(summary.totalSpent)}</p>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Pending Amount</p>
+            <p className="mt-3 text-base leading-7 text-gray-900">{formatCurrency(summary.pendingAmount)}</p>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Last Recorded Visit</p>
+            <p className="mt-3 text-base leading-7 text-gray-900">{formatDate(summary.lastVisitDate)}</p>
+          </div>
+        </section>
+      )}
+
+      {smartSummary.length > 0 && (
+        <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Snapshot</p>
+            <h2 className="mt-2 text-xl text-gray-900">Patient Summary</h2>
+          </div>
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {smartSummary.map((item) => (
+              <div key={item.label} className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">{item.label}</p>
+                <p className="mt-3 text-base leading-7 text-emerald-950">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">History</p>
+            <h2 className="mt-2 text-xl text-gray-900">Visit History</h2>
+          </div>
+          <Link
+            href={`/dashboard/appointments?patientId=${encodeURIComponent(patient.id)}`}
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Open Appointments
+          </Link>
+        </div>
+
+        {visits.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-5 py-10 text-center text-sm text-gray-500">
+            No visit history recorded yet.
+          </div>
+        ) : (
+          <div className="mt-6 space-y-3">
+            {visits.slice(0, 6).map((visit) => (
+              <article key={visit.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatDate(visit.appointment_date)} at {formatTime(visit.appointment_time)}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-600">
+                      {visit.category || "Consultation"}{visit.doctor_name ? ` with ${visit.doctor_name}` : ""}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600 ring-1 ring-gray-200">
+                    {visit.status}
+                  </span>
+                </div>
+                {(visit.planned_procedures || visit.notes) && (
+                  <p className="mt-3 text-sm leading-6 text-gray-700">{visit.planned_procedures || visit.notes}</p>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">EHR-Lite</p>
+            <h2 className="mt-2 text-xl text-gray-900">Clinical Notes</h2>
+          </div>
+          <Link
+            href={`/dashboard/medical-records?patientId=${encodeURIComponent(patient.id)}`}
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Open Medical Records
+          </Link>
+        </div>
+
+        {records.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-5 py-10 text-center text-sm text-gray-500">
+            No medical notes recorded yet.
+          </div>
+        ) : (
+          <div className="mt-6 space-y-3">
+            {records.slice(0, 6).map((record) => (
+              <article key={record.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{record.record_type}</p>
+                    <p className="mt-1 text-sm text-gray-600">
+                      {formatDate(record.record_date)}{record.doctor_name ? ` • ${record.doctor_name}` : ""}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600 ring-1 ring-gray-200">
+                    {record.status}
+                  </span>
+                </div>
+                {record.diagnosis && <p className="mt-3 text-sm text-gray-800"><span className="font-medium">Diagnosis:</span> {record.diagnosis}</p>}
+                {record.prescription && <p className="mt-2 text-sm text-gray-800"><span className="font-medium">Prescription:</span> {record.prescription}</p>}
+                {record.notes && <p className="mt-2 text-sm leading-6 text-gray-700">{record.notes}</p>}
+                {record.follow_up_date && (
+                  <p className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-emerald-700">
+                    Follow-up {formatDate(record.follow_up_date)}
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">

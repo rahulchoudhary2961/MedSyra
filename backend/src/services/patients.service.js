@@ -253,6 +253,25 @@ const buildSmartSummary = (profile) => {
 };
 
 const normalizePatientPayload = (payload) => {
+  const calculateAgeFromDateOfBirth = (value) => {
+    const dateOfBirth = parseDateValue(value);
+    if (!dateOfBirth) {
+      return null;
+    }
+
+    const now = new Date();
+    let age = now.getUTCFullYear() - dateOfBirth.getUTCFullYear();
+    const hasBirthdayPassed =
+      now.getUTCMonth() > dateOfBirth.getUTCMonth() ||
+      (now.getUTCMonth() === dateOfBirth.getUTCMonth() && now.getUTCDate() >= dateOfBirth.getUTCDate());
+
+    if (!hasBirthdayPassed) {
+      age -= 1;
+    }
+
+    return Math.max(age, 0);
+  };
+
   const normalizeDigits = (value) => {
     if (typeof value !== "string") {
       return value;
@@ -261,15 +280,22 @@ const normalizePatientPayload = (payload) => {
     return value.replace(/\D/g, "");
   };
 
-  return {
+  const normalizedPayload = {
     ...payload,
     phone: typeof payload.phone === "string" ? normalizeDigits(payload.phone.trim()) : payload.phone,
     emergencyContact:
       typeof payload.emergencyContact === "string"
         ? normalizeDigits(payload.emergencyContact.trim())
         : payload.emergencyContact,
-    email: payload.email ? payload.email.trim().toLowerCase() : null
+    email: payload.email ? payload.email.trim().toLowerCase() : null,
+    dateOfBirth: payload.dateOfBirth || undefined
   };
+
+  if (normalizedPayload.dateOfBirth) {
+    normalizedPayload.age = calculateAgeFromDateOfBirth(normalizedPayload.dateOfBirth);
+  }
+
+  return normalizedPayload;
 };
 
 const listPatients = async (organizationId, query) => {
@@ -360,6 +386,7 @@ const getPatientProfile = async (organizationId, id) => {
   const payload = {
     patient: profile.patient,
     visits: profile.visits,
+    medicalRecords: profile.medicalRecords,
     invoices: profile.invoices,
     smartSummary: buildSmartSummary(profile),
     summary: {

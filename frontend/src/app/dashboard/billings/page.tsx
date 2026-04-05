@@ -194,6 +194,14 @@ export default function BillingsPage() {
     () => patients.find((patient) => patient.id === patientFilterId) || null,
     [patientFilterId, patients]
   );
+  const selectedInvoicePatient = useMemo(
+    () => patients.find((patient) => patient.id === invoiceForm.patientId) || null,
+    [invoiceForm.patientId, patients]
+  );
+  const selectedInvoiceDoctor = useMemo(
+    () => doctors.find((doctor) => doctor.id === invoiceForm.doctorId) || null,
+    [invoiceForm.doctorId, doctors]
+  );
 
   if (currentRole && !canAccessBilling(currentRole)) {
     return <p className="text-red-600">You do not have access to billing.</p>;
@@ -255,6 +263,20 @@ export default function BillingsPage() {
     setInvoiceForm((current) => ({
       ...current,
       items: [...current.items, createInvoiceFormItem()]
+    }));
+  };
+
+  const addQuickInvoiceItem = (description: string, unitPrice: number) => {
+    setInvoiceForm((current) => ({
+      ...current,
+      items: [
+        ...current.items,
+        createInvoiceFormItem({
+          description,
+          quantity: "1",
+          unitPrice: String(Number(unitPrice || 0).toFixed(2))
+        })
+      ]
     }));
   };
 
@@ -513,15 +535,24 @@ export default function BillingsPage() {
                   </td>
                 </tr>
               )}
-              {filteredInvoices.map((invoice) => (
+                {filteredInvoices.map((invoice) => (
                 <tr key={invoice.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                  <td className="px-6 py-4 text-emerald-700">{invoice.invoice_number}</td>
-                  <td className="px-6 py-4 text-gray-800">{invoice.patient_name}</td>
+                  <td className="px-6 py-4">
+                    <p className="text-emerald-700">{invoice.invoice_number}</p>
+                    <p className="mt-1 text-xs text-gray-500">{invoice.currency}</p>
+                  </td>
+                  <td className="px-6 py-4">
+                    <p className="text-gray-800">{invoice.patient_name}</p>
+                    {invoice.doctor_name && <p className="mt-1 text-xs text-gray-500">{invoice.doctor_name}</p>}
+                  </td>
                   <td className="px-6 py-4 text-gray-800">
                     {formatInvoiceMoney(invoice.total_amount, invoice.currency)}
                   </td>
                   <td className="px-6 py-4 text-gray-800">
-                    {formatInvoiceMoney(invoice.paid_amount, invoice.currency)}
+                    <p>{formatInvoiceMoney(invoice.paid_amount, invoice.currency)}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Balance {formatInvoiceMoney(invoice.balance_amount, invoice.currency)}
+                    </p>
                   </td>
                   <td className="px-6 py-4 text-gray-600">{invoice.issue_date}</td>
                   <td className="px-6 py-4">
@@ -592,11 +623,21 @@ export default function BillingsPage() {
                 <option value="">Select patient</option>
                 {patients.map((patient) => (
                   <option key={patient.id} value={patient.id}>
-                    {patient.full_name}
+                    {patient.full_name} | {patient.patient_code}
                   </option>
                 ))}
               </select>
             </div>
+            {selectedInvoicePatient && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+                <p className="text-sm font-medium text-sky-950">{selectedInvoicePatient.full_name}</p>
+                <p className="mt-1 text-xs text-sky-800">
+                  {selectedInvoicePatient.patient_code}
+                  {selectedInvoicePatient.phone ? ` • ${selectedInvoicePatient.phone}` : ""}
+                  {selectedInvoicePatient.age !== null ? ` • ${selectedInvoicePatient.age} yrs` : ""}
+                </p>
+              </div>
+            )}
             <div>
               <label className="block text-sm text-gray-700 mb-1">Doctor (optional)</label>
               <select
@@ -634,6 +675,17 @@ export default function BillingsPage() {
                 ))}
               </select>
             </div>
+            {selectedInvoiceDoctor && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <p className="text-sm font-medium text-emerald-950">{selectedInvoiceDoctor.full_name}</p>
+                <p className="mt-1 text-xs text-emerald-800">
+                  {selectedInvoiceDoctor.specialty}
+                  {selectedInvoiceDoctor.consultation_fee !== null && selectedInvoiceDoctor.consultation_fee !== undefined
+                    ? ` • Consultation ${formatRupee(selectedInvoiceDoctor.consultation_fee)}`
+                    : ""}
+                </p>
+              </div>
+            )}
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -647,6 +699,34 @@ export default function BillingsPage() {
                 >
                   <Plus className="w-4 h-4" />
                   Add Item
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {selectedInvoiceDoctor && selectedInvoiceDoctor.consultation_fee !== null && selectedInvoiceDoctor.consultation_fee !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      addQuickInvoiceItem(`Consultation - ${selectedInvoiceDoctor.full_name}`, selectedInvoiceDoctor.consultation_fee || 0)
+                    }
+                    className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                  >
+                    Add Consultation Fee
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => addQuickInvoiceItem("Procedure Charge", 0)}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Add Procedure Charge
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addQuickInvoiceItem("Medicine Charge", 0)}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Add Medicine Charge
                 </button>
               </div>
 
@@ -764,6 +844,18 @@ export default function BillingsPage() {
             <p className="text-sm text-gray-600">
               Invoice: {selectedInvoice.invoice_number} | Balance: {formatInvoiceMoney(selectedInvoice.balance_amount, selectedInvoice.currency)}
             </p>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-emerald-800">Patient</span>
+                <span className="font-medium text-emerald-950">{selectedInvoice.patient_name}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3 text-sm">
+                <span className="text-emerald-800">Outstanding</span>
+                <span className="font-medium text-emerald-950">
+                  {formatInvoiceMoney(selectedInvoice.balance_amount, selectedInvoice.currency)}
+                </span>
+              </div>
+            </div>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Amount</label>
               <input
@@ -775,6 +867,13 @@ export default function BillingsPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 required
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Remaining after this payment:{" "}
+                {formatInvoiceMoney(
+                  Math.max(selectedInvoice.balance_amount - Number(paymentForm.amount || 0), 0),
+                  selectedInvoice.currency
+                )}
+              </p>
             </div>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Method</label>

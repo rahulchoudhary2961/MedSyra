@@ -28,6 +28,9 @@ export const canAccessReports = (role?: string | null) => isFullAccessRole(role)
 
 export const canAccessSettings = (role?: string | null) => isFullAccessRole(role);
 
+export const canAccessDoctors = (role?: string | null) =>
+  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
+
 export const canManageDoctors = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessMedicalRecords = (role?: string | null) =>
