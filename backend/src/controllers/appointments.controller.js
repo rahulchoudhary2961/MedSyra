@@ -27,7 +27,7 @@ const sendAppointmentReminder = asyncHandler(async (req, res) => {
     req.params.id,
     req.user
   );
-  res.json({ success: true, message: "Appointment reminder generated", data });
+  res.json({ success: true, message: "Appointment reminder processed", data });
 });
 
 const markAppointmentNoShow = asyncHandler(async (req, res) => {

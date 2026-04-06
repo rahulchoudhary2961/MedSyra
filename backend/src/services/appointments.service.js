@@ -4,6 +4,7 @@ const doctorsModel = require("../models/doctors.model");
 const patientsModel = require("../models/patients.model");
 const medicalRecordsService = require("../services/medical-records.service");
 const { sendNoShowNotifications } = require("./appointment-notification.service");
+const notificationsService = require("./notifications.service");
 const cache = require("../utils/cache");
 const { isDoctorAvailableForSlot } = require("../utils/doctor-availability");
 
@@ -38,15 +39,6 @@ const formatAppointmentTimeLabel = (value) => {
     hour: "numeric",
     minute: "2-digit"
   });
-};
-
-const formatWhatsappRecipient = (phone) => {
-  const digits = String(phone || "").replace(/\D/g, "");
-  if (digits.length < 10) {
-    return null;
-  }
-
-  return digits.length === 10 ? `91${digits}` : digits;
 };
 
 const determineAppointmentReminderStage = (appointmentDate) => {
@@ -149,6 +141,7 @@ const resolveAppointmentPatient = async (organizationId, payload) => {
 
     return {
       patientId: patient.id,
+      patientIdentifier: patient.patient_code || patient.id,
       patientName: patient.full_name,
       mobileNumber: payload.mobileNumber || patient.phone || null,
       email: payload.email || patient.email || null
@@ -176,6 +169,7 @@ const resolveAppointmentPatient = async (organizationId, payload) => {
     const patient = await patientsModel.getPatientById(organizationId, duplicate.id);
     return {
       patientId: patient.id,
+      patientIdentifier: patient.patient_code || patient.id,
       patientName: patient.full_name,
       mobileNumber: patient.phone || phone || null,
       email: patient.email || payload.email || null
@@ -235,6 +229,7 @@ const createAppointment = async (organizationId, payload, actor = null) => {
   const normalizedPayload = {
     ...payload,
     patientId: patient.patientId,
+    patientIdentifier: patient.patientIdentifier,
     patientName: patient.patientName,
     mobileNumber: patient.mobileNumber,
     email: patient.email
@@ -305,6 +300,7 @@ const updateAppointment = async (organizationId, appointmentId, payload, actor =
 
   const patient = await resolveAppointmentPatient(organizationId, merged);
   merged.patientId = patient.patientId;
+  merged.patientIdentifier = patient.patientIdentifier;
   merged.patientName = patient.patientName;
   merged.mobileNumber = patient.mobileNumber;
   merged.email = patient.email;
@@ -437,11 +433,6 @@ const generateAppointmentReminder = async (organizationId, appointmentId, actor 
     throw new ApiError(404, "Appointment reminder context not found");
   }
 
-  const recipient = formatWhatsappRecipient(context.mobile_number || context.patient_phone);
-  if (!recipient) {
-    throw new ApiError(400, "Patient phone number is missing or invalid for WhatsApp reminders");
-  }
-
   const stage = determineAppointmentReminderStage(context.appointment_date);
   if (stage.key === "past") {
     throw new ApiError(400, "Cannot send reminders for past appointments");
@@ -459,10 +450,37 @@ const generateAppointmentReminder = async (organizationId, appointmentId, actor 
     stage
   });
 
-  const whatsappUrl = `https://wa.me/${recipient}?text=${encodeURIComponent(message)}`;
-  const updatedAppointment = stage.tracked
-    ? await appointmentsRepository.markAppointmentReminderSent(organizationId, appointmentId, stage.key)
-    : appointment;
+  const preferencesResponse = await notificationsService.getNotificationPreferences(organizationId);
+  const deliveries = await notificationsService.sendReminderDeliveries({
+    organizationId,
+    actorUserId: actor?.sub || null,
+    notificationType: "appointment_reminder",
+    referenceId: appointmentId,
+    phone: context.mobile_number || context.patient_phone,
+    body: message,
+    metadata: {
+      appointmentId,
+      patientName: context.patient_name || context.title,
+      doctorName: context.doctor_name || null,
+      appointmentDate: context.appointment_date,
+      appointmentTime: context.appointment_time
+    },
+    preferences: preferencesResponse.preferences
+  });
+
+  if (deliveries.length === 0) {
+    throw new ApiError(400, "No appointment reminder channels are enabled in notification settings");
+  }
+
+  const successfulDelivery = deliveries.find((item) => item.status === "sent");
+  if (!successfulDelivery) {
+    throw new ApiError(502, "Failed to send appointment reminder using the configured channels");
+  }
+
+  const updatedAppointment =
+    stage.tracked
+      ? await appointmentsRepository.markAppointmentReminderSent(organizationId, appointmentId, stage.key)
+      : appointment;
 
   await invalidateAppointmentCaches(organizationId);
 
@@ -472,8 +490,8 @@ const generateAppointmentReminder = async (organizationId, appointmentId, actor 
       stage: stage.key,
       label: stage.label,
       tracked: stage.tracked,
-      whatsappUrl,
-      message
+      message,
+      deliveries
     }
   };
 };

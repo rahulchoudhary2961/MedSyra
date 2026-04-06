@@ -1,11 +1,13 @@
 INSERT INTO patients (
-  id, organization_id, full_name, age, gender, phone, email, blood_type, status, last_visit_at
+  id, organization_id, patient_code, full_name, age, date_of_birth, gender, phone, email, blood_type, status, last_visit_at
 )
 VALUES (
   '33333333-3333-3333-3333-333333333334',
   '11111111-1111-1111-1111-111111111111',
+  'PAT-0004',
   'Ravi Kapoor',
   54,
+  CURRENT_DATE - INTERVAL '54 year',
   'male',
   '7978412095',
   'ravi.kapoor@email.com',
@@ -24,9 +26,9 @@ VALUES
     '55555555-5555-5555-5555-555555555554',
     '11111111-1111-1111-1111-111111111111',
     'Ravi Kapoor',
-    '33333333-3333-3333-3333-333333333334',
+    'PAT-0004',
     'Ravi Kapoor',
-    '33333333-3333-3333-3333-333333333334',
+    'PAT-0004',
     '7978412095',
     'ravi.kapoor@email.com',
     '44444444-4444-4444-4444-444444444441',
@@ -42,7 +44,7 @@ VALUES
     '55555555-5555-5555-5555-555555555555',
     '11111111-1111-1111-1111-111111111111',
     'Ravi Kapoor',
-    '33333333-3333-3333-3333-333333333334',
+    'PAT-0004',
     'Ravi Kapoor',
     '33333333-3333-3333-3333-333333333334',
     '7978412095',

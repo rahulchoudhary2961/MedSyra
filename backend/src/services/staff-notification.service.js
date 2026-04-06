@@ -1,7 +1,8 @@
 const authModel = require("../models/auth.model");
 const appointmentsModel = require("../models/appointments.model");
 const { sendMail } = require("./mail.service");
-const { sendWhatsAppText } = require("./whatsapp-reminder.service");
+const { sendSmsText } = require("./sms.service");
+const notificationsService = require("./notifications.service");
 
 const formatDateLabel = (dateValue) => {
   const date = new Date(`${dateValue}T00:00:00`);
@@ -37,6 +38,7 @@ const buildDailyScheduleLines = ({ organizationName, date, appointments }) => {
 const sendDailyScheduleNotifications = async ({ date, organizationId = null }) => {
   const recipients = await authModel.listDailyScheduleRecipients(organizationId);
   const appointmentsByOrgDate = new Map();
+  const preferencesByOrg = new Map();
   const results = [];
 
   for (const recipient of recipients) {
@@ -47,14 +49,20 @@ const sendDailyScheduleNotifications = async ({ date, organizationId = null }) =
         await appointmentsModel.listAppointmentsForDate(recipient.organization_id, date)
       );
     }
+    if (!preferencesByOrg.has(recipient.organization_id)) {
+      const preferencesResponse = await notificationsService.getNotificationPreferences(recipient.organization_id);
+      preferencesByOrg.set(recipient.organization_id, preferencesResponse.preferences);
+    }
 
     const schedule = buildDailyScheduleLines({
       organizationName: recipient.organization_name,
       date,
       appointments: appointmentsByOrgDate.get(cacheKey)
     });
+    const preferences = preferencesByOrg.get(recipient.organization_id);
+    const preview = schedule.body.replace(/\s+/g, " ").trim().slice(0, 160);
 
-    if (recipient.notify_daily_schedule_email) {
+    if (recipient.notify_daily_schedule_email && preferences.staff_schedule_email_enabled) {
       try {
         if (!recipient.email) {
           throw new Error("Staff email is missing");
@@ -72,6 +80,19 @@ const sendDailyScheduleNotifications = async ({ date, organizationId = null }) =
           channel: "email",
           status: sent ? "sent" : "fallback"
         });
+        await notificationsService.recordNotificationLog({
+          organizationId: recipient.organization_id,
+          notificationType: "staff_daily_schedule",
+          channel: "email",
+          status: sent ? "sent" : "fallback",
+          referenceId: recipient.id,
+          recipient: recipient.email,
+          messagePreview: preview,
+          metadata: {
+            userId: recipient.id,
+            scheduleDate: date
+          }
+        });
       } catch (error) {
         results.push({
           userId: recipient.id,
@@ -80,18 +101,32 @@ const sendDailyScheduleNotifications = async ({ date, organizationId = null }) =
           status: "failed",
           error: error instanceof Error ? error.message : "Failed to send daily schedule email"
         });
+        await notificationsService.recordNotificationLog({
+          organizationId: recipient.organization_id,
+          notificationType: "staff_daily_schedule",
+          channel: "email",
+          status: "failed",
+          referenceId: recipient.id,
+          recipient: recipient.email || null,
+          messagePreview: preview,
+          errorMessage: error instanceof Error ? error.message : "Failed to send daily schedule email",
+          metadata: {
+            userId: recipient.id,
+            scheduleDate: date
+          }
+        });
       }
     }
 
-    if (recipient.notify_daily_schedule_sms) {
+    if (recipient.notify_daily_schedule_sms && preferences.staff_schedule_sms_enabled) {
       try {
-        const result = await sendWhatsAppText({
+        const result = await sendSmsText({
           phone: recipient.phone,
           body: schedule.body,
           organizationId: recipient.organization_id,
           referenceId: recipient.id,
-          sourceFeature: "daily_staff_schedule_notification",
-          note: "Daily staff schedule WhatsApp notification"
+          sourceFeature: "staff_daily_schedule",
+          note: "Daily staff schedule SMS notification"
         });
 
         results.push({
@@ -101,6 +136,19 @@ const sendDailyScheduleNotifications = async ({ date, organizationId = null }) =
           status: "sent",
           recipient: result.recipient
         });
+        await notificationsService.recordNotificationLog({
+          organizationId: recipient.organization_id,
+          notificationType: "staff_daily_schedule",
+          channel: "sms",
+          status: "sent",
+          referenceId: recipient.id,
+          recipient: result.recipient,
+          messagePreview: preview,
+          metadata: {
+            userId: recipient.id,
+            scheduleDate: date
+          }
+        });
       } catch (error) {
         results.push({
           userId: recipient.id,
@@ -108,6 +156,20 @@ const sendDailyScheduleNotifications = async ({ date, organizationId = null }) =
           channel: "sms",
           status: "failed",
           error: error instanceof Error ? error.message : "Failed to send daily schedule SMS"
+        });
+        await notificationsService.recordNotificationLog({
+          organizationId: recipient.organization_id,
+          notificationType: "staff_daily_schedule",
+          channel: "sms",
+          status: "failed",
+          referenceId: recipient.id,
+          recipient: recipient.phone || null,
+          messagePreview: preview,
+          errorMessage: error instanceof Error ? error.message : "Failed to send daily schedule SMS",
+          metadata: {
+            userId: recipient.id,
+            scheduleDate: date
+          }
         });
       }
     }

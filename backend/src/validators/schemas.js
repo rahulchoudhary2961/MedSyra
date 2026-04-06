@@ -33,6 +33,9 @@ const bloodTypes = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const invoiceStatuses = ["draft", "issued", "partially_paid", "paid", "overdue", "void"];
 const paymentMethods = ["cash", "card", "bank_transfer", "insurance", "upi", "other"];
 const reportPeriods = ["7d", "30d", "90d", "12m"];
+const notificationTypes = ["appointment_reminder", "follow_up_reminder", "staff_daily_schedule", "appointment_no_show"];
+const notificationChannels = ["whatsapp", "sms", "email"];
+const notificationLogStatuses = ["sent", "failed", "fallback", "opened", "skipped"];
 const invoiceItemsRule = (value, fieldName) => {
   if (!Array.isArray(value) || value.length === 0) {
     throw new ApiError(400, `${fieldName} must be a non-empty array`);
@@ -144,6 +147,7 @@ const patientsSchemas = {
     fields: {
       fullName: stringRule({ minLength: 2, maxLength: 100, pattern: /^[a-zA-Z\s.'-]+$/ }),
       age: optional(integerRule({ min: 1, max: 130 })),
+      dateOfBirth: optional(dateRule()),
       gender: stringRule({ enumValues: ["male", "female", "other"] }),
       phone: phoneRule({ strictTenDigits: true }),
       email: optional(emailRule()),
@@ -158,6 +162,7 @@ const patientsSchemas = {
     fields: {
       fullName: optional(stringRule({ minLength: 2, maxLength: 100, pattern: /^[a-zA-Z\s.'-]+$/ })),
       age: optional(integerRule({ min: 1, max: 130 })),
+      dateOfBirth: optional(dateRule()),
       gender: optional(stringRule({ enumValues: ["male", "female", "other"] })),
       phone: optional(phoneRule({ strictTenDigits: true })),
       email: optional(emailRule()),
@@ -411,6 +416,28 @@ const dashboardSchemas = {
   }
 };
 
+const notificationsSchemas = {
+  updatePreferencesBody: {
+    fields: {
+      appointmentWhatsappEnabled: optional(booleanRule()),
+      appointmentSmsEnabled: optional(booleanRule()),
+      followUpWhatsappEnabled: optional(booleanRule()),
+      followUpSmsEnabled: optional(booleanRule()),
+      staffScheduleEmailEnabled: optional(booleanRule()),
+      staffScheduleSmsEnabled: optional(booleanRule())
+    },
+    requireAtLeastOne: true
+  },
+  logsQuery: {
+    fields: {
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      notificationType: optional(stringRule({ enumValues: notificationTypes, maxLength: 40 })),
+      channel: optional(stringRule({ enumValues: notificationChannels, maxLength: 20 })),
+      status: optional(stringRule({ enumValues: notificationLogStatuses, maxLength: 20 }))
+    }
+  }
+};
+
 const commercialSchemas = {
   updatePricingBody: {
     fields: {
@@ -481,6 +508,7 @@ module.exports = {
   medicalRecordsSchemas,
   billingsSchemas,
   dashboardSchemas,
+  notificationsSchemas,
   commercialSchemas,
   aiSchemas,
   publicSchemas

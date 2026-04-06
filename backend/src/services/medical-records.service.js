@@ -7,7 +7,7 @@ const {
   saveMedicalRecordAttachment,
   loadMedicalRecordAttachment
 } = require("../utils/file-storage");
-const { sendFollowUpReminder } = require("./whatsapp-reminder.service");
+const notificationsService = require("./notifications.service");
 
 const listCachePrefix = (organizationId) => `medical-records:list:${organizationId}:`;
 const invalidateMedicalRecordCaches = async (organizationId) => {
@@ -308,15 +308,39 @@ const sendMedicalRecordFollowUpReminder = async (organizationId, id, actor = nul
     throw new ApiError(400, "No follow-up date saved for this medical record");
   }
 
-  const result = await sendFollowUpReminder({
+  const message = [
+    `Hello ${(reminderContext.patient_name || "Patient").trim().split(/\s+/)[0] || "Patient"},`,
+    `This is a reminder for your follow-up visit at ${reminderContext.clinic_name || "your clinic"}.`,
+    "Please visit today or tomorrow.",
+    "",
+    `- ${record.doctor_name || "Doctor"}`
+  ].join("\n");
+
+  const preferencesResponse = await notificationsService.getNotificationPreferences(organizationId);
+  const deliveries = await notificationsService.sendReminderDeliveries({
     organizationId,
     actorUserId: actor?.sub || null,
+    notificationType: "follow_up_reminder",
     referenceId: record.id,
-    patientPhone: reminderContext.patient_phone,
-    patientName: reminderContext.patient_name,
-    clinicName: reminderContext.clinic_name,
-    doctorName: record.doctor_name || "Doctor"
+    phone: reminderContext.patient_phone,
+    body: message,
+    metadata: {
+      medicalRecordId: record.id,
+      patientName: reminderContext.patient_name,
+      doctorName: record.doctor_name || "Doctor",
+      followUpDate: record.follow_up_date
+    },
+    preferences: preferencesResponse.preferences
   });
+
+  if (deliveries.length === 0) {
+    throw new ApiError(400, "No follow-up reminder channels are enabled in notification settings");
+  }
+
+  const hasSuccessfulDelivery = deliveries.some((item) => item.status === "sent");
+  if (!hasSuccessfulDelivery) {
+    throw new ApiError(502, "Failed to send follow-up reminder using the configured channels");
+  }
 
   const updated = await medicalRecordsRepository.updateMedicalRecord(organizationId, id, {
     followUpReminderStatus: "sent",
@@ -329,7 +353,7 @@ const sendMedicalRecordFollowUpReminder = async (organizationId, id, actor = nul
 
   return {
     record: updated,
-    reminder: result
+    deliveries
   };
 };
 
@@ -339,27 +363,57 @@ const processDueFollowUpReminders = async (organizationId = null) => {
 
   for (const record of records) {
     try {
-      const reminder = await sendFollowUpReminder({
-        organizationId: record.organization_id || organizationId,
+      const targetOrganizationId = record.organization_id || organizationId;
+      const preferencesResponse = await notificationsService.getNotificationPreferences(targetOrganizationId);
+      const message = [
+        `Hello ${(record.patient_name || "Patient").trim().split(/\s+/)[0] || "Patient"},`,
+        `This is a reminder for your follow-up visit at ${record.clinic_name || "your clinic"}.`,
+        "Please visit today or tomorrow.",
+        "",
+        `- ${record.doctor_name || "Doctor"}`
+      ].join("\n");
+
+      const deliveries = await notificationsService.sendReminderDeliveries({
+        organizationId: targetOrganizationId,
+        notificationType: "follow_up_reminder",
         referenceId: record.id,
-        patientPhone: record.patient_phone,
-        patientName: record.patient_name,
-        clinicName: record.clinic_name,
-        doctorName: record.doctor_name || "Doctor"
+        phone: record.patient_phone,
+        body: message,
+        metadata: {
+          medicalRecordId: record.id,
+          patientName: record.patient_name,
+          doctorName: record.doctor_name || "Doctor",
+          followUpDate: record.follow_up_date
+        },
+        preferences: preferencesResponse.preferences
       });
 
-      await medicalRecordsRepository.updateMedicalRecord(record.organization_id || organizationId, record.id, {
+      if (deliveries.length === 0) {
+        await medicalRecordsRepository.updateMedicalRecord(targetOrganizationId, record.id, {
+          followUpReminderStatus: "disabled",
+          followUpReminderLastAttemptAt: new Date().toISOString(),
+          followUpReminderError: "No follow-up reminder channels are enabled"
+        });
+        await invalidateMedicalRecordCaches(targetOrganizationId);
+        results.push({ id: record.id, status: "disabled" });
+        continue;
+      }
+
+      const hasSuccessfulDelivery = deliveries.some((item) => item.status === "sent");
+      if (!hasSuccessfulDelivery) {
+        throw new Error("Failed to send follow-up reminder using the configured channels");
+      }
+
+      await medicalRecordsRepository.updateMedicalRecord(targetOrganizationId, record.id, {
         followUpReminderStatus: "sent",
         followUpReminderSentAt: new Date().toISOString(),
         followUpReminderLastAttemptAt: new Date().toISOString(),
         followUpReminderError: null
       });
 
-      if (record.organization_id || organizationId) {
-        await invalidateMedicalRecordCaches(record.organization_id || organizationId);
-      }
+      await invalidateMedicalRecordCaches(targetOrganizationId);
 
-      results.push({ id: record.id, status: "sent", reminder });
+      results.push({ id: record.id, status: "sent", deliveries });
     } catch (error) {
       const targetOrganizationId = record.organization_id || organizationId;
       if (targetOrganizationId) {

@@ -51,6 +51,7 @@ type UpdatePatientResponse = {
 type EditPatientForm = {
   fullName: string;
   age: string;
+  dateOfBirth: string;
   gender: string;
   phone: string;
   email: string;
@@ -62,6 +63,7 @@ type EditPatientForm = {
 const initialPatientForm: EditPatientForm = {
   fullName: "",
   age: "",
+  dateOfBirth: "",
   gender: "",
   phone: "",
   email: "",
@@ -71,6 +73,26 @@ const initialPatientForm: EditPatientForm = {
 };
 
 const formatRupee = (value: number) => `Rs. ${Number(value || 0).toLocaleString()}`;
+
+const calculateAgeFromDateOfBirth = (value: string) => {
+  if (!value) return "";
+  const dateOfBirth = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(dateOfBirth.getTime())) {
+    return "";
+  }
+
+  const now = new Date();
+  let age = now.getFullYear() - dateOfBirth.getFullYear();
+  const hadBirthdayThisYear =
+    now.getMonth() > dateOfBirth.getMonth() ||
+    (now.getMonth() === dateOfBirth.getMonth() && now.getDate() >= dateOfBirth.getDate());
+
+  if (!hadBirthdayThisYear) {
+    age -= 1;
+  }
+
+  return age >= 0 ? String(age) : "";
+};
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -191,6 +213,7 @@ export default function Dashboard() {
     setPatientForm({
       fullName: patient.full_name || "",
       age: patient.age?.toString() || "",
+      dateOfBirth: patient.date_of_birth || "",
       gender: patient.gender || "",
       phone: patient.phone || "",
       email: patient.email || "",
@@ -212,6 +235,7 @@ export default function Dashboard() {
     const body = {
       fullName: patientForm.fullName,
       age: patientForm.age ? Number(patientForm.age) : null,
+      ...(patientForm.dateOfBirth ? { dateOfBirth: patientForm.dateOfBirth } : {}),
       gender: patientForm.gender,
       phone: patientForm.phone,
       email: patientForm.email || null,
@@ -322,10 +346,15 @@ export default function Dashboard() {
           <div className="theme-surface-strong rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-slate-200">
               <h2 className="text-xl theme-heading">Patient Details</h2>
-              <p className="text-sm theme-copy mt-1">{viewPatient.full_name}</p>
+              <p className="text-sm theme-copy mt-1">
+                {viewPatient.full_name}
+                {viewPatient.patient_code ? ` • ${viewPatient.patient_code}` : ""}
+              </p>
             </div>
             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <p><span className="theme-muted">Patient ID:</span> {viewPatient.patient_code || "-"}</p>
               <p><span className="theme-muted">Age:</span> {viewPatient.age ?? "-"}</p>
+              <p><span className="theme-muted">Date of Birth:</span> {formatLastVisitDate(viewPatient.date_of_birth)}</p>
               <p><span className="theme-muted">Gender:</span> {viewPatient.gender || "-"}</p>
               <p><span className="theme-muted">Phone:</span> {viewPatient.phone || "-"}</p>
               <p><span className="theme-muted">Email:</span> {viewPatient.email || "-"}</p>
@@ -384,6 +413,22 @@ export default function Dashboard() {
                       value={patientForm.age}
                       onChange={(e) =>
                         setPatientForm({ ...patientForm, age: e.target.value.replace(/\D/g, "").slice(0, 3) })
+                      }
+                      disabled={Boolean(patientForm.dateOfBirth)}
+                      className="theme-input w-full px-4 py-2 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm theme-copy mb-2">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={patientForm.dateOfBirth}
+                      onChange={(e) =>
+                        setPatientForm({
+                          ...patientForm,
+                          dateOfBirth: e.target.value,
+                          age: calculateAgeFromDateOfBirth(e.target.value)
+                        })
                       }
                       className="theme-input w-full px-4 py-2 rounded-lg"
                     />

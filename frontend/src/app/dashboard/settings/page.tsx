@@ -6,6 +6,7 @@ import {
   Bell,
   Building2,
   Shield,
+  Search,
   User,
   Save,
   RotateCcw,
@@ -17,7 +18,7 @@ import {
 import { apiRequest } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth";
 import { canAccessSettings, isFullAccessRole } from "@/lib/roles";
-import { AuthUser } from "@/types/api";
+import { AuthUser, NotificationLog, NotificationPreferencesData } from "@/types/api";
 
 type MeResponse = {
   success: boolean;
@@ -70,6 +71,18 @@ type StaffNotificationPreferencesResponse = {
   success: boolean;
   message: string;
   data: StaffUser;
+};
+
+type NotificationPreferencesResponse = {
+  success: boolean;
+  data: NotificationPreferencesData;
+};
+
+type NotificationLogsResponse = {
+  success: boolean;
+  data: {
+    items: NotificationLog[];
+  };
 };
 
 type StaffForm = {
@@ -177,6 +190,12 @@ export default function SettingsPage() {
   const [isCreatingStaff, setIsCreatingStaff] = useState(false);
   const [resendingStaffId, setResendingStaffId] = useState<string | null>(null);
   const [savingNotificationStaffId, setSavingNotificationStaffId] = useState<string | null>(null);
+  const [staffSearch, setStaffSearch] = useState("");
+  const [notificationCenter, setNotificationCenter] = useState<NotificationPreferencesData | null>(null);
+  const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
+  const [notificationError, setNotificationError] = useState("");
+  const [isLoadingNotificationCenter, setIsLoadingNotificationCenter] = useState(false);
+  const [isSavingNotificationCenter, setIsSavingNotificationCenter] = useState(false);
 
   useEffect(() => {
     apiRequest<MeResponse>("/auth/me", { authenticated: true })
@@ -209,6 +228,30 @@ export default function SettingsPage() {
       });
   }, [currentUser]);
 
+  useEffect(() => {
+    if (!currentUser || !isFullAccessRole(currentUser.role)) {
+      return;
+    }
+
+    setIsLoadingNotificationCenter(true);
+    setNotificationError("");
+
+    Promise.all([
+      apiRequest<NotificationPreferencesResponse>("/notifications/preferences", { authenticated: true }),
+      apiRequest<NotificationLogsResponse>("/notifications/logs?limit=20", { authenticated: true })
+    ])
+      .then(([preferencesResponse, logsResponse]) => {
+        setNotificationCenter(preferencesResponse.data);
+        setNotificationLogs(logsResponse.data.items || []);
+      })
+      .catch((error: Error) => {
+        setNotificationError(error.message || "Failed to load notification settings");
+      })
+      .finally(() => {
+        setIsLoadingNotificationCenter(false);
+      });
+  }, [currentUser]);
+
   const userInitials = useMemo(() => {
     const name = currentUser?.full_name || "User";
     return name
@@ -218,6 +261,25 @@ export default function SettingsPage() {
       .slice(0, 2)
       .toUpperCase();
   }, [currentUser]);
+  const filteredStaffUsers = useMemo(() => {
+    const query = staffSearch.trim().toLowerCase();
+    if (!query) {
+      return staffUsers;
+    }
+
+    return staffUsers.filter((staff) => {
+      const haystack = `${staff.full_name} ${staff.email} ${staff.phone} ${staff.role}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [staffSearch, staffUsers]);
+  const readyStaffCount = useMemo(
+    () => staffUsers.filter((staff) => Boolean(staff.email_verified_at)).length,
+    [staffUsers]
+  );
+  const doctorRoleCount = useMemo(
+    () => staffUsers.filter((staff) => staff.role === "doctor").length,
+    [staffUsers]
+  );
 
   const showSaved = (message: string) => {
     setSuccessMessage(message);
@@ -348,6 +410,54 @@ export default function SettingsPage() {
       setStaffError(error instanceof Error ? error.message : "Failed to update staff notification preferences");
     } finally {
       setSavingNotificationStaffId(null);
+    }
+  };
+
+  const updateReminderPreference = (
+    key: keyof NotificationPreferencesData["preferences"],
+    checked: boolean
+  ) => {
+    setNotificationCenter((current) =>
+      current
+        ? {
+            ...current,
+            preferences: {
+              ...current.preferences,
+              [key]: checked
+            }
+          }
+        : current
+    );
+  };
+
+  const handleSaveNotificationCenter = async () => {
+    if (!notificationCenter) {
+      return;
+    }
+
+    setIsSavingNotificationCenter(true);
+    setNotificationError("");
+
+    try {
+      const response = await apiRequest<NotificationPreferencesResponse>("/notifications/preferences", {
+        method: "PATCH",
+        authenticated: true,
+        body: {
+          appointmentWhatsappEnabled: notificationCenter.preferences.appointment_whatsapp_enabled,
+          appointmentSmsEnabled: notificationCenter.preferences.appointment_sms_enabled,
+          followUpWhatsappEnabled: notificationCenter.preferences.follow_up_whatsapp_enabled,
+          followUpSmsEnabled: notificationCenter.preferences.follow_up_sms_enabled,
+          staffScheduleEmailEnabled: notificationCenter.preferences.staff_schedule_email_enabled,
+          staffScheduleSmsEnabled: notificationCenter.preferences.staff_schedule_sms_enabled
+        }
+      });
+
+      setNotificationCenter(response.data);
+      showSaved("Reminder settings saved");
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Failed to save reminder settings");
+    } finally {
+      setIsSavingNotificationCenter(false);
     }
   };
 
@@ -493,65 +603,236 @@ export default function SettingsPage() {
 
           {activeTab === "notifications" && (
             <div className="bg-white rounded-xl p-6 border border-gray-200">
-              <h3 className="text-gray-900 mb-6">Notification Preferences</h3>
-              <div className="space-y-4">
-                <label className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
-                  <span className="text-gray-700">Email for appointments</span>
-                  <input
-                    type="checkbox"
-                    checked={notificationSettings.emailAppointments}
-                    onChange={(e) =>
-                      setNotificationSettings((prev) => ({ ...prev, emailAppointments: e.target.checked }))
-                    }
-                  />
-                </label>
-                <label className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
-                  <span className="text-gray-700">Email for billing events</span>
-                  <input
-                    type="checkbox"
-                    checked={notificationSettings.emailBilling}
-                    onChange={(e) =>
-                      setNotificationSettings((prev) => ({ ...prev, emailBilling: e.target.checked }))
-                    }
-                  />
-                </label>
-                <label className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
-                  <span className="text-gray-700">Browser alerts</span>
-                  <input
-                    type="checkbox"
-                    checked={notificationSettings.browserAlerts}
-                    onChange={(e) =>
-                      setNotificationSettings((prev) => ({ ...prev, browserAlerts: e.target.checked }))
-                    }
-                  />
-                </label>
-                <label className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
-                  <span className="text-gray-700">Daily digest</span>
-                  <input
-                    type="checkbox"
-                    checked={notificationSettings.dailyDigest}
-                    onChange={(e) =>
-                      setNotificationSettings((prev) => ({ ...prev, dailyDigest: e.target.checked }))
-                    }
-                  />
-                </label>
-              </div>
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-gray-900">Notification Preferences</h3>
+                  <p className="mt-1 text-sm text-gray-600">Control reminder channels and review recent reminder activity.</p>
+                </div>
 
-              <div className="flex justify-end gap-3 pt-6">
-                <button
-                  onClick={resetNotifications}
-                  className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  Reset
-                </button>
-                <button
-                  onClick={saveNotifications}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-                >
-                  <Save className="w-4 h-4" />
-                  Save
-                </button>
+                {notificationError && <p className="text-sm text-red-600">{notificationError}</p>}
+                {isLoadingNotificationCenter && <p className="text-sm text-gray-500">Loading reminder settings...</p>}
+
+                {notificationCenter && (
+                  <>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-gray-500">WhatsApp</p>
+                        <p className="mt-2 text-sm text-gray-900">
+                          {notificationCenter.providers.whatsapp.enabled
+                            ? notificationCenter.providers.whatsapp.configured
+                              ? "Configured"
+                              : "Not configured"
+                            : "Disabled"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-gray-500">SMS</p>
+                        <p className="mt-2 text-sm text-gray-900">
+                          {notificationCenter.providers.sms.enabled
+                            ? notificationCenter.providers.sms.configured
+                              ? "Configured"
+                              : "Not configured"
+                            : "Disabled"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Email</p>
+                        <p className="mt-2 text-sm text-gray-900">
+                          {notificationCenter.providers.email.configured ? "Configured" : "Not configured"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="grid grid-cols-[1.3fr_0.6fr_0.6fr] bg-gray-50 px-4 py-3 text-xs uppercase tracking-[0.14em] text-gray-500">
+                        <span>Reminder Type</span>
+                        <span>Primary</span>
+                        <span>Secondary</span>
+                      </div>
+                      <div className="divide-y divide-gray-200">
+                        <div className="grid grid-cols-[1.3fr_0.6fr_0.6fr] items-center px-4 py-4 text-sm text-gray-700">
+                          <div>
+                            <p className="text-gray-900">Appointment reminders</p>
+                            <p className="mt-1 text-xs text-gray-500">Same-day reminder flow from the appointments calendar.</p>
+                          </div>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={notificationCenter.preferences.appointment_whatsapp_enabled}
+                              onChange={(e) => updateReminderPreference("appointment_whatsapp_enabled", e.target.checked)}
+                            />
+                            <span>WhatsApp</span>
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={notificationCenter.preferences.appointment_sms_enabled}
+                              onChange={(e) => updateReminderPreference("appointment_sms_enabled", e.target.checked)}
+                            />
+                            <span>SMS</span>
+                          </label>
+                        </div>
+                        <div className="grid grid-cols-[1.3fr_0.6fr_0.6fr] items-center px-4 py-4 text-sm text-gray-700">
+                          <div>
+                            <p className="text-gray-900">Follow-up reminders</p>
+                            <p className="mt-1 text-xs text-gray-500">Manual and scheduled follow-up reminders from medical records.</p>
+                          </div>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={notificationCenter.preferences.follow_up_whatsapp_enabled}
+                              onChange={(e) => updateReminderPreference("follow_up_whatsapp_enabled", e.target.checked)}
+                            />
+                            <span>WhatsApp</span>
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={notificationCenter.preferences.follow_up_sms_enabled}
+                              onChange={(e) => updateReminderPreference("follow_up_sms_enabled", e.target.checked)}
+                            />
+                            <span>SMS</span>
+                          </label>
+                        </div>
+                        <div className="grid grid-cols-[1.3fr_0.6fr_0.6fr] items-center px-4 py-4 text-sm text-gray-700">
+                          <div>
+                            <p className="text-gray-900">Staff daily schedules</p>
+                            <p className="mt-1 text-xs text-gray-500">Controls daily staff schedule delivery on top of individual staff preferences.</p>
+                          </div>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={notificationCenter.preferences.staff_schedule_email_enabled}
+                              onChange={(e) => updateReminderPreference("staff_schedule_email_enabled", e.target.checked)}
+                            />
+                            <span>Email</span>
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={notificationCenter.preferences.staff_schedule_sms_enabled}
+                              onChange={(e) => updateReminderPreference("staff_schedule_sms_enabled", e.target.checked)}
+                            />
+                            <span>SMS</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handleSaveNotificationCenter}
+                        disabled={isSavingNotificationCenter}
+                        className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700 disabled:opacity-60"
+                      >
+                        <Save className="w-4 h-4" />
+                        {isSavingNotificationCenter ? "Saving..." : "Save Reminder Settings"}
+                      </button>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="border-b border-gray-200 px-4 py-3">
+                        <h4 className="text-gray-900">Recent Reminder Activity</h4>
+                        <p className="mt-1 text-sm text-gray-500">Latest reminder and notification delivery attempts.</p>
+                      </div>
+                      <div className="divide-y divide-gray-100">
+                        {notificationLogs.length === 0 && (
+                          <div className="px-4 py-4 text-sm text-gray-500">No reminder activity logged yet.</div>
+                        )}
+                        {notificationLogs.map((log) => (
+                          <div key={log.id} className="px-4 py-4">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <p className="text-sm text-gray-900">
+                                  {log.notification_type.replace(/_/g, " ")} | {log.channel.toUpperCase()}
+                                </p>
+                                <p className="mt-1 text-xs text-gray-500">{log.recipient || "No recipient"} | {new Date(log.created_at).toLocaleString()}</p>
+                                {log.message_preview && <p className="mt-2 text-xs text-gray-600">{log.message_preview}</p>}
+                                {log.error_message && <p className="mt-2 text-xs text-red-600">{log.error_message}</p>}
+                              </div>
+                              <span
+                                className={`rounded-full px-3 py-1 text-xs ${
+                                  log.status === "sent"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : log.status === "failed"
+                                      ? "bg-red-50 text-red-700"
+                                      : "bg-amber-50 text-amber-700"
+                                }`}
+                              >
+                                {log.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div className="border-t border-gray-200 pt-6">
+                  <h4 className="text-gray-900">Workspace Preferences</h4>
+                  <p className="mt-1 text-sm text-gray-600">Local browser-only preferences for this workstation.</p>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
+                    <span className="text-gray-700">Email for appointments</span>
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.emailAppointments}
+                      onChange={(e) =>
+                        setNotificationSettings((prev) => ({ ...prev, emailAppointments: e.target.checked }))
+                      }
+                    />
+                  </label>
+                  <label className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
+                    <span className="text-gray-700">Email for billing events</span>
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.emailBilling}
+                      onChange={(e) =>
+                        setNotificationSettings((prev) => ({ ...prev, emailBilling: e.target.checked }))
+                      }
+                    />
+                  </label>
+                  <label className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
+                    <span className="text-gray-700">Browser alerts</span>
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.browserAlerts}
+                      onChange={(e) =>
+                        setNotificationSettings((prev) => ({ ...prev, browserAlerts: e.target.checked }))
+                      }
+                    />
+                  </label>
+                  <label className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
+                    <span className="text-gray-700">Daily digest</span>
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.dailyDigest}
+                      onChange={(e) =>
+                        setNotificationSettings((prev) => ({ ...prev, dailyDigest: e.target.checked }))
+                      }
+                    />
+                  </label>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={resetNotifications}
+                    className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Reset
+                  </button>
+                  <button
+                    onClick={saveNotifications}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                  >
+                    <Save className="w-4 h-4" />
+                    Save
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -793,12 +1074,42 @@ export default function SettingsPage() {
                   <p className="mt-1 text-sm text-gray-600">Current accounts in this organization.</p>
                 </div>
 
+                <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                  <div className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2">
+                    <Search className="h-4 w-4 text-gray-500" />
+                    <input
+                      type="text"
+                      value={staffSearch}
+                      onChange={(e) => setStaffSearch(e.target.value)}
+                      className="flex-1 border-none bg-transparent text-sm outline-none"
+                      placeholder="Search by name, email, phone, or role"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+                      <p className="text-xs text-gray-500">Total</p>
+                      <p className="mt-1 text-lg text-gray-900">{staffUsers.length}</p>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+                      <p className="text-xs text-gray-500">Ready</p>
+                      <p className="mt-1 text-lg text-gray-900">{readyStaffCount}</p>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+                      <p className="text-xs text-gray-500">Doctors</p>
+                      <p className="mt-1 text-lg text-gray-900">{doctorRoleCount}</p>
+                    </div>
+                  </div>
+                </div>
+
                 {isLoadingStaff && <p className="text-sm text-gray-500">Loading staff...</p>}
                 {!isLoadingStaff && staffUsers.length === 0 && <p className="text-sm text-gray-500">No staff accounts yet.</p>}
+                {!isLoadingStaff && staffUsers.length > 0 && filteredStaffUsers.length === 0 && (
+                  <p className="text-sm text-gray-500">No staff matched the current search.</p>
+                )}
 
-                {!isLoadingStaff && staffUsers.length > 0 && (
+                {!isLoadingStaff && filteredStaffUsers.length > 0 && (
                   <div className="space-y-3">
-                    {staffUsers.map((staff) => (
+                    {filteredStaffUsers.map((staff) => (
                       <div key={staff.id} className="flex flex-col gap-2 rounded-xl border border-gray-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm text-gray-900">{staff.full_name}</p>

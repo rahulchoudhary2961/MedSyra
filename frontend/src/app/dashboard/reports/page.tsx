@@ -647,6 +647,8 @@ export default function ReportsPage() {
     () => (report?.paymentMethods || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[(index + 2) % PIE_COLORS.length] })),
     [report]
   );
+  const doctorLeader = report?.topDoctors[0] || null;
+  const outstandingTotal = report?.outstandingInvoices.reduce((sum, invoice) => sum + Number(invoice.balanceAmount || 0), 0) || 0;
 
   if (currentRole && !canAccessReports(currentRole)) {
     return <p className="text-red-600">You do not have access to reports.</p>;
@@ -881,6 +883,25 @@ export default function ReportsPage() {
               <p className="text-sm text-gray-500">No-shows</p>
               <p className="mt-2 text-3xl text-gray-900">{report.stats.noShows}</p>
               <p className="mt-2 text-sm text-gray-500">Patient growth: {report.stats.growthRate >= 0 ? "+" : ""}{report.stats.growthRate}%</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+              <p className="text-sm text-emerald-700">Top Doctor By Revenue</p>
+              <p className="mt-2 text-2xl text-emerald-950">{doctorLeader?.name || "No doctor data"}</p>
+              <p className="mt-2 text-sm text-emerald-800">
+                {doctorLeader
+                  ? `${doctorLeader.specialty} | ${currency(doctorLeader.revenue)} revenue | ${doctorLeader.completed}/${doctorLeader.appointments} completed`
+                  : "No doctor performance data in this period."}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+              <p className="text-sm text-amber-700">Outstanding Balance</p>
+              <p className="mt-2 text-2xl text-amber-950">{currency(outstandingTotal)}</p>
+              <p className="mt-2 text-sm text-amber-800">
+                {report.outstandingInvoices.length} outstanding invoice{report.outstandingInvoices.length === 1 ? "" : "s"} need follow-up.
+              </p>
             </div>
           </div>
 

@@ -26,6 +26,10 @@ const getHealthStatus = async () => {
     enabled: env.whatsappReminderEnabled,
     configured: !env.whatsappReminderEnabled || Boolean(env.ycloudApiKey && env.ycloudWhatsappFrom)
   };
+  const sms = {
+    enabled: env.smsReminderEnabled,
+    configured: !env.smsReminderEnabled || Boolean(env.twilioAccountSid && env.twilioAuthToken && env.twilioFromNumber)
+  };
 
   return {
     ok: database.ok,
@@ -35,7 +39,8 @@ const getHealthStatus = async () => {
       database,
       cache,
       mail,
-      whatsapp
+      whatsapp,
+      sms
     }
   };
 };

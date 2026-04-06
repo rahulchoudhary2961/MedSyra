@@ -3,6 +3,8 @@ const pool = require("../config/db");
 const resetDb = async () => {
   await pool.query(`
     TRUNCATE TABLE
+      notification_logs,
+      notification_preferences,
       activity_logs,
       medical_records,
       appointments,
