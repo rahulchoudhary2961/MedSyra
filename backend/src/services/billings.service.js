@@ -13,6 +13,8 @@ const listCachePrefix = (organizationId) => `billings:list:${organizationId}:`;
 const itemCachePrefix = (organizationId) => `billings:item:${organizationId}:`;
 const dashboardSummaryCachePrefix = (organizationId) => `dashboard:summary:${organizationId}`;
 const dashboardReportsCachePrefix = (organizationId) => `dashboard:reports:${organizationId}`;
+const resolveBranchScopeId = (branchContext = null, fallback = null) =>
+  branchContext?.readBranchId || branchContext?.writeBranchId || fallback || null;
 
 const invalidateBillingCaches = async (organizationId) => {
   await Promise.all([
@@ -58,7 +60,7 @@ const listInvoices = async (organizationId, query) => {
   const patientId = query.patientId || "";
   const cacheKey =
     `${listCachePrefix(organizationId)}` +
-    `page=${page}:limit=${limit}:q=${q.toLowerCase()}:status=${status.toLowerCase()}:patientId=${patientId}`;
+    `page=${page}:limit=${limit}:q=${q.toLowerCase()}:status=${status.toLowerCase()}:patientId=${patientId}:branchId=${query.branchId || ""}`;
 
   const cached = await cache.get(cacheKey);
   if (cached) {
@@ -70,7 +72,7 @@ const listInvoices = async (organizationId, query) => {
   return result;
 };
 
-const createInvoice = async (organizationId, payload, actor = null) => {
+const createInvoice = async (organizationId, payload, actor = null, branchContext = null) => {
   if (!payload.patientId) {
     throw new ApiError(400, "patientId is required");
   }
@@ -89,7 +91,11 @@ const createInvoice = async (organizationId, payload, actor = null) => {
   }
 
   if (payload.appointmentId) {
-    const appointment = await appointmentsModel.getAppointmentById(organizationId, payload.appointmentId);
+    const appointment = await appointmentsModel.getAppointmentById(
+      organizationId,
+      payload.appointmentId,
+      payload.branchId || resolveBranchScopeId(branchContext)
+    );
     if (!appointment) {
       throw new ApiError(404, "Appointment not found for this organization");
     }
@@ -119,19 +125,30 @@ const createInvoice = async (organizationId, payload, actor = null) => {
     throw new ApiError(400, "Add at least one invoice item or provide an amount");
   }
 
-  const created = await billingsModel.createInvoice(organizationId, { ...payload, items: normalizedItems }, actor);
+  const normalizedPayload = {
+    ...payload,
+    branchId: payload.branchId || resolveBranchScopeId(branchContext),
+    items: normalizedItems
+  };
+
+  if (!normalizedPayload.branchId) {
+    throw new ApiError(400, "A branch must be selected before creating an invoice");
+  }
+
+  const created = await billingsModel.createInvoice(organizationId, normalizedPayload, actor);
   await invalidateBillingCaches(organizationId);
   return created;
 };
 
-const getInvoiceById = async (organizationId, id) => {
-  const cacheKey = `${itemCachePrefix(organizationId)}${id}`;
+const getInvoiceById = async (organizationId, id, branchContext = null) => {
+  const scopeBranchId = resolveBranchScopeId(branchContext);
+  const cacheKey = `${itemCachePrefix(organizationId)}${id}:branchId=${scopeBranchId || "all"}`;
   const cached = await cache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
-  const invoice = await billingsModel.getInvoiceById(organizationId, id);
+  const invoice = await billingsModel.getInvoiceById(organizationId, id, scopeBranchId);
   if (!invoice) {
     throw new ApiError(404, "Invoice not found");
   }
@@ -139,12 +156,13 @@ const getInvoiceById = async (organizationId, id) => {
   return invoice;
 };
 
-const updateInvoice = async (organizationId, id, payload, actor = null) => {
+const updateInvoice = async (organizationId, id, payload, actor = null, branchContext = null) => {
   if (payload.status && !VALID_STATUSES.has(payload.status)) {
     throw new ApiError(400, "Invalid invoice status");
   }
 
-  const current = await billingsModel.getInvoiceById(organizationId, id);
+  const scopeBranchId = payload.branchId || resolveBranchScopeId(branchContext);
+  const current = await billingsModel.getInvoiceById(organizationId, id, scopeBranchId);
   if (!current) {
     throw new ApiError(404, "Invoice not found");
   }
@@ -169,13 +187,16 @@ const updateInvoice = async (organizationId, id, payload, actor = null) => {
     });
   }
 
+  normalizedPayload.branchId = scopeBranchId || current.branch_id || null;
+
   const invoice = await billingsModel.updateInvoice(organizationId, id, normalizedPayload, actor);
   await invalidateBillingCaches(organizationId);
   return invoice;
 };
 
-const issueInvoice = async (organizationId, id, payload, actor = null) => {
-  const current = await billingsModel.getInvoiceById(organizationId, id);
+const issueInvoice = async (organizationId, id, payload, actor = null, branchContext = null) => {
+  const scopeBranchId = payload?.branchId || resolveBranchScopeId(branchContext);
+  const current = await billingsModel.getInvoiceById(organizationId, id, scopeBranchId);
   if (!current) {
     throw new ApiError(404, "Invoice not found");
   }
@@ -188,17 +209,23 @@ const issueInvoice = async (organizationId, id, payload, actor = null) => {
     throw new ApiError(400, "Only draft invoices can be issued");
   }
 
-  const invoice = await billingsModel.issueInvoice(organizationId, id, payload?.dueDate || null, actor);
+  const invoice = await billingsModel.issueInvoice(
+    organizationId,
+    id,
+    { value: payload?.dueDate || null, branchId: scopeBranchId || current.branch_id || null },
+    actor
+  );
   await invalidateBillingCaches(organizationId);
   return invoice;
 };
 
-const recordPayment = async (organizationId, id, payload, actor = null) => {
+const recordPayment = async (organizationId, id, payload, actor = null, branchContext = null) => {
   if (!payload.amount || !payload.method) {
     throw new ApiError(400, "amount and method are required");
   }
 
-  const invoice = await billingsModel.getInvoiceById(organizationId, id);
+  const scopeBranchId = payload.branchId || resolveBranchScopeId(branchContext);
+  const invoice = await billingsModel.getInvoiceById(organizationId, id, scopeBranchId);
   if (!invoice) {
     throw new ApiError(404, "Invoice not found");
   }
@@ -219,7 +246,12 @@ const recordPayment = async (organizationId, id, payload, actor = null) => {
     throw new ApiError(400, "Payment amount cannot exceed invoice balance");
   }
 
-  const payment = await billingsModel.addPayment(organizationId, id, payload, actor);
+  const payment = await billingsModel.addPayment(
+    organizationId,
+    id,
+    { ...payload, branchId: scopeBranchId || invoice.branch_id || null },
+    actor
+  );
   if (!payment) {
     throw new ApiError(404, "Invoice not found");
   }
@@ -227,12 +259,13 @@ const recordPayment = async (organizationId, id, payload, actor = null) => {
   return payment;
 };
 
-const refundPayment = async (organizationId, id, payload, actor = null) => {
+const refundPayment = async (organizationId, id, payload, actor = null, branchContext = null) => {
   if (!payload.paymentId) {
     throw new ApiError(400, "paymentId is required");
   }
 
-  const invoice = await billingsModel.getInvoiceById(organizationId, id);
+  const scopeBranchId = payload.branchId || resolveBranchScopeId(branchContext);
+  const invoice = await billingsModel.getInvoiceById(organizationId, id, scopeBranchId);
   if (!invoice) {
     throw new ApiError(404, "Invoice not found");
   }
@@ -250,13 +283,20 @@ const refundPayment = async (organizationId, id, payload, actor = null) => {
     throw new ApiError(400, "Only completed payments can be refunded");
   }
 
-  const result = await billingsModel.refundPayment(organizationId, id, payload.paymentId, payload, actor);
+  const result = await billingsModel.refundPayment(
+    organizationId,
+    id,
+    payload.paymentId,
+    { ...payload, branchId: scopeBranchId || invoice.branch_id || null },
+    actor
+  );
   await invalidateBillingCaches(organizationId);
   return result;
 };
 
-const markInvoicePaid = async (organizationId, id, payload, actor = null) => {
-  const invoice = await billingsModel.getInvoiceById(organizationId, id);
+const markInvoicePaid = async (organizationId, id, payload, actor = null, branchContext = null) => {
+  const scopeBranchId = payload?.branchId || resolveBranchScopeId(branchContext);
+  const invoice = await billingsModel.getInvoiceById(organizationId, id, scopeBranchId);
   if (!invoice) {
     throw new ApiError(404, "Invoice not found");
   }
@@ -269,13 +309,21 @@ const markInvoicePaid = async (organizationId, id, payload, actor = null) => {
     throw new ApiError(400, "Invoice is already paid");
   }
 
-  const result = await billingsModel.markInvoicePaid(organizationId, id, payload || {}, actor);
+  const result = await billingsModel.markInvoicePaid(
+    organizationId,
+    id,
+    { ...(payload || {}), branchId: scopeBranchId || invoice.branch_id || null },
+    actor
+  );
   await invalidateBillingCaches(organizationId);
   return result;
 };
 
-const deleteInvoice = async (organizationId, id, actor = null) => {
-  const deleted = await billingsModel.deleteInvoice(organizationId, id, actor);
+const deleteInvoice = async (organizationId, id, actor = null, branchContext = null) => {
+  const deleted = await billingsModel.deleteInvoice(organizationId, id, {
+    ...actor,
+    branchId: resolveBranchScopeId(branchContext, actor?.branchId)
+  });
   if (!deleted) {
     throw new ApiError(400, "Only draft invoices can be deleted");
   }
@@ -283,12 +331,12 @@ const deleteInvoice = async (organizationId, id, actor = null) => {
   await invalidateBillingCaches(organizationId);
 };
 
-const getReconciliationReport = async (organizationId) => {
-  return billingsModel.getReconciliationReport(organizationId);
+const getReconciliationReport = async (organizationId, branchId = null) => {
+  return billingsModel.getReconciliationReport(organizationId, branchId);
 };
 
-const generateInvoicePdf = async (organizationId, id) => {
-  const invoice = await getInvoiceById(organizationId, id);
+const generateInvoicePdf = async (organizationId, id, branchContext = null) => {
+  const invoice = await getInvoiceById(organizationId, id, branchContext);
 
   return {
     filename: `${invoice.invoice_number}.pdf`,

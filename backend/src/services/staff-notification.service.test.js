@@ -27,7 +27,8 @@ const run = async () => {
   const authModelPath = require.resolve(path.resolve(__dirname, "../models/auth.model.js"));
   const appointmentsModelPath = require.resolve(path.resolve(__dirname, "../models/appointments.model.js"));
   const mailServicePath = require.resolve(path.resolve(__dirname, "./mail.service.js"));
-  const whatsappServicePath = require.resolve(path.resolve(__dirname, "./whatsapp-reminder.service.js"));
+  const smsServicePath = require.resolve(path.resolve(__dirname, "./sms.service.js"));
+  const notificationsServicePath = require.resolve(path.resolve(__dirname, "./notifications.service.js"));
 
   const sent = [];
   const service = loadWithMocks(servicePath, {
@@ -70,11 +71,20 @@ const run = async () => {
         return true;
       }
     },
-    [whatsappServicePath]: {
-      sendWhatsAppText: async (payload) => {
+    [smsServicePath]: {
+      sendSmsText: async (payload) => {
         sent.push({ channel: "sms", payload });
         return { recipient: "+919777766666" };
       }
+    },
+    [notificationsServicePath]: {
+      getNotificationPreferences: async () => ({
+        preferences: {
+          staff_schedule_email_enabled: true,
+          staff_schedule_sms_enabled: true
+        }
+      }),
+      recordNotificationLog: async () => ({ id: "log-1" })
     }
   });
 

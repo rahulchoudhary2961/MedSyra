@@ -7,6 +7,12 @@ const listAppointments = async (organizationId, query) => {
   const dataConditions = ["a.organization_id = $1"];
   const countConditions = ["organization_id = $1"];
 
+  if (query.branchId) {
+    values.push(query.branchId);
+    dataConditions.push(`a.branch_id = $${values.length}`);
+    countConditions.push(`branch_id = $${values.length}`);
+  }
+
   if (query.date) {
     values.push(query.date);
     dataConditions.push(`a.appointment_date = $${values.length}`);
@@ -50,6 +56,7 @@ const listAppointments = async (organizationId, query) => {
   const dataQuery = `
     SELECT
       a.id,
+      a.branch_id,
       a.title,
       a.patient_id,
       a.patient_name,
@@ -110,6 +117,7 @@ const createAppointment = async (organizationId, payload) => {
   const query = `
     INSERT INTO appointments (
       organization_id,
+      branch_id,
       title,
       patient_id,
       patient_name,
@@ -124,9 +132,10 @@ const createAppointment = async (organizationId, payload) => {
       duration_minutes,
       planned_procedures,
       notes
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
     RETURNING
       id,
+      branch_id,
       title,
       patient_id,
       patient_name,
@@ -150,6 +159,7 @@ const createAppointment = async (organizationId, payload) => {
 
   const values = [
     organizationId,
+    payload.branchId,
     payload.patientName,
     payload.patientId,
     payload.patientName,
@@ -167,13 +177,20 @@ const createAppointment = async (organizationId, payload) => {
   ];
 
   const { rows } = await pool.query(query, values);
-  return getAppointmentById(organizationId, rows[0].id);
+  return getAppointmentById(organizationId, rows[0].id, payload.branchId || null);
 };
 
-const getAppointmentById = async (organizationId, id) => {
+const getAppointmentById = async (organizationId, id, branchId = null) => {
+  const values = [organizationId, id];
+  const branchClause = branchId ? ` AND a.branch_id = $3` : "";
+  if (branchId) {
+    values.push(branchId);
+  }
+
   const query = `
     SELECT
       a.id,
+      a.branch_id,
       a.title,
       a.patient_id,
       a.patient_name,
@@ -203,9 +220,9 @@ const getAppointmentById = async (organizationId, id) => {
     LEFT JOIN invoices inv
       ON inv.appointment_id = a.id
      AND inv.organization_id = a.organization_id
-    WHERE a.organization_id = $1 AND a.id = $2
+    WHERE a.organization_id = $1 AND a.id = $2${branchClause}
   `;
-  const { rows } = await pool.query(query, [organizationId, id]);
+  const { rows } = await pool.query(query, values);
   return rows[0] || null;
 };
 
@@ -240,24 +257,26 @@ const updateAppointment = async (organizationId, id, payload) => {
   const query = `
     UPDATE appointments
     SET
-      title = $3,
-      patient_id = $4,
-      patient_name = $5,
-      patient_identifier = $6,
-      mobile_number = $7,
-      email = $8,
-      doctor_id = $9,
-      category = $10,
-      status = $11,
-      appointment_date = $12,
-      appointment_time = $13,
-      duration_minutes = $14,
-      planned_procedures = $15,
-      notes = $16,
+      branch_id = $3,
+      title = $4,
+      patient_id = $5,
+      patient_name = $6,
+      patient_identifier = $7,
+      mobile_number = $8,
+      email = $9,
+      doctor_id = $10,
+      category = $11,
+      status = $12,
+      appointment_date = $13,
+      appointment_time = $14,
+      duration_minutes = $15,
+      planned_procedures = $16,
+      notes = $17,
       updated_at = NOW()
     WHERE organization_id = $1 AND id = $2
     RETURNING
       id,
+      branch_id,
       title,
       patient_id,
       patient_name,
@@ -282,6 +301,7 @@ const updateAppointment = async (organizationId, id, payload) => {
   const values = [
     organizationId,
     id,
+    payload.branchId,
     payload.patientName,
     payload.patientId,
     payload.patientName,
@@ -303,22 +323,34 @@ const updateAppointment = async (organizationId, id, payload) => {
     return null;
   }
 
-  return getAppointmentById(organizationId, rows[0].id);
+  return getAppointmentById(organizationId, rows[0].id, payload.branchId || null);
 };
 
-const deleteAppointment = async (organizationId, id) => {
+const deleteAppointment = async (organizationId, id, branchId = null) => {
+  const values = [organizationId, id];
+  const branchClause = branchId ? ` AND branch_id = $3` : "";
+  if (branchId) {
+    values.push(branchId);
+  }
+
   const query = `
     DELETE FROM appointments
-    WHERE organization_id = $1 AND id = $2
+    WHERE organization_id = $1 AND id = $2${branchClause}
     RETURNING id
   `;
-  const { rows } = await pool.query(query, [organizationId, id]);
+  const { rows } = await pool.query(query, values);
   return rows[0] || null;
 };
 
 const bulkCancelAppointments = async (organizationId, payload) => {
   const values = [organizationId, payload.appointmentDate];
   let doctorClause = "";
+  let branchClause = "";
+
+  if (payload.branchId) {
+    values.push(payload.branchId);
+    branchClause = ` AND branch_id = $${values.length}`;
+  }
 
   if (payload.doctorId) {
     values.push(payload.doctorId);
@@ -331,6 +363,7 @@ const bulkCancelAppointments = async (organizationId, payload) => {
     WHERE organization_id = $1
       AND appointment_date = $2
       AND status NOT IN ('cancelled', 'completed', 'no-show')
+      ${branchClause}
       ${doctorClause}
     RETURNING id
   `;
@@ -338,11 +371,18 @@ const bulkCancelAppointments = async (organizationId, payload) => {
   return rows.length;
 };
 
-const getAppointmentReminderContext = async (organizationId, id) => {
+const getAppointmentReminderContext = async (organizationId, id, branchId = null) => {
+  const values = [organizationId, id];
+  const branchClause = branchId ? ` AND a.branch_id = $3` : "";
+  if (branchId) {
+    values.push(branchId);
+  }
+
   const query = `
     SELECT
       a.id,
       a.organization_id,
+      a.branch_id,
       a.title,
       a.patient_id,
       a.patient_name,
@@ -355,7 +395,8 @@ const getAppointmentReminderContext = async (organizationId, id) => {
       a.reminder_same_day_sent_at,
       p.phone AS patient_phone,
       d.full_name AS doctor_name,
-      o.name AS clinic_name
+      o.name AS clinic_name,
+      b.name AS branch_name
     FROM appointments a
     LEFT JOIN patients p
       ON p.id = a.patient_id
@@ -365,14 +406,16 @@ const getAppointmentReminderContext = async (organizationId, id) => {
      AND d.organization_id = a.organization_id
     JOIN organizations o
       ON o.id = a.organization_id
-    WHERE a.organization_id = $1 AND a.id = $2
+    LEFT JOIN branches b
+      ON b.id = a.branch_id
+    WHERE a.organization_id = $1 AND a.id = $2${branchClause}
   `;
 
-  const { rows } = await pool.query(query, [organizationId, id]);
+  const { rows } = await pool.query(query, values);
   return rows[0] || null;
 };
 
-const markAppointmentReminderSent = async (organizationId, id, stage) => {
+const markAppointmentReminderSent = async (organizationId, id, stage, branchId = null) => {
   const columnMap = {
     three_day: "reminder_3d_sent_at",
     one_day: "reminder_1d_sent_at",
@@ -381,28 +424,41 @@ const markAppointmentReminderSent = async (organizationId, id, stage) => {
 
   const column = columnMap[stage];
   if (!column) {
-    return getAppointmentById(organizationId, id);
+    return getAppointmentById(organizationId, id, branchId);
+  }
+
+  const values = [organizationId, id];
+  const branchClause = branchId ? ` AND branch_id = $3` : "";
+  if (branchId) {
+    values.push(branchId);
   }
 
   const query = `
     UPDATE appointments
     SET ${column} = NOW(), updated_at = NOW()
-    WHERE organization_id = $1 AND id = $2
+    WHERE organization_id = $1 AND id = $2${branchClause}
     RETURNING id
   `;
 
-  const { rows } = await pool.query(query, [organizationId, id]);
+  const { rows } = await pool.query(query, values);
   if (!rows[0]) {
     return null;
   }
 
-  return getAppointmentById(organizationId, id);
+  return getAppointmentById(organizationId, id, branchId);
 };
 
-const listAppointmentsForDate = async (organizationId, date) => {
+const listAppointmentsForDate = async (organizationId, date, branchId = null) => {
+  const values = [organizationId, date];
+  const branchClause = branchId ? ` AND a.branch_id = $3` : "";
+  if (branchId) {
+    values.push(branchId);
+  }
+
   const query = `
     SELECT
       a.id,
+      a.branch_id,
       a.title,
       a.patient_name,
       a.appointment_time,
@@ -414,10 +470,11 @@ const listAppointmentsForDate = async (organizationId, date) => {
      AND d.organization_id = a.organization_id
     WHERE a.organization_id = $1
       AND a.appointment_date = $2
+      ${branchClause}
     ORDER BY a.appointment_time ASC, a.created_at ASC
   `;
 
-  const { rows } = await pool.query(query, [organizationId, date]);
+  const { rows } = await pool.query(query, values);
   return rows;
 };
 

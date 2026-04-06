@@ -26,6 +26,7 @@ const modelPath = path.resolve(__dirname, "billings.model.js");
 const dbPath = require.resolve(path.resolve(__dirname, "../config/db.js"));
 const paginationPath = require.resolve(path.resolve(__dirname, "../utils/pagination.js"));
 const auditModelPath = require.resolve(path.resolve(__dirname, "./billing-audit.model.js"));
+const paymentLinksModelPath = require.resolve(path.resolve(__dirname, "./payment-links.model.js"));
 
 const buildClient = ({ beforeInvoice, afterInvoice, insertedPayment, queries }) => {
   let detailPhase = "before";
@@ -161,6 +162,9 @@ const run = async () => {
         connect: async () => client
       },
       [paginationPath]: () => ({ offset: 0, limit: 10, page: 1 }),
+      [paymentLinksModelPath]: {
+        listPaymentLinksByInvoiceId: async () => []
+      },
       [auditModelPath]: {
         createBillingAuditLog: async (_db, payload) => {
           auditCalls.push(payload);
@@ -226,6 +230,9 @@ const run = async () => {
         connect: async () => client
       },
       [paginationPath]: () => ({ offset: 0, limit: 10, page: 1 }),
+      [paymentLinksModelPath]: {
+        listPaymentLinksByInvoiceId: async () => []
+      },
       [auditModelPath]: {
         createBillingAuditLog: async (_db, payload) => {
           auditCalls.push(payload);
@@ -293,6 +300,9 @@ const run = async () => {
         query: async () => ({ rows: [] })
       },
       [paginationPath]: () => ({ offset: 0, limit: 10, page: 1 }),
+      [paymentLinksModelPath]: {
+        listPaymentLinksByInvoiceId: async () => []
+      },
       [auditModelPath]: {
         createBillingAuditLog: async (_db, payload) => {
           auditCalls.push(payload);

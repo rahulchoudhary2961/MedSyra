@@ -116,6 +116,18 @@ const run = async () => {
         body: JSON.stringify({})
       });
       assert.equal(response.status, 200);
+
+      response = await fetch(`${server.baseUrl}/patient-1`, {
+        method: "DELETE",
+        headers: { "x-test-role": "receptionist" }
+      });
+      assert.equal(response.status, 403);
+
+      response = await fetch(`${server.baseUrl}/patient-1`, {
+        method: "DELETE",
+        headers: { "x-test-role": "admin" }
+      });
+      assert.equal(response.status, 200);
     } finally {
       await server.close();
     }
@@ -133,6 +145,8 @@ const run = async () => {
         "createInvoice",
         "getInvoice",
         "updateInvoice",
+        "createPaymentLink",
+        "refreshPaymentLink",
         "issueInvoice",
         "recordPayment",
         "refundPayment",
@@ -142,7 +156,20 @@ const run = async () => {
         "deleteInvoice"
       ]),
       [validatePath]: () => noopMiddleware,
-      [schemasPath]: { billingsSchemas: { listQuery: {}, createBody: {}, idParams: {}, updateBody: {}, issueBody: {}, paymentBody: {}, refundBody: {}, quickPayBody: {} } }
+      [schemasPath]: {
+        billingsSchemas: {
+          listQuery: {},
+          createBody: {},
+          idParams: {},
+          paymentLinkParams: {},
+          paymentLinkBody: {},
+          updateBody: {},
+          issueBody: {},
+          paymentBody: {},
+          refundBody: {},
+          quickPayBody: {}
+        }
+      }
     });
 
     const server = await startErrorHandledServer(router);
@@ -162,6 +189,18 @@ const run = async () => {
         body: JSON.stringify({})
       });
       assert.equal(response.status, 403);
+
+      response = await fetch(`${server.baseUrl}/invoice-1`, {
+        method: "DELETE",
+        headers: { "x-test-role": "billing" }
+      });
+      assert.equal(response.status, 403);
+
+      response = await fetch(`${server.baseUrl}/invoice-1`, {
+        method: "DELETE",
+        headers: { "x-test-role": "admin" }
+      });
+      assert.equal(response.status, 200);
     } finally {
       await server.close();
     }
@@ -185,6 +224,33 @@ const run = async () => {
       assert.equal(response.status, 200);
 
       response = await fetch(`${server.baseUrl}/reports`, { headers: { "x-test-role": "billing" } });
+      assert.equal(response.status, 403);
+    } finally {
+      await server.close();
+    }
+  }
+
+  {
+    const routePath = path.resolve(__dirname, "./security.routes.js");
+    const controllerPath = require.resolve(path.resolve(__dirname, "../controllers/security.controller.js"));
+    const validatePath = require.resolve(path.resolve(__dirname, "../middlewares/validate-request.js"));
+    const schemasPath = require.resolve(path.resolve(__dirname, "../validators/schemas.js"));
+
+    const router = loadWithMocks(routePath, {
+      [controllerPath]: buildOkController(["getOverview", "listAuditLogs"]),
+      [validatePath]: () => noopMiddleware,
+      [schemasPath]: { securitySchemas: { overviewQuery: {}, logsQuery: {} } }
+    });
+
+    const server = await startErrorHandledServer(router);
+    try {
+      let response = await fetch(`${server.baseUrl}/overview`, { headers: { "x-test-role": "admin" } });
+      assert.equal(response.status, 200);
+
+      response = await fetch(`${server.baseUrl}/audit-logs`, { headers: { "x-test-role": "management" } });
+      assert.equal(response.status, 200);
+
+      response = await fetch(`${server.baseUrl}/overview`, { headers: { "x-test-role": "billing" } });
       assert.equal(response.status, 403);
     } finally {
       await server.close();

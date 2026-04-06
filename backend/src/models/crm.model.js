@@ -20,6 +20,7 @@ const syncAutoTasks = async (organizationId, db = pool) => {
     `
     INSERT INTO crm_tasks (
       organization_id,
+      branch_id,
       patient_id,
       source_record_id,
       source_appointment_id,
@@ -30,6 +31,7 @@ const syncAutoTasks = async (organizationId, db = pool) => {
     )
     SELECT
       mr.organization_id,
+      mr.branch_id,
       mr.patient_id,
       mr.id,
       mr.appointment_id,
@@ -64,6 +66,7 @@ const syncAutoTasks = async (organizationId, db = pool) => {
     `
     INSERT INTO crm_tasks (
       organization_id,
+      branch_id,
       patient_id,
       task_type,
       title,
@@ -72,6 +75,23 @@ const syncAutoTasks = async (organizationId, db = pool) => {
     )
     SELECT
       p.organization_id,
+      COALESCE(
+        (
+          SELECT a.branch_id
+          FROM appointments a
+          WHERE a.organization_id = p.organization_id
+            AND a.patient_id = p.id
+          ORDER BY a.appointment_date DESC, a.appointment_time DESC
+          LIMIT 1
+        ),
+        (
+          SELECT b.id
+          FROM branches b
+          WHERE b.organization_id = p.organization_id
+            AND b.is_default = true
+          LIMIT 1
+        )
+      ),
       p.id,
       'recall',
       CONCAT('Recall ', p.full_name),
@@ -157,6 +177,15 @@ const listTasks = async (organizationId, query) => {
   const summaryConditions = ["ct.organization_id = $1"];
   const countConditions = ["ct.organization_id = $1"];
 
+  if (query.branchId) {
+    queryValues.push(query.branchId);
+    summaryValues.push(query.branchId);
+    countValues.push(query.branchId);
+    queryConditions.push(`ct.branch_id = $${queryValues.length}`);
+    summaryConditions.push(`ct.branch_id = $${summaryValues.length}`);
+    countConditions.push(`ct.branch_id = $${countValues.length}`);
+  }
+
   if (query.status) {
     queryValues.push(query.status);
     summaryValues.push(query.status);
@@ -217,6 +246,7 @@ const listTasks = async (organizationId, query) => {
   const querySql = `
     SELECT
       ct.id,
+      ct.branch_id,
       ct.patient_id,
       p.patient_code,
       p.full_name AS patient_name,
@@ -260,6 +290,7 @@ const listTasks = async (organizationId, query) => {
         a.status
       FROM appointments a
       WHERE a.organization_id = ct.organization_id
+        AND a.branch_id = ct.branch_id
         AND a.patient_id = ct.patient_id
         AND a.status IN ('pending', 'confirmed', 'checked-in')
         AND a.appointment_date >= $2::date
@@ -331,11 +362,17 @@ const listTasks = async (organizationId, query) => {
   };
 };
 
-const getTaskById = async (organizationId, id) => {
+const getTaskById = async (organizationId, id, branchId = null) => {
   const currentDateKey = getCurrentDateKey();
+  const values = [organizationId, id, currentDateKey];
+  const branchClause = branchId ? ` AND ct.branch_id = $4` : "";
+  if (branchId) {
+    values.push(branchId);
+  }
   const query = `
     SELECT
       ct.id,
+      ct.branch_id,
       ct.patient_id,
       p.patient_code,
       p.full_name AS patient_name,
@@ -367,11 +404,11 @@ const getTaskById = async (organizationId, id) => {
     LEFT JOIN medical_records mr
       ON mr.id = ct.source_record_id
      AND mr.organization_id = ct.organization_id
-    WHERE ct.organization_id = $1 AND ct.id = $2
+    WHERE ct.organization_id = $1 AND ct.id = $2${branchClause}
     LIMIT 1
   `;
 
-  const { rows } = await pool.query(query, [organizationId, id, currentDateKey]);
+  const { rows } = await pool.query(query, values);
   return mapTask(rows[0] || null);
 };
 
@@ -379,6 +416,7 @@ const createTask = async (organizationId, payload) => {
   const query = `
     INSERT INTO crm_tasks (
       organization_id,
+      branch_id,
       patient_id,
       source_record_id,
       source_appointment_id,
@@ -393,12 +431,13 @@ const createTask = async (organizationId, payload) => {
       outcome_notes,
       completed_at
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
     RETURNING id
   `;
 
   const values = [
     organizationId,
+    payload.branchId,
     payload.patientId,
     payload.sourceRecordId || null,
     payload.sourceAppointmentId || null,
@@ -415,11 +454,12 @@ const createTask = async (organizationId, payload) => {
   ];
 
   const { rows } = await pool.query(query, values);
-  return getTaskById(organizationId, rows[0].id);
+  return getTaskById(organizationId, rows[0].id, payload.branchId || null);
 };
 
 const updateTask = async (organizationId, id, payload) => {
   const columnMap = {
+    branchId: "branch_id",
     title: "title",
     priority: "priority",
     status: "status",
@@ -436,7 +476,7 @@ const updateTask = async (organizationId, id, payload) => {
     .map(([key, value]) => [columnMap[key], value]);
 
   if (mappedEntries.length === 0) {
-    return getTaskById(organizationId, id);
+    return getTaskById(organizationId, id, payload.branchId || null);
   }
 
   const setClauses = [];
@@ -458,7 +498,7 @@ const updateTask = async (organizationId, id, payload) => {
     return null;
   }
 
-  return getTaskById(organizationId, id);
+  return getTaskById(organizationId, id, payload.branchId || null);
 };
 
 module.exports = {

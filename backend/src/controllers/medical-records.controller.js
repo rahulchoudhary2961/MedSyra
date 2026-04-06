@@ -3,22 +3,53 @@ const medicalRecordsService = require("../services/medical-records.service");
 const { getRequestMeta, logInfo } = require("../utils/logger");
 
 const listMedicalRecords = asyncHandler(async (req, res) => {
-  const data = await medicalRecordsService.listMedicalRecords(req.user.organizationId, req.query, req.user);
+  const data = await medicalRecordsService.listMedicalRecords(
+    req.user.organizationId,
+    {
+      ...req.query,
+      branchId: req.branchContext?.readBranchId || null
+    },
+    req.user
+  );
   res.json({ success: true, data });
 });
 
 const createMedicalRecord = asyncHandler(async (req, res) => {
-  const data = await medicalRecordsService.createMedicalRecord(req.user.organizationId, req.body, req.user);
+  const data = await medicalRecordsService.createMedicalRecord(
+    req.user.organizationId,
+    {
+      ...req.body,
+      branchId: req.body.branchId || req.branchContext?.writeBranchId || null
+    },
+    req.user,
+    getRequestMeta(req),
+    req.branchContext
+  );
   res.status(201).json({ success: true, message: "Medical record created", data });
 });
 
 const getMedicalRecord = asyncHandler(async (req, res) => {
-  const data = await medicalRecordsService.getMedicalRecordById(req.user.organizationId, req.params.id, req.user);
+  const data = await medicalRecordsService.getMedicalRecordById(
+    req.user.organizationId,
+    req.params.id,
+    req.user,
+    req.branchContext
+  );
   res.json({ success: true, data });
 });
 
 const updateMedicalRecord = asyncHandler(async (req, res) => {
-  const data = await medicalRecordsService.updateMedicalRecord(req.user.organizationId, req.params.id, req.body, req.user);
+  const data = await medicalRecordsService.updateMedicalRecord(
+    req.user.organizationId,
+    req.params.id,
+    {
+      ...req.body,
+      branchId: req.body.branchId || req.branchContext?.writeBranchId || null
+    },
+    req.user,
+    getRequestMeta(req),
+    req.branchContext
+  );
   res.json({ success: true, message: "Medical record updated", data });
 });
 
@@ -31,7 +62,8 @@ const downloadMedicalRecordAttachment = asyncHandler(async (req, res) => {
   const attachment = await medicalRecordsService.getMedicalRecordAttachmentDownload(
     req.user.organizationId,
     req.params.id,
-    req.user
+    req.user,
+    req.branchContext
   );
   const fileName = String(attachment.downloadFileName || "attachment").replace(/"/g, "");
 
@@ -57,13 +89,20 @@ const sendFollowUpReminder = asyncHandler(async (req, res) => {
   const data = await medicalRecordsService.sendMedicalRecordFollowUpReminder(
     req.user.organizationId,
     req.params.id,
-    req.user
+    req.user,
+    req.branchContext
   );
   res.json({ success: true, message: "Follow-up reminder processed", data });
 });
 
 const deleteMedicalRecord = asyncHandler(async (req, res) => {
-  await medicalRecordsService.deleteMedicalRecord(req.user.organizationId, req.params.id);
+  await medicalRecordsService.deleteMedicalRecord(
+    req.user.organizationId,
+    req.params.id,
+    req.user,
+    getRequestMeta(req),
+    req.branchContext
+  );
   res.json({ success: true, message: "Medical record deleted" });
 });
 

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { ApiRequestError, apiRequest } from "@/lib/api";
-import { canManageAppointments } from "@/lib/roles";
+import { canDeleteAppointments, canManageAppointments } from "@/lib/roles";
 import { Appointment, Doctor, Invoice, MedicalRecord, NotificationDelivery, Patient } from "@/types/api";
 
 type AppointmentsResponse = {
@@ -739,6 +739,7 @@ export default function AppointmentsPage() {
     return visibleAppointments.filter((appointment) => appointment.doctor_id === selectedDoctor);
   }, [appointments, pendingDeletedIds, selectedDoctor]);
   const canManageCalendar = canManageAppointments(currentRole);
+  const canDeleteCalendarAppointments = canDeleteAppointments(currentRole);
   const selectedPatientFilter = useMemo(
     () => patients.find((patient) => patient.id === patientFilterId) || null,
     [patientFilterId, patients]
@@ -3036,7 +3037,7 @@ export default function AppointmentsPage() {
                     Cancel Appointment
                   </button>
                 )}
-                {canManageCalendar && (
+                {canDeleteCalendarAppointments && (
                   <button
                     type="button"
                     onClick={() => setDeleteTarget(selectedAppointment)}

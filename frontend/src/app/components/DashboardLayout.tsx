@@ -11,9 +11,11 @@ import {
   FileText,
   CreditCard,
   BarChart3,
+  Building2,
   FlaskConical,
   Boxes,
   Pill,
+  ShieldCheck,
   Settings,
   Search,
   Bell,
@@ -27,8 +29,10 @@ import { clearLoginIntroPending, shouldShowLoginIntro } from "@/lib/onboarding";
 import {
   canAccessAssistant,
   canAccessBilling,
+  canAccessBranches,
   canAccessCrm,
   canAccessInventory,
+  canAccessInsurance,
   canAccessLab,
   canAccessPharmacy,
   canAccessMedicalRecords,
@@ -40,7 +44,8 @@ import {
   isFullAccessRole,
   isReceptionRole
 } from "@/lib/roles";
-import { AuthUser } from "@/types/api";
+import { clearSelectedBranchId, getSelectedBranchId, setSelectedBranchId } from "@/lib/branch-selection";
+import { AuthUser, Branch } from "@/types/api";
 import BrandLogo from "./BrandLogo";
 import DashboardTour from "./DashboardTour";
 
@@ -56,7 +61,9 @@ const navigation = [
   { name: "Pharmacy", path: "/dashboard/pharmacy", icon: Pill },
   { name: "Inventory", path: "/dashboard/inventory", icon: Boxes },
   { name: "Billings", path: "/dashboard/billings", icon: CreditCard },
+  { name: "Insurance", path: "/dashboard/insurance", icon: ShieldCheck },
   { name: "Reports", path: "/dashboard/reports", icon: BarChart3 },
+  { name: "Branches", path: "/dashboard/branches", icon: Building2 },
   { name: "Settings", path: "/dashboard/settings", icon: Settings }
 ];
 
@@ -108,6 +115,13 @@ type UpcomingAppointmentsResponse = {
       appointment_date: string;
       appointment_time: string;
     }>;
+  };
+};
+
+type BranchesResponse = {
+  success: boolean;
+  data: {
+    items: Branch[];
   };
 };
 
@@ -166,6 +180,8 @@ export default function DashboardLayout({
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [recentActivity, setRecentActivity] = useState<DashboardSummaryResponse["data"]["recentActivity"]>([]);
   const [upcomingAppointmentsCount, setUpcomingAppointmentsCount] = useState(0);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranchId, setSelectedBranchIdState] = useState<string | null>(null);
   const [showTour, setShowTour] = useState(false);
   const [tourStepIndex, setTourStepIndex] = useState(0);
   const searchRef = useRef<HTMLDivElement | null>(null);
@@ -195,6 +211,43 @@ export default function DashboardLayout({
         setIsCheckingAuth(false);
       });
   }, [router]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    if (!isFullAccessRole(currentUser.role)) {
+      const lockedBranchId = currentUser.branch_id || null;
+      setSelectedBranchIdState(lockedBranchId);
+      setSelectedBranchId(lockedBranchId);
+      return;
+    }
+
+    apiRequest<BranchesResponse>("/branches?activeOnly=true", { authenticated: true })
+      .then((response) => {
+        const items = response.data.items || [];
+        setBranches(items);
+
+        const stored = getSelectedBranchId();
+        const hasStored = stored === "all" || items.some((branch) => branch.id === stored);
+        const fallback = currentUser.branch_id && items.some((branch) => branch.id === currentUser.branch_id)
+          ? currentUser.branch_id
+          : items[0]?.id || "all";
+        const nextSelection = hasStored ? stored : fallback;
+
+        setSelectedBranchIdState(nextSelection);
+        if (nextSelection) {
+          setSelectedBranchId(nextSelection);
+        } else {
+          clearSelectedBranchId();
+        }
+      })
+      .catch(() => {
+        setBranches([]);
+        setSelectedBranchIdState(currentUser.branch_id || "all");
+      });
+  }, [currentUser]);
 
   const isActive = (path: string) => {
     if (path === "/dashboard") {
@@ -366,6 +419,10 @@ export default function DashboardLayout({
       return canAccessSettings(currentUser?.role);
     }
 
+    if (item.path === "/dashboard/branches") {
+      return canAccessBranches(currentUser?.role);
+    }
+
     if (item.path === "/dashboard/medical-records") {
       return canAccessMedicalRecords(currentUser?.role);
     }
@@ -386,6 +443,10 @@ export default function DashboardLayout({
       return canAccessInventory(currentUser?.role);
     }
 
+    if (item.path === "/dashboard/insurance") {
+      return canAccessInsurance(currentUser?.role);
+    }
+
     if (item.path === "/dashboard/patients") {
       return canAccessPatients(currentUser?.role);
     }
@@ -404,6 +465,23 @@ export default function DashboardLayout({
       </div>
     );
   }
+
+  const selectedBranchLabel =
+    selectedBranchId === "all"
+      ? "All Branches"
+      : branches.find((branch) => branch.id === selectedBranchId)?.name || currentUser?.branch_name || "Current Branch";
+
+  const handleBranchSelection = (value: string) => {
+    const normalized = value || null;
+    setSelectedBranchIdState(normalized);
+    if (normalized) {
+      setSelectedBranchId(normalized);
+    } else {
+      clearSelectedBranchId();
+    }
+
+    router.refresh();
+  };
 
   return (
     <div className="theme-app-bg min-h-screen">
@@ -590,6 +668,27 @@ export default function DashboardLayout({
             </div>
 
             <div ref={notificationsRef} className="relative flex items-center gap-3">
+              {currentUser && (
+                <div className="hidden lg:flex items-center gap-2 rounded-lg border border-white/50 bg-white/70 px-3 py-2">
+                  <Building2 className="h-4 w-4 text-emerald-700" />
+                  {isFullAccessRole(currentUser.role) ? (
+                    <select
+                      value={selectedBranchId || "all"}
+                      onChange={(e) => handleBranchSelection(e.target.value)}
+                      className="bg-transparent text-sm text-slate-700 outline-none"
+                    >
+                      <option value="all">All Branches</option>
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-sm text-slate-700">{selectedBranchLabel}</span>
+                  )}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={openNotifications}

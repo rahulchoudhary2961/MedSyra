@@ -3,6 +3,7 @@ const doctorsRepository = require("../models/doctors.model");
 const authModel = require("../models/auth.model");
 const cache = require("../utils/cache");
 const { parseHolidayDates, parseWeeklyOffDays } = require("../utils/doctor-availability");
+const { logAuditEventSafe } = require("./audit.service");
 
 const allowedWeeklyOffDays = new Set([
   "monday",
@@ -36,7 +37,7 @@ const listDoctors = async (organizationId, query) => {
   return result;
 };
 
-const createDoctor = async (organizationId, payload) => {
+const createDoctor = async (organizationId, payload, actor = null, requestMeta = null) => {
   if (!payload.fullName || !payload.specialty) {
     throw new ApiError(400, "fullName and specialty are required");
   }
@@ -120,10 +121,27 @@ const createDoctor = async (organizationId, payload) => {
     cache.invalidateByPrefix(`dashboard:reports:${organizationId}`)
   ]);
 
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "doctors",
+    action: "doctor_created",
+    summary: `Doctor created: ${created.full_name}`,
+    entityType: "doctor",
+    entityId: created.id,
+    entityLabel: created.full_name,
+    metadata: {
+      specialty: created.specialty || null,
+      linkedUserId: created.user_id || null
+    },
+    afterState: created
+  });
+
   return created;
 };
 
-const deleteDoctor = async (organizationId, id) => {
+const deleteDoctor = async (organizationId, id, actor = null, requestMeta = null) => {
   const doctor = await doctorsRepository.getDoctorById(organizationId, id);
   if (!doctor) {
     throw new ApiError(404, "Doctor not found");
@@ -143,6 +161,25 @@ const deleteDoctor = async (organizationId, id) => {
     cache.invalidateByPrefix(`dashboard:summary:${organizationId}`),
     cache.invalidateByPrefix(`dashboard:reports:${organizationId}`)
   ]);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "doctors",
+    action: "doctor_deleted",
+    summary: `Doctor deleted: ${doctor.full_name}`,
+    entityType: "doctor",
+    entityId: doctor.id,
+    entityLabel: doctor.full_name,
+    severity: "warning",
+    isDestructive: true,
+    metadata: {
+      specialty: doctor.specialty || null
+    },
+    beforeState: doctor,
+    afterState: null
+  });
 };
 
 module.exports = {

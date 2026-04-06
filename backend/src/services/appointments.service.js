@@ -7,6 +7,7 @@ const { sendNoShowNotifications } = require("./appointment-notification.service"
 const notificationsService = require("./notifications.service");
 const cache = require("../utils/cache");
 const { isDoctorAvailableForSlot } = require("../utils/doctor-availability");
+const { logAuditEventSafe } = require("./audit.service");
 
 const cachePrefix = (organizationId) => `appointments:list:${organizationId}:`;
 const dashboardSummaryCachePrefix = (organizationId) => `dashboard:summary:${organizationId}`;
@@ -14,6 +15,8 @@ const dashboardReportsCachePrefix = (organizationId) => `dashboard:reports:${org
 const patientItemCachePrefix = (organizationId) => `patients:item:${organizationId}`;
 const patientProfileCachePrefix = (organizationId) => `patients:profile:${organizationId}`;
 const patientListCachePrefix = (organizationId) => `patients:list:${organizationId}`;
+const resolveBranchScopeId = (branchContext = null, fallback = null) =>
+  branchContext?.readBranchId || branchContext?.writeBranchId || fallback || null;
 
 const parseDateValue = (value) => {
   if (!value || typeof value !== "string") {
@@ -213,7 +216,7 @@ const listAppointments = async (organizationId, query, actor = null) => {
   const effectiveQuery = actorDoctor ? { ...query, doctorId: actorDoctor.id } : query;
   const cacheKey =
     `${cachePrefix(organizationId)}` +
-    `page=${page}:limit=${limit}:year=${effectiveQuery.year || ""}:month=${effectiveQuery.month || ""}:day=${effectiveQuery.day || ""}:date=${effectiveQuery.date || ""}:patientId=${effectiveQuery.patientId || ""}:doctorId=${effectiveQuery.doctorId || ""}`;
+    `page=${page}:limit=${limit}:year=${effectiveQuery.year || ""}:month=${effectiveQuery.month || ""}:day=${effectiveQuery.day || ""}:date=${effectiveQuery.date || ""}:patientId=${effectiveQuery.patientId || ""}:doctorId=${effectiveQuery.doctorId || ""}:branchId=${effectiveQuery.branchId || ""}`;
 
   const cached = await cache.get(cacheKey);
   if (cached) {
@@ -225,7 +228,7 @@ const listAppointments = async (organizationId, query, actor = null) => {
   return result;
 };
 
-const createAppointment = async (organizationId, payload, actor = null) => {
+const createAppointment = async (organizationId, payload, actor = null, requestMeta = null, branchContext = null) => {
   if (actor?.role === "doctor") {
     throw new ApiError(403, "Doctors cannot create appointments");
   }
@@ -242,12 +245,17 @@ const createAppointment = async (organizationId, payload, actor = null) => {
   const patient = await resolveAppointmentPatient(organizationId, payload);
   const normalizedPayload = {
     ...payload,
+    branchId: payload.branchId || resolveBranchScopeId(branchContext),
     patientId: patient.patientId,
     patientIdentifier: patient.patientIdentifier,
     patientName: patient.patientName,
     mobileNumber: patient.mobileNumber,
     email: patient.email
   };
+
+  if (!normalizedPayload.branchId) {
+    throw new ApiError(400, "A branch must be selected before creating an appointment");
+  }
 
   if (normalizedPayload.doctorId) {
     const doctor = await doctorsModel.getDoctorById(organizationId, normalizedPayload.doctorId);
@@ -275,11 +283,33 @@ const createAppointment = async (organizationId, payload, actor = null) => {
 
   const created = await appointmentsRepository.createAppointment(organizationId, normalizedPayload);
   await invalidateAppointmentCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "appointments",
+    action: "appointment_created",
+    summary: `Appointment created for ${created.patient_name || created.title}`,
+    entityType: "appointment",
+    entityId: created.id,
+    entityLabel: created.patient_identifier || created.patient_name || created.title,
+    metadata: {
+      doctorId: created.doctor_id || null,
+      status: created.status || null,
+      appointmentDate: created.appointment_date,
+      appointmentTime: created.appointment_time,
+      category: created.category || null
+    },
+    afterState: created
+  });
+
   return created;
 };
 
-const updateAppointment = async (organizationId, appointmentId, payload, actor = null) => {
-  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId);
+const updateAppointment = async (organizationId, appointmentId, payload, actor = null, requestMeta = null, branchContext = null) => {
+  const scopeBranchId = resolveBranchScopeId(branchContext);
+  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId, scopeBranchId);
   if (!current) {
     throw new ApiError(404, "Appointment not found");
   }
@@ -298,6 +328,7 @@ const updateAppointment = async (organizationId, appointmentId, payload, actor =
   }
 
   const merged = {
+    branchId: payload.branchId || current.branch_id || resolveBranchScopeId(branchContext),
     patientName: payload.patientName ?? current.patient_name ?? current.title,
     patientId: payload.patientId ?? current.patient_id ?? null,
     mobileNumber: payload.mobileNumber ?? current.mobile_number,
@@ -357,11 +388,33 @@ const updateAppointment = async (organizationId, appointmentId, payload, actor =
     }
   }
   await invalidateAppointmentCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "appointments",
+    action: "appointment_updated",
+    summary: `Appointment updated for ${updated.patient_name || updated.title}`,
+    entityType: "appointment",
+    entityId: updated.id,
+    entityLabel: updated.patient_identifier || updated.patient_name || updated.title,
+    metadata: {
+      doctorId: updated.doctor_id || null,
+      status: updated.status || null,
+      appointmentDate: updated.appointment_date,
+      appointmentTime: updated.appointment_time
+    },
+    beforeState: current,
+    afterState: updated
+  });
+
   return updated;
 };
 
-const completeConsultation = async (organizationId, appointmentId, payload, actor = null) => {
-  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId);
+const completeConsultation = async (organizationId, appointmentId, payload, actor = null, requestMeta = null, branchContext = null) => {
+  const scopeBranchId = resolveBranchScopeId(branchContext);
+  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId, scopeBranchId);
   if (!current) {
     throw new ApiError(404, "Appointment not found");
   }
@@ -372,6 +425,7 @@ const completeConsultation = async (organizationId, appointmentId, payload, acto
   }
 
   const updatedAppointment = await appointmentsRepository.updateAppointment(organizationId, appointmentId, {
+    branchId: current.branch_id || payload.branchId || resolveBranchScopeId(branchContext),
     patientName: current.patient_name || current.title,
     patientId: current.patient_id,
     mobileNumber: current.mobile_number,
@@ -387,6 +441,7 @@ const completeConsultation = async (organizationId, appointmentId, payload, acto
   });
 
   const medicalRecord = await medicalRecordsService.upsertAppointmentConsultationRecord(organizationId, {
+    branchId: updatedAppointment.branch_id || current.branch_id || payload.branchId || resolveBranchScopeId(branchContext),
     appointmentId: updatedAppointment.id,
     patientId: updatedAppointment.patient_id || current.patient_id,
     doctorId: updatedAppointment.doctor_id || current.doctor_id,
@@ -411,38 +466,101 @@ const completeConsultation = async (organizationId, appointmentId, payload, acto
   }
 
   await invalidateAppointmentCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "appointments",
+    action: "consultation_completed",
+    summary: `Consultation completed for ${updatedAppointment.patient_name || updatedAppointment.title}`,
+    entityType: "appointment",
+    entityId: updatedAppointment.id,
+    entityLabel: updatedAppointment.patient_identifier || updatedAppointment.patient_name || updatedAppointment.title,
+    metadata: {
+      medicalRecordId: medicalRecord?.id || null,
+      followUpDate: medicalRecord?.follow_up_date || null,
+      appointmentDate: updatedAppointment.appointment_date
+    },
+    beforeState: current,
+    afterState: updatedAppointment
+  });
+
   return {
     appointment: updatedAppointment,
     medicalRecord
   };
 };
 
-const deleteAppointment = async (organizationId, appointmentId, actor = null) => {
+const deleteAppointment = async (organizationId, appointmentId, actor = null, requestMeta = null, branchContext = null) => {
   if (actor?.role === "doctor") {
     throw new ApiError(403, "Doctors cannot delete appointments");
   }
 
-  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId);
+  const scopeBranchId = resolveBranchScopeId(branchContext);
+  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId, scopeBranchId);
   if (!current) {
     throw new ApiError(404, "Appointment not found");
   }
 
-  await appointmentsRepository.deleteAppointment(organizationId, appointmentId);
+  await appointmentsRepository.deleteAppointment(organizationId, appointmentId, scopeBranchId);
   await invalidateAppointmentCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "appointments",
+    action: "appointment_deleted",
+    summary: `Appointment deleted for ${current.patient_name || current.title}`,
+    entityType: "appointment",
+    entityId: current.id,
+    entityLabel: current.patient_identifier || current.patient_name || current.title,
+    severity: "warning",
+    isDestructive: true,
+    metadata: {
+      appointmentDate: current.appointment_date,
+      appointmentTime: current.appointment_time
+    },
+    beforeState: current,
+    afterState: null
+  });
 };
 
-const bulkCancelAppointments = async (organizationId, payload, actor = null) => {
+const bulkCancelAppointments = async (organizationId, payload, actor = null, requestMeta = null, branchContext = null) => {
   if (actor?.role === "doctor") {
     throw new ApiError(403, "Doctors cannot bulk cancel appointments");
   }
 
-  const updatedCount = await appointmentsRepository.bulkCancelAppointments(organizationId, payload);
+  const updatedCount = await appointmentsRepository.bulkCancelAppointments(organizationId, {
+    ...payload,
+    branchId: payload.branchId || resolveBranchScopeId(branchContext)
+  });
   await invalidateAppointmentCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "appointments",
+    action: "appointments_bulk_cancelled",
+    summary: `${updatedCount} appointments cancelled for ${payload.appointmentDate}`,
+    entityType: "appointment_batch",
+    severity: updatedCount > 0 ? "warning" : "info",
+    isDestructive: updatedCount > 0,
+    metadata: {
+      appointmentDate: payload.appointmentDate,
+      doctorId: payload.doctorId || null,
+      updatedCount
+    }
+  });
+
   return { updatedCount };
 };
 
-const generateAppointmentReminder = async (organizationId, appointmentId, actor = null) => {
-  const appointment = await appointmentsRepository.getAppointmentById(organizationId, appointmentId);
+const generateAppointmentReminder = async (organizationId, appointmentId, actor = null, branchContext = null) => {
+  const scopeBranchId = resolveBranchScopeId(branchContext);
+  const appointment = await appointmentsRepository.getAppointmentById(organizationId, appointmentId, scopeBranchId);
   if (!appointment) {
     throw new ApiError(404, "Appointment not found");
   }
@@ -457,7 +575,7 @@ const generateAppointmentReminder = async (organizationId, appointmentId, actor 
     throw new ApiError(400, "Reminders can only be sent for upcoming appointments");
   }
 
-  const context = await appointmentsRepository.getAppointmentReminderContext(organizationId, appointmentId);
+  const context = await appointmentsRepository.getAppointmentReminderContext(organizationId, appointmentId, scopeBranchId);
   if (!context) {
     throw new ApiError(404, "Appointment reminder context not found");
   }
@@ -508,7 +626,7 @@ const generateAppointmentReminder = async (organizationId, appointmentId, actor 
 
   const updatedAppointment =
     stage.tracked
-      ? await appointmentsRepository.markAppointmentReminderSent(organizationId, appointmentId, stage.key)
+      ? await appointmentsRepository.markAppointmentReminderSent(organizationId, appointmentId, stage.key, scopeBranchId)
       : appointment;
 
   await invalidateAppointmentCaches(organizationId);
@@ -525,8 +643,9 @@ const generateAppointmentReminder = async (organizationId, appointmentId, actor 
   };
 };
 
-const markAppointmentNoShow = async (organizationId, appointmentId, payload = {}, actor = null) => {
-  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId);
+const markAppointmentNoShow = async (organizationId, appointmentId, payload = {}, actor = null, requestMeta = null, branchContext = null) => {
+  const scopeBranchId = resolveBranchScopeId(branchContext);
+  const current = await appointmentsRepository.getAppointmentById(organizationId, appointmentId, scopeBranchId);
   if (!current) {
     throw new ApiError(404, "Appointment not found");
   }
@@ -542,6 +661,7 @@ const markAppointmentNoShow = async (organizationId, appointmentId, payload = {}
   }
 
   const updatedAppointment = await appointmentsRepository.updateAppointment(organizationId, appointmentId, {
+    branchId: current.branch_id || payload.branchId || resolveBranchScopeId(branchContext),
     patientName: current.patient_name || current.title,
     patientId: current.patient_id,
     mobileNumber: current.mobile_number,
@@ -558,13 +678,33 @@ const markAppointmentNoShow = async (organizationId, appointmentId, payload = {}
 
   await invalidateAppointmentCaches(organizationId);
 
-  const reminderContext = await appointmentsRepository.getAppointmentReminderContext(organizationId, appointmentId);
+  const reminderContext = await appointmentsRepository.getAppointmentReminderContext(organizationId, appointmentId, scopeBranchId);
   const notifications = await sendNoShowNotifications({
     appointment: updatedAppointment,
     context: reminderContext,
     organizationId,
     notifySms: payload.notifySms === true,
     notifyEmail: payload.notifyEmail === true
+  });
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "appointments",
+    action: "appointment_marked_no_show",
+    summary: `Appointment marked no-show for ${updatedAppointment.patient_name || updatedAppointment.title}`,
+    entityType: "appointment",
+    entityId: updatedAppointment.id,
+    entityLabel: updatedAppointment.patient_identifier || updatedAppointment.patient_name || updatedAppointment.title,
+    severity: "warning",
+    metadata: {
+      notifySms: payload.notifySms === true,
+      notifyEmail: payload.notifyEmail === true,
+      notificationCount: Array.isArray(notifications) ? notifications.length : 0
+    },
+    beforeState: current,
+    afterState: updatedAppointment
   });
 
   return {

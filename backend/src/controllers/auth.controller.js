@@ -1,5 +1,6 @@
 const asyncHandler = require("../utils/async-handler");
 const authService = require("../services/auth.service");
+const { logAuditEventSafe } = require("../services/audit.service");
 const { getRequestMeta, logInfo, logSecurity } = require("../utils/logger");
 
 const normalizeEmail = (email) => (typeof email === "string" ? email.trim().toLowerCase() : null);
@@ -31,6 +32,29 @@ const signup = asyncHandler(async (req, res) => {
 const signin = asyncHandler(async (req, res) => {
   try {
     const result = await authService.signin(req.body);
+    logAuditEventSafe({
+      organizationId: result.user.organization_id,
+      actor: {
+        sub: result.user.id,
+        role: result.user.role
+      },
+      requestMeta: getRequestMeta(req),
+      module: "auth",
+      action: "signin_success",
+      summary: `User signed in: ${result.user.full_name}`,
+      entityType: "user",
+      entityId: result.user.id,
+      entityLabel: result.user.email,
+      metadata: {
+        role: result.user.role
+      },
+      afterState: {
+        id: result.user.id,
+        full_name: result.user.full_name,
+        email: result.user.email,
+        role: result.user.role
+      }
+    });
     logInfo("auth_signin_success", {
       ...getRequestMeta(req),
       email: normalizeEmail(req.body?.email)
@@ -120,6 +144,21 @@ const listUsers = asyncHandler(async (req, res) => {
 
 const createStaff = asyncHandler(async (req, res) => {
   const data = await authService.createStaff(req.user.organizationId, req.body);
+  logAuditEventSafe({
+    organizationId: req.user.organizationId,
+    actor: req.user,
+    requestMeta: getRequestMeta(req),
+    module: "auth",
+    action: "staff_created",
+    summary: `Staff account created: ${data.full_name}`,
+    entityType: "user",
+    entityId: data.id,
+    entityLabel: data.email,
+    metadata: {
+      role: data.role
+    },
+    afterState: data
+  });
   res.status(201).json({
     success: true,
     message: "Staff member added and setup email sent",
@@ -129,6 +168,20 @@ const createStaff = asyncHandler(async (req, res) => {
 
 const resendStaffSetup = asyncHandler(async (req, res) => {
   const data = await authService.resendStaffSetup(req.user.organizationId, req.params.id);
+  logAuditEventSafe({
+    organizationId: req.user.organizationId,
+    actor: req.user,
+    requestMeta: getRequestMeta(req),
+    module: "auth",
+    action: "staff_setup_resent",
+    summary: `Staff setup resent: ${data.full_name}`,
+    entityType: "user",
+    entityId: data.id,
+    entityLabel: data.email,
+    metadata: {
+      role: data.role
+    }
+  });
   res.json({
     success: true,
     message: "Setup email sent",
@@ -138,6 +191,22 @@ const resendStaffSetup = asyncHandler(async (req, res) => {
 
 const updateStaffNotificationPreferences = asyncHandler(async (req, res) => {
   const data = await authService.updateStaffNotificationPreferences(req.user.organizationId, req.params.id, req.body);
+  logAuditEventSafe({
+    organizationId: req.user.organizationId,
+    actor: req.user,
+    requestMeta: getRequestMeta(req),
+    module: "auth",
+    action: "staff_notifications_updated",
+    summary: `Staff notification preferences updated: ${data.full_name}`,
+    entityType: "user",
+    entityId: data.id,
+    entityLabel: data.email,
+    metadata: {
+      notifyDailyScheduleSms: data.notify_daily_schedule_sms === true,
+      notifyDailyScheduleEmail: data.notify_daily_schedule_email === true
+    },
+    afterState: data
+  });
   res.json({
     success: true,
     message: "Staff notification preferences updated",

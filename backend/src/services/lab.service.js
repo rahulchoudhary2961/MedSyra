@@ -8,6 +8,7 @@ const {
   saveLabReportAttachment,
   loadLabReportAttachment
 } = require("../utils/file-storage");
+const { logAuditEventSafe } = require("./audit.service");
 
 const patientProfileCachePrefix = (organizationId) => `patients:profile:${organizationId}`;
 const dashboardSummaryCachePrefix = (organizationId) => `dashboard:summary:${organizationId}`;
@@ -197,13 +198,31 @@ const validateOrderReferences = async (organizationId, payload) => {
 
 const listLabTests = async (organizationId, query) => labModel.listLabTests(organizationId, query);
 
-const createLabTest = async (organizationId, payload) => {
+const createLabTest = async (organizationId, payload, actor = null, requestMeta = null) => {
   const created = await labModel.createLabTest(organizationId, payload);
   await invalidateLabRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "lab",
+    action: "lab_test_created",
+    summary: `Lab test created: ${created.name}`,
+    entityType: "lab_test",
+    entityId: created.id,
+    entityLabel: created.name,
+    metadata: {
+      code: created.code || null,
+      department: created.department || null
+    },
+    afterState: created
+  });
+
   return created;
 };
 
-const updateLabTest = async (organizationId, id, payload) => {
+const updateLabTest = async (organizationId, id, payload, actor = null, requestMeta = null) => {
   const current = await labModel.getLabTestById(organizationId, id);
   if (!current) {
     throw new ApiError(404, "Lab test not found");
@@ -211,6 +230,25 @@ const updateLabTest = async (organizationId, id, payload) => {
 
   const updated = await labModel.updateLabTest(organizationId, id, payload);
   await invalidateLabRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "lab",
+    action: "lab_test_updated",
+    summary: `Lab test updated: ${updated.name}`,
+    entityType: "lab_test",
+    entityId: updated.id,
+    entityLabel: updated.name,
+    metadata: {
+      code: updated.code || null,
+      department: updated.department || null
+    },
+    beforeState: current,
+    afterState: updated
+  });
+
   return updated;
 };
 
@@ -234,7 +272,7 @@ const getLabOrderById = async (organizationId, id, actor = null) => {
   return order;
 };
 
-const createLabOrder = async (organizationId, payload, actor = null) => {
+const createLabOrder = async (organizationId, payload, actor = null, requestMeta = null) => {
   const scopedDoctorId = await ensureLabDoctorAccess(organizationId, actor, payload.doctorId || null);
   const normalizedPayload = {
     ...payload,
@@ -251,10 +289,29 @@ const createLabOrder = async (organizationId, payload, actor = null) => {
 
   const created = await labModel.createLabOrder(organizationId, normalizedPayload);
   await invalidateLabRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "lab",
+    action: "lab_order_created",
+    summary: `Lab order created: ${created.order_number}`,
+    entityType: "lab_order",
+    entityId: created.id,
+    entityLabel: created.order_number,
+    metadata: {
+      patientId: created.patient_id,
+      doctorId: created.doctor_id || null,
+      status: created.status
+    },
+    afterState: created
+  });
+
   return created;
 };
 
-const updateLabOrder = async (organizationId, id, payload, actor = null) => {
+const updateLabOrder = async (organizationId, id, payload, actor = null, requestMeta = null) => {
   const current = await getLabOrderById(organizationId, id, actor);
   const scopedDoctorId = await ensureLabDoctorAccess(organizationId, actor, payload.doctorId || current.doctor_id || null);
 
@@ -291,10 +348,30 @@ const updateLabOrder = async (organizationId, id, payload, actor = null) => {
   }
 
   await invalidateLabRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "lab",
+    action: "lab_order_updated",
+    summary: `Lab order updated: ${updated.order_number}`,
+    entityType: "lab_order",
+    entityId: updated.id,
+    entityLabel: updated.order_number,
+    metadata: {
+      patientId: updated.patient_id,
+      doctorId: updated.doctor_id || null,
+      status: updated.status
+    },
+    beforeState: current,
+    afterState: updated
+  });
+
   return updated;
 };
 
-const uploadLabOrderReport = async (organizationId, id, payload, actor = null) => {
+const uploadLabOrderReport = async (organizationId, id, payload, actor = null, requestMeta = null) => {
   const current = await getLabOrderById(organizationId, id, actor);
   const uploaded = await saveLabReportAttachment(payload);
   const nextStatus = current.status === "completed" ? "completed" : "report_ready";
@@ -306,6 +383,24 @@ const uploadLabOrderReport = async (organizationId, id, payload, actor = null) =
   });
 
   await invalidateLabRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "lab",
+    action: "lab_report_uploaded",
+    summary: `Lab report uploaded: ${updated.order_number}`,
+    entityType: "lab_order",
+    entityId: updated.id,
+    entityLabel: updated.order_number,
+    metadata: {
+      status: updated.status,
+      reportFileUrl: updated.report_file_url || null
+    },
+    beforeState: current,
+    afterState: updated
+  });
 
   return {
     order: updated,

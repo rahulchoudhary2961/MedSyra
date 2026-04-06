@@ -2,12 +2,33 @@ export interface AuthUser {
   id: string;
   organization_id: string;
   organization_name?: string;
+  branch_id?: string | null;
+  branch_name?: string | null;
   full_name: string;
   email: string;
   phone: string;
   role: string;
   notify_daily_schedule_sms?: boolean;
   notify_daily_schedule_email?: boolean;
+}
+
+export interface Branch {
+  id: string;
+  organization_id: string;
+  branch_code: string | null;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  timezone: string;
+  is_active: boolean;
+  is_default: boolean;
+  staff_count?: number;
+  today_appointments?: number;
+  active_patients?: number;
+  recent_revenue?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Patient {
@@ -51,6 +72,7 @@ export interface Doctor {
 
 export interface Appointment {
   id: string;
+  branch_id?: string | null;
   title: string;
   patient_id?: string | null;
   patient_name: string | null;
@@ -75,6 +97,7 @@ export interface Appointment {
 
 export interface MedicalRecord {
   id: string;
+  branch_id?: string | null;
   appointment_id?: string | null;
   patient_id: string;
   patient_name: string;
@@ -107,6 +130,7 @@ export interface ActivityLog {
 
 export interface Invoice {
   id: string;
+  branch_id?: string | null;
   invoice_number: string;
   organization_name?: string;
   organization_id?: string;
@@ -183,6 +207,77 @@ export interface ReconciliationReport {
     computed_paid_amount: number;
     computed_balance_amount: number;
   }>;
+}
+
+export interface InsuranceProvider {
+  id: string;
+  organization_id: string;
+  payer_code: string | null;
+  name: string;
+  contact_email: string | null;
+  contact_phone: string | null;
+  portal_url: string | null;
+  is_active: boolean;
+  open_claim_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface InsuranceClaimEvent {
+  id: string;
+  organization_id: string;
+  claim_id: string;
+  actor_user_id: string | null;
+  actor_name?: string | null;
+  event_type: "claim_created" | "claim_submitted" | "status_changed" | "claim_updated" | "approval_recorded" | "payment_recorded" | "note_added";
+  previous_status: string | null;
+  next_status: string | null;
+  note: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface InsuranceClaim {
+  id: string;
+  organization_id: string;
+  claim_number: string;
+  provider_id: string;
+  provider_name: string;
+  payer_code: string | null;
+  patient_id: string;
+  patient_code: string | null;
+  patient_name: string;
+  phone: string | null;
+  doctor_id: string | null;
+  doctor_name: string | null;
+  appointment_id: string | null;
+  medical_record_id: string | null;
+  record_type: string | null;
+  invoice_id: string | null;
+  invoice_number: string | null;
+  invoice_status: string | null;
+  created_by_user_id: string | null;
+  created_by_name: string | null;
+  policy_number: string | null;
+  member_id: string | null;
+  status: "draft" | "submitted" | "under_review" | "approved" | "partially_approved" | "rejected" | "settled" | "cancelled";
+  claimed_amount: number;
+  approved_amount: number;
+  paid_amount: number;
+  diagnosis_summary: string | null;
+  treatment_summary: string | null;
+  submitted_date: string | null;
+  response_due_date: string | null;
+  approved_date: string | null;
+  settled_date: string | null;
+  rejection_reason: string | null;
+  notes: string | null;
+  last_status_changed_at: string | null;
+  days_to_response: number | null;
+  event_count?: number;
+  events?: InsuranceClaimEvent[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface NotificationDelivery {
@@ -434,4 +529,73 @@ export interface InventoryMovement {
 export interface SmartSummaryItem {
   label: string;
   value: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  actor_role: string | null;
+  module: string;
+  action: string;
+  summary: string;
+  entity_type: string;
+  entity_id: string | null;
+  entity_label: string | null;
+  severity: "info" | "warning" | "critical";
+  outcome: "success" | "denied" | "failed";
+  is_destructive: boolean;
+  ip_address: string | null;
+  user_agent: string | null;
+  path: string | null;
+  method: string | null;
+  metadata?: Record<string, unknown>;
+  before_state?: Record<string, unknown> | null;
+  after_state?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface SecurityOverviewData {
+  summary: {
+    windowDays: number;
+    totalEvents: number;
+    destructiveActions: number;
+    deniedActions: number;
+    criticalEvents: number;
+    lockedAccounts: number;
+    activeAccounts7d: number;
+  };
+  moduleBreakdown: Array<{
+    module: string;
+    total: number;
+    destructiveCount: number;
+    deniedCount: number;
+  }>;
+  recentDestructive: Array<{
+    id: string;
+    summary: string;
+    module: string;
+    action: string;
+    entity_type: string;
+    entity_id: string | null;
+    entity_label: string | null;
+    severity: "info" | "warning" | "critical";
+    outcome: "success" | "denied" | "failed";
+    created_at: string;
+    actor_role: string | null;
+    actor_name: string | null;
+  }>;
+  userAccess: Array<{
+    role: string;
+    total: number;
+    verifiedTotal: number;
+    loggedInTotal: number;
+    lockedTotal: number;
+    latestLoginAt: string | null;
+  }>;
+  protectedActions: Array<{
+    action: string;
+    roles: string[];
+    description: string;
+  }>;
 }
