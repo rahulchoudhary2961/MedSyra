@@ -20,6 +20,9 @@ export const canDeleteAppointments = (role?: string | null) => isFullAccessRole(
 export const canAccessAssistant = (role?: string | null) =>
   isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
 
+export const canUseAiPrescription = (role?: string | null) =>
+  isFullAccessRole(role) || role === "doctor";
+
 export const canAccessPatients = (role?: string | null) =>
   isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
 

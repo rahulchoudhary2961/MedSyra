@@ -49,26 +49,33 @@ const RANGE_SQL = {
 
 const getRangeSql = (range, domain) => RANGE_SQL[range]?.[domain] || RANGE_SQL.this_month[domain];
 
-const getRevenueMetric = async (organizationId, { range = "this_month" } = {}) => {
+const getRevenueMetric = async (organizationId, { range = "this_month", branchId = null } = {}) => {
   const rangeSql = getRangeSql(range, "payments");
+  const branchClause = branchId ? "AND p.branch_id = $2" : "";
   const query = `
     SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2) AS revenue
     FROM payments p
     WHERE p.organization_id = $1
       AND p.status = 'completed'
+      ${branchClause}
       AND ${rangeSql}
   `;
 
-  const { rows } = await pool.query(query, [organizationId]);
+  const { rows } = await pool.query(query, branchId ? [organizationId, branchId] : [organizationId]);
   return {
     range,
     revenue: Number(rows[0]?.revenue || 0)
   };
 };
 
-const getAppointmentsMetric = async (organizationId, { range = "today", status = null, patientId = null } = {}) => {
+const getAppointmentsMetric = async (organizationId, { range = "today", status = null, patientId = null, branchId = null } = {}) => {
   const values = [organizationId];
   const conditions = ["a.organization_id = $1", getRangeSql(range, "appointments")];
+
+  if (branchId) {
+    values.push(branchId);
+    conditions.push(`a.branch_id = $${values.length}`);
+  }
 
   if (status) {
     values.push(status);
@@ -94,9 +101,14 @@ const getAppointmentsMetric = async (organizationId, { range = "today", status =
   };
 };
 
-const getFollowUpsMetric = async (organizationId, { range = "today", patientId = null } = {}) => {
+const getFollowUpsMetric = async (organizationId, { range = "today", patientId = null, branchId = null } = {}) => {
   const values = [organizationId];
   const conditions = ["mr.organization_id = $1", "mr.follow_up_date IS NOT NULL", getRangeSql(range, "followUps")];
+
+  if (branchId) {
+    values.push(branchId);
+    conditions.push(`mr.branch_id = $${values.length}`);
+  }
 
   if (patientId) {
     values.push(patientId);
@@ -117,7 +129,7 @@ const getFollowUpsMetric = async (organizationId, { range = "today", patientId =
   };
 };
 
-const getMostCommonIssueMetric = async (organizationId, { range = "last_30_days", patientId = null } = {}) => {
+const getMostCommonIssueMetric = async (organizationId, { range = "last_30_days", patientId = null, branchId = null } = {}) => {
   const values = [organizationId];
   const conditions = [
     "mr.organization_id = $1",
@@ -125,6 +137,11 @@ const getMostCommonIssueMetric = async (organizationId, { range = "last_30_days"
     "BTRIM(mr.diagnosis) <> ''",
     getRangeSql(range, "records")
   ];
+
+  if (branchId) {
+    values.push(branchId);
+    conditions.push(`mr.branch_id = $${values.length}`);
+  }
 
   if (patientId) {
     values.push(patientId);
@@ -148,13 +165,18 @@ const getMostCommonIssueMetric = async (organizationId, { range = "last_30_days"
   };
 };
 
-const getOutstandingInvoicesMetric = async (organizationId, { patientId = null } = {}) => {
+const getOutstandingInvoicesMetric = async (organizationId, { patientId = null, branchId = null } = {}) => {
   const values = [organizationId];
   const conditions = [
     "i.organization_id = $1",
     "i.balance_amount > 0",
     "i.status IN ('issued', 'partially_paid', 'overdue')"
   ];
+
+  if (branchId) {
+    values.push(branchId);
+    conditions.push(`i.branch_id = $${values.length}`);
+  }
 
   if (patientId) {
     values.push(patientId);

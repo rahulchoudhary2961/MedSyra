@@ -46,6 +46,6 @@ router.use("/insurance", requireAuth, resolveBranchContext, protectedReadLimiter
 router.use("/notifications", requireAuth, resolveBranchContext, protectedReadLimiter, protectedWriteLimiter, notificationsRoutes);
 router.use("/security", requireAuth, resolveBranchContext, protectedReadLimiter, protectedWriteLimiter, securityRoutes);
 router.use("/commercial", requireAuth, protectedReadLimiter, protectedWriteLimiter, commercialRoutes);
-router.use("/ai", requireAuth, aiGenerationLimiter, aiRoutes);
+router.use("/ai", requireAuth, resolveBranchContext, aiGenerationLimiter, aiRoutes);
 
 module.exports = router;

@@ -17,6 +17,302 @@ const branchExistsSql = (organizationAlias, patientAlias, paramIndex = 3) => `
   )
 `;
 
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+const parseDateOnly = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = String(value).slice(0, 10);
+  const [year, month, day] = normalized.split("-").map((part) => Number(part));
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
+const differenceInDays = (fromDate, toDate) => Math.round((toDate.getTime() - fromDate.getTime()) / DAY_IN_MS);
+
+const clamp = (value, minimum, maximum) => Math.min(Math.max(value, minimum), maximum);
+
+const buildRevisitPrediction = (currentDateKey, rows) => {
+  const today = parseDateOnly(currentDateKey) || new Date();
+
+  const patients = rows
+    .map((row) => {
+      const completedVisitsLast180 = Number(row.completed_visits_last_180 || 0);
+      const noShowsLast180 = Number(row.no_shows_last_180 || 0);
+      const totalVisitsLast365 = Number(row.total_visits_last_365 || 0);
+      const repeatDiagnosisCount = Number(row.repeat_diagnosis_count || 0);
+      const lastVisitDate = parseDateOnly(row.last_visit_at);
+      const nextFollowUpDate = parseDateOnly(row.next_follow_up_date);
+      const daysSinceLastVisit = lastVisitDate ? Math.max(differenceInDays(lastVisitDate, today), 0) : null;
+      const daysUntilFollowUp = nextFollowUpDate ? differenceInDays(today, nextFollowUpDate) : null;
+      let revisitScore = 0;
+      const reasons = [];
+
+      if (daysUntilFollowUp !== null) {
+        if (daysUntilFollowUp <= 0) {
+          revisitScore += 45;
+          reasons.push(
+            daysUntilFollowUp === 0 ? "Follow-up due today" : `Follow-up overdue by ${Math.abs(daysUntilFollowUp)} days`
+          );
+        } else if (daysUntilFollowUp <= 7) {
+          revisitScore += 30;
+          reasons.push(`Follow-up due in ${daysUntilFollowUp} days`);
+        } else if (daysUntilFollowUp <= 14) {
+          revisitScore += 18;
+          reasons.push(`Follow-up due in ${daysUntilFollowUp} days`);
+        }
+      }
+
+      if (completedVisitsLast180 >= 4) {
+        revisitScore += 20;
+        reasons.push(`${completedVisitsLast180} completed visits in the last 180 days`);
+      } else if (completedVisitsLast180 >= 2) {
+        revisitScore += 12;
+        reasons.push(`${completedVisitsLast180} recent completed visits`);
+      } else if (completedVisitsLast180 === 1) {
+        revisitScore += 6;
+      }
+
+      if (totalVisitsLast365 >= 6) {
+        revisitScore += 8;
+      }
+
+      if (repeatDiagnosisCount >= 3) {
+        revisitScore += 15;
+        reasons.push("Recurring diagnosis pattern across records");
+      } else if (repeatDiagnosisCount === 2) {
+        revisitScore += 8;
+        reasons.push("Diagnosis repeated twice in the last year");
+      }
+
+      if (daysSinceLastVisit !== null) {
+        if (daysSinceLastVisit <= 14) {
+          revisitScore += 14;
+          reasons.push(`Last visit was ${daysSinceLastVisit} days ago`);
+        } else if (daysSinceLastVisit <= 30) {
+          revisitScore += 10;
+          reasons.push(`Last visit was ${daysSinceLastVisit} days ago`);
+        } else if (daysSinceLastVisit <= 60) {
+          revisitScore += 5;
+        }
+      }
+
+      if (noShowsLast180 >= 2) {
+        revisitScore -= 10;
+      } else if (noShowsLast180 === 1) {
+        revisitScore -= 4;
+      }
+
+      revisitScore = clamp(revisitScore, 0, 100);
+
+      const likelihood = revisitScore >= 60 ? "high" : revisitScore >= 35 ? "medium" : "low";
+      const predictedWindow =
+        daysUntilFollowUp !== null
+          ? daysUntilFollowUp <= 0
+            ? "Due now"
+            : daysUntilFollowUp <= 7
+              ? "0-7 days"
+              : daysUntilFollowUp <= 14
+                ? "8-14 days"
+                : "15-30 days"
+          : likelihood === "high"
+            ? "7-14 days"
+            : likelihood === "medium"
+              ? "15-30 days"
+              : "30+ days";
+
+      return {
+        patientId: row.patient_id,
+        patientCode: row.patient_code || null,
+        patientName: row.patient_name,
+        phone: row.phone || null,
+        lastVisitAt: row.last_visit_at || null,
+        nextFollowUpDate: row.next_follow_up_date || null,
+        latestDiagnosis: row.latest_diagnosis || null,
+        daysSinceLastVisit,
+        daysUntilFollowUp,
+        completedVisitsLast180,
+        totalVisitsLast365,
+        noShowsLast180,
+        repeatDiagnosisCount,
+        revisitScore,
+        likelihood,
+        predictedWindow,
+        reasons: reasons.slice(0, 3)
+      };
+    })
+    .sort((left, right) => {
+      const likelihoodWeight = { high: 3, medium: 2, low: 1 };
+      const likelihoodDelta = likelihoodWeight[right.likelihood] - likelihoodWeight[left.likelihood];
+
+      if (likelihoodDelta !== 0) {
+        return likelihoodDelta;
+      }
+
+      if (right.revisitScore !== left.revisitScore) {
+        return right.revisitScore - left.revisitScore;
+      }
+
+      const followUpLeft = left.daysUntilFollowUp ?? Number.MAX_SAFE_INTEGER;
+      const followUpRight = right.daysUntilFollowUp ?? Number.MAX_SAFE_INTEGER;
+      if (followUpLeft !== followUpRight) {
+        return followUpLeft - followUpRight;
+      }
+
+      return (left.daysSinceLastVisit ?? Number.MAX_SAFE_INTEGER) - (right.daysSinceLastVisit ?? Number.MAX_SAFE_INTEGER);
+    });
+
+  return {
+    totalPatientsModeled: patients.length,
+    highLikelihoodCount: patients.filter((patient) => patient.likelihood === "high").length,
+    mediumLikelihoodCount: patients.filter((patient) => patient.likelihood === "medium").length,
+    lowLikelihoodCount: patients.filter((patient) => patient.likelihood === "low").length,
+    patients: patients.slice(0, 8)
+  };
+};
+
+const buildDiseaseTrends = (rows) => {
+  const items = rows
+    .map((row) => {
+      const currentCases = Number(row.current_cases || 0);
+      const previousCases = Number(row.previous_cases || 0);
+      const deltaPercent =
+        previousCases <= 0 ? (currentCases > 0 ? 100 : 0) : ((currentCases - previousCases) / previousCases) * 100;
+
+      let trend = "stable";
+      if (previousCases === 0 && currentCases > 0) {
+        trend = "new";
+      } else if (deltaPercent >= 20) {
+        trend = "rising";
+      } else if (deltaPercent <= -20) {
+        trend = "declining";
+      }
+
+      return {
+        diagnosis: row.diagnosis,
+        currentCases,
+        previousCases,
+        deltaPercent: Number(deltaPercent.toFixed(1)),
+        trend,
+        lastSeenAt: row.last_seen_at || null
+      };
+    })
+    .sort((left, right) => {
+      const trendWeight = { new: 4, rising: 3, stable: 2, declining: 1 };
+      const trendDelta = trendWeight[right.trend] - trendWeight[left.trend];
+
+      if (trendDelta !== 0) {
+        return trendDelta;
+      }
+
+      const growthDelta = Math.abs(right.deltaPercent) - Math.abs(left.deltaPercent);
+      if (growthDelta !== 0) {
+        return growthDelta;
+      }
+
+      return right.currentCases - left.currentCases;
+    });
+
+  return {
+    currentWindowLabel: "Last 30 days",
+    previousWindowLabel: "Previous 30 days",
+    risingCount: items.filter((item) => item.trend === "rising").length,
+    newSignals: items.filter((item) => item.trend === "new").length,
+    stableCount: items.filter((item) => item.trend === "stable").length,
+    decliningCount: items.filter((item) => item.trend === "declining").length,
+    items: items.slice(0, 8)
+  };
+};
+
+const buildRevenueForecast = (currentDateKey, monthlyTrendRows) => {
+  const today = parseDateOnly(currentDateKey) || new Date();
+  if (!monthlyTrendRows.length) {
+    return {
+      currentMonthLabel: "",
+      monthToDateCollected: 0,
+      projectedMonthEndCollected: 0,
+      trailingThreeMonthAverage: 0,
+      forecastRangeLow: 0,
+      forecastRangeHigh: 0,
+      projectedGrowthVsLastMonth: 0,
+      elapsedDays: today.getUTCDate(),
+      remainingDays: 0,
+      confidence: "low",
+      series: []
+    };
+  }
+
+  const currentMonth = monthlyTrendRows[monthlyTrendRows.length - 1];
+  const completedMonths = monthlyTrendRows.slice(0, -1);
+  const lastThreeCompleted = completedMonths.slice(-3).map((entry) => Number(entry.collectedAmount || 0));
+  const trailingThreeMonthAverage = lastThreeCompleted.length
+    ? lastThreeCompleted.reduce((sum, value) => sum + value, 0) / lastThreeCompleted.length
+    : 0;
+  const monthToDateCollected = Number(currentMonth.collectedAmount || 0);
+  const elapsedDays = today.getUTCDate();
+  const daysInMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0)).getUTCDate();
+  const remainingDays = Math.max(daysInMonth - elapsedDays, 0);
+  const runRateForecast = elapsedDays > 0 ? (monthToDateCollected / elapsedDays) * daysInMonth : monthToDateCollected;
+  const runRateWeight = elapsedDays <= 7 ? 0.4 : elapsedDays <= 15 ? 0.55 : 0.7;
+  const projectedMonthEndCollected =
+    trailingThreeMonthAverage > 0
+      ? runRateForecast * runRateWeight + trailingThreeMonthAverage * (1 - runRateWeight)
+      : runRateForecast;
+  const previousMonthCollected = Number(completedMonths[completedMonths.length - 1]?.collectedAmount || 0);
+  const projectedGrowthVsLastMonth =
+    previousMonthCollected <= 0
+      ? projectedMonthEndCollected > 0
+        ? 100
+        : 0
+      : ((projectedMonthEndCollected - previousMonthCollected) / previousMonthCollected) * 100;
+
+  const variability =
+    trailingThreeMonthAverage > 0 && lastThreeCompleted.length > 1
+      ? lastThreeCompleted.reduce(
+          (sum, value) => sum + Math.abs(value - trailingThreeMonthAverage) / trailingThreeMonthAverage,
+          0
+        ) / lastThreeCompleted.length
+      : 0.1;
+
+  const confidence =
+    elapsedDays >= 20 && variability <= 0.2 ? "high" : elapsedDays >= 10 && variability <= 0.35 ? "medium" : "low";
+  const rangeFactor = Math.min(
+    0.25,
+    Math.max(confidence === "high" ? 0.08 : confidence === "medium" ? 0.12 : 0.16, variability)
+  );
+
+  return {
+    currentMonthLabel: currentMonth.label,
+    monthToDateCollected: Number(monthToDateCollected.toFixed(2)),
+    projectedMonthEndCollected: Number(projectedMonthEndCollected.toFixed(2)),
+    trailingThreeMonthAverage: Number(trailingThreeMonthAverage.toFixed(2)),
+    forecastRangeLow: Number((projectedMonthEndCollected * (1 - rangeFactor)).toFixed(2)),
+    forecastRangeHigh: Number((projectedMonthEndCollected * (1 + rangeFactor)).toFixed(2)),
+    projectedGrowthVsLastMonth: Number(projectedGrowthVsLastMonth.toFixed(1)),
+    elapsedDays,
+    remainingDays,
+    confidence,
+    series: [
+      ...completedMonths.slice(-5).map((entry) => ({
+        label: entry.label,
+        actualCollected: Number(entry.collectedAmount || 0),
+        projectedCollected: null
+      })),
+      {
+        label: `${currentMonth.label} Forecast`,
+        actualCollected: monthToDateCollected,
+        projectedCollected: Number(projectedMonthEndCollected.toFixed(2))
+      }
+    ]
+  };
+};
+
 const getSummary = async (organizationId, branchId = null) => {
   const currentDateKey = getCurrentDateKey();
   const [metrics, activities, followUpQueue, recallQueue] = await Promise.all([
@@ -267,6 +563,8 @@ const getReports = async (organizationId, query = {}) => {
     departmentDistribution,
     recordTypes,
     monthlyTrends,
+    revisitSignals,
+    diseaseTrendSignals,
     diseasePatterns,
     revenueAnalysis,
     revenueStreams
@@ -650,6 +948,132 @@ const getReports = async (organizationId, query = {}) => {
       ),
       pool.query(
         `
+        SELECT
+          p.id AS patient_id,
+          p.patient_code,
+          p.full_name AS patient_name,
+          p.phone,
+          p.last_visit_at::text AS last_visit_at,
+          COALESCE(visit_stats.completed_visits_last_180, 0)::int AS completed_visits_last_180,
+          COALESCE(visit_stats.no_shows_last_180, 0)::int AS no_shows_last_180,
+          COALESCE(visit_stats.total_visits_last_365, 0)::int AS total_visits_last_365,
+          COALESCE(diagnosis_stats.repeat_diagnosis_count, 0)::int AS repeat_diagnosis_count,
+          follow_up_stats.next_follow_up_date::text AS next_follow_up_date,
+          latest_diagnosis.latest_diagnosis
+        FROM patients p
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*) FILTER (
+              WHERE a.status = 'completed'
+                AND a.appointment_date >= CURRENT_DATE - INTERVAL '180 days'
+            ) AS completed_visits_last_180,
+            COUNT(*) FILTER (
+              WHERE a.status = 'no-show'
+                AND a.appointment_date >= CURRENT_DATE - INTERVAL '180 days'
+            ) AS no_shows_last_180,
+            COUNT(*) FILTER (
+              WHERE a.appointment_date >= CURRENT_DATE - INTERVAL '365 days'
+                AND a.status IN ('pending', 'confirmed', 'checked-in', 'completed', 'no-show')
+            ) AS total_visits_last_365
+          FROM appointments a
+          WHERE a.organization_id = p.organization_id
+            AND a.patient_id = p.id
+            ${branchFilterSql("a", 2)}
+        ) AS visit_stats ON true
+        LEFT JOIN LATERAL (
+          SELECT MAX(repeat_count)::int AS repeat_diagnosis_count
+          FROM (
+            SELECT COUNT(*)::int AS repeat_count
+            FROM medical_records mr
+            WHERE mr.organization_id = p.organization_id
+              AND mr.patient_id = p.id
+              ${branchFilterSql("mr", 2)}
+              AND mr.diagnosis IS NOT NULL
+              AND BTRIM(mr.diagnosis) <> ''
+              AND mr.record_date >= CURRENT_DATE - INTERVAL '12 months'
+            GROUP BY LOWER(TRIM(mr.diagnosis))
+          ) AS grouped_diagnoses
+        ) AS diagnosis_stats ON true
+        LEFT JOIN LATERAL (
+          SELECT MIN(mr.follow_up_date)::date AS next_follow_up_date
+          FROM medical_records mr
+          WHERE mr.organization_id = p.organization_id
+            AND mr.patient_id = p.id
+            ${branchFilterSql("mr", 2)}
+            AND mr.follow_up_date IS NOT NULL
+            AND COALESCE(mr.follow_up_reminder_status, 'pending') <> 'disabled'
+        ) AS follow_up_stats ON true
+        LEFT JOIN LATERAL (
+          SELECT TRIM(mr.diagnosis) AS latest_diagnosis
+          FROM medical_records mr
+          WHERE mr.organization_id = p.organization_id
+            AND mr.patient_id = p.id
+            ${branchFilterSql("mr", 2)}
+            AND mr.diagnosis IS NOT NULL
+            AND BTRIM(mr.diagnosis) <> ''
+          ORDER BY mr.record_date DESC, mr.created_at DESC
+          LIMIT 1
+        ) AS latest_diagnosis ON true
+        WHERE p.organization_id = $1
+          AND p.is_active = true
+          AND p.last_visit_at IS NOT NULL
+          AND p.last_visit_at >= CURRENT_DATE - INTERVAL '12 months'
+          ${branchExistsSql("p.organization_id", "p.id", 2)}
+          AND (
+            COALESCE(visit_stats.completed_visits_last_180, 0) > 0
+            OR follow_up_stats.next_follow_up_date IS NOT NULL
+            OR COALESCE(diagnosis_stats.repeat_diagnosis_count, 0) > 0
+          )
+        ORDER BY p.last_visit_at DESC, p.full_name ASC
+        `,
+        [organizationId, branchId]
+      ),
+      pool.query(
+        `
+        WITH current_window AS (
+          SELECT
+            LOWER(TRIM(diagnosis)) AS diagnosis_key,
+            MIN(TRIM(diagnosis)) AS diagnosis,
+            COUNT(*)::int AS current_cases,
+            MAX(record_date)::date AS last_seen_at
+          FROM medical_records
+          WHERE organization_id = $1
+            ${branchFilterSql("medical_records", 2)}
+            AND diagnosis IS NOT NULL
+            AND BTRIM(diagnosis) <> ''
+            AND record_date >= CURRENT_DATE - INTERVAL '30 days'
+          GROUP BY LOWER(TRIM(diagnosis))
+        ),
+        previous_window AS (
+          SELECT
+            LOWER(TRIM(diagnosis)) AS diagnosis_key,
+            COUNT(*)::int AS previous_cases
+          FROM medical_records
+          WHERE organization_id = $1
+            ${branchFilterSql("medical_records", 2)}
+            AND diagnosis IS NOT NULL
+            AND BTRIM(diagnosis) <> ''
+            AND record_date >= CURRENT_DATE - INTERVAL '60 days'
+            AND record_date < CURRENT_DATE - INTERVAL '30 days'
+          GROUP BY LOWER(TRIM(diagnosis))
+        )
+        SELECT
+          COALESCE(current_window.diagnosis, previous_window.diagnosis_key) AS diagnosis,
+          COALESCE(current_window.current_cases, 0)::int AS current_cases,
+          COALESCE(previous_window.previous_cases, 0)::int AS previous_cases,
+          current_window.last_seen_at::text AS last_seen_at
+        FROM current_window
+        FULL OUTER JOIN previous_window
+          ON previous_window.diagnosis_key = current_window.diagnosis_key
+        WHERE COALESCE(current_window.current_cases, 0) > 0
+           OR COALESCE(previous_window.previous_cases, 0) > 0
+        ORDER BY COALESCE(current_window.current_cases, 0) DESC, COALESCE(previous_window.previous_cases, 0) DESC
+        LIMIT 12
+        `,
+        [organizationId, branchId]
+      ),
+      pool.query(
+        `
         WITH diagnosis_pool AS (
           SELECT
             LOWER(TRIM(diagnosis)) AS diagnosis_key,
@@ -781,6 +1205,20 @@ const getReports = async (organizationId, query = {}) => {
   const revenuePrevious30 = Number(revenueAnalysis.rows[0]?.previous_30_revenue || 0);
   const revenueGrowth =
     revenuePrevious30 <= 0 ? (revenueCurrent30 > 0 ? 100 : 0) : ((revenueCurrent30 - revenuePrevious30) / revenuePrevious30) * 100;
+  const monthlyTrendRows = monthlyTrends.rows.map((row) => ({
+    label: row.label,
+    invoicedAmount: Number(row.invoiced_amount || 0),
+    collectedAmount: Number(row.collected_amount || 0),
+    appointments: Number(row.appointments || 0),
+    newPatients: Number(row.new_patients || 0)
+  }));
+  const diseasePatternItems = diseasePatterns.rows.map((row) => ({
+    diagnosis: row.diagnosis,
+    caseCount: Number(row.case_count || 0),
+    patientCount: Number(row.patient_count || 0),
+    lastSeenAt: row.last_seen_at,
+    sharePercent: Number(row.share_percent || 0)
+  }));
   const doctorRows = topDoctors.rows.map((row) => ({
     id: row.id,
     name: row.name,
@@ -815,6 +1253,11 @@ const getReports = async (organizationId, query = {}) => {
 
     return best;
   }, null);
+  const predictiveAnalytics = {
+    revisitPrediction: buildRevisitPrediction(getCurrentDateKey(), revisitSignals.rows),
+    diseaseTrends: buildDiseaseTrends(diseaseTrendSignals.rows),
+    revenueForecasting: buildRevenueForecast(getCurrentDateKey(), monthlyTrendRows)
+  };
 
   return {
     meta: {
@@ -871,23 +1314,11 @@ const getReports = async (organizationId, query = {}) => {
       type: row.type,
       count: Number(row.count || 0)
     })),
-    monthlyTrends: monthlyTrends.rows.map((row) => ({
-      label: row.label,
-      invoicedAmount: Number(row.invoiced_amount || 0),
-      collectedAmount: Number(row.collected_amount || 0),
-      appointments: Number(row.appointments || 0),
-      newPatients: Number(row.new_patients || 0)
-    })),
+    monthlyTrends: monthlyTrendRows,
     diseasePatterns: {
       diagnosedRecords: Number(metrics.diagnosed_records || 0),
       uniqueDiagnoses: Number(metrics.unique_diagnoses || 0),
-      items: diseasePatterns.rows.map((row) => ({
-        diagnosis: row.diagnosis,
-        caseCount: Number(row.case_count || 0),
-        patientCount: Number(row.patient_count || 0),
-        lastSeenAt: row.last_seen_at,
-        sharePercent: Number(row.share_percent || 0)
-      }))
+      items: diseasePatternItems
     },
     doctorHighlights: {
       highestRevenueDoctor,
@@ -906,7 +1337,8 @@ const getReports = async (organizationId, query = {}) => {
     revenueStreams: revenueStreams.rows.map((row) => ({
       stream: row.stream,
       total: Number(row.total || 0)
-    }))
+    })),
+    predictiveAnalytics
   };
 };
 
