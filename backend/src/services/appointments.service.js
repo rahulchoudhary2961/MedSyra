@@ -11,6 +11,9 @@ const { isDoctorAvailableForSlot } = require("../utils/doctor-availability");
 const cachePrefix = (organizationId) => `appointments:list:${organizationId}:`;
 const dashboardSummaryCachePrefix = (organizationId) => `dashboard:summary:${organizationId}`;
 const dashboardReportsCachePrefix = (organizationId) => `dashboard:reports:${organizationId}`;
+const patientItemCachePrefix = (organizationId) => `patients:item:${organizationId}`;
+const patientProfileCachePrefix = (organizationId) => `patients:profile:${organizationId}`;
+const patientListCachePrefix = (organizationId) => `patients:list:${organizationId}`;
 
 const parseDateValue = (value) => {
   if (!value || typeof value !== "string") {
@@ -90,6 +93,17 @@ const invalidateAppointmentCaches = async (organizationId) => {
     cache.invalidateByPrefix(cachePrefix(organizationId)),
     cache.invalidateByPrefix(dashboardSummaryCachePrefix(organizationId)),
     cache.invalidateByPrefix(dashboardReportsCachePrefix(organizationId))
+  ]);
+};
+
+const invalidatePatientCaches = async (organizationId, patientId = null) => {
+  const itemPrefix = patientId ? `${patientItemCachePrefix(organizationId)}:${patientId}` : patientItemCachePrefix(organizationId);
+  const profilePrefix = patientId ? `${patientProfileCachePrefix(organizationId)}:${patientId}` : patientProfileCachePrefix(organizationId);
+
+  await Promise.all([
+    cache.invalidateByPrefix(itemPrefix),
+    cache.invalidateByPrefix(profilePrefix),
+    cache.invalidateByPrefix(patientListCachePrefix(organizationId))
   ]);
 };
 
@@ -334,6 +348,13 @@ const updateAppointment = async (organizationId, appointmentId, payload, actor =
       recordDate: updated.appointment_date,
       notes: updated.notes || null
     });
+    if (updated.patient_id || merged.patientId) {
+      const targetPatientId = updated.patient_id || merged.patientId;
+      await patientsModel.updatePatient(organizationId, targetPatientId, {
+        lastVisitAt: updated.appointment_date
+      });
+      await invalidatePatientCaches(organizationId, targetPatientId);
+    }
   }
   await invalidateAppointmentCaches(organizationId);
   return updated;
@@ -380,6 +401,14 @@ const completeConsultation = async (organizationId, appointmentId, payload, acto
     sendFollowUpReminder: payload.sendFollowUpReminder === true,
     notes: payload.notes || updatedAppointment.notes || null
   });
+
+  if (updatedAppointment.patient_id || current.patient_id) {
+    const targetPatientId = updatedAppointment.patient_id || current.patient_id;
+    await patientsModel.updatePatient(organizationId, targetPatientId, {
+      lastVisitAt: updatedAppointment.appointment_date
+    });
+    await invalidatePatientCaches(organizationId, targetPatientId);
+  }
 
   await invalidateAppointmentCaches(organizationId);
   return {

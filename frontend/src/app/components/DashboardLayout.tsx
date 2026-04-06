@@ -11,6 +11,9 @@ import {
   FileText,
   CreditCard,
   BarChart3,
+  FlaskConical,
+  Boxes,
+  Pill,
   Settings,
   Search,
   Bell,
@@ -24,6 +27,10 @@ import { clearLoginIntroPending, shouldShowLoginIntro } from "@/lib/onboarding";
 import {
   canAccessAssistant,
   canAccessBilling,
+  canAccessCrm,
+  canAccessInventory,
+  canAccessLab,
+  canAccessPharmacy,
   canAccessMedicalRecords,
   canAccessPatients,
   canAccessReports,
@@ -44,6 +51,10 @@ const navigation = [
   { name: "Calendar", path: "/dashboard/appointments", icon: Calendar },
   { name: "Doctors", path: "/dashboard/doctors", icon: UserRound },
   { name: "Medical Records", path: "/dashboard/medical-records", icon: FileText },
+  { name: "CRM", path: "/dashboard/crm", icon: Bell },
+  { name: "Lab", path: "/dashboard/lab", icon: FlaskConical },
+  { name: "Pharmacy", path: "/dashboard/pharmacy", icon: Pill },
+  { name: "Inventory", path: "/dashboard/inventory", icon: Boxes },
   { name: "Billings", path: "/dashboard/billings", icon: CreditCard },
   { name: "Reports", path: "/dashboard/reports", icon: BarChart3 },
   { name: "Settings", path: "/dashboard/settings", icon: Settings }
@@ -324,7 +335,15 @@ export default function DashboardLayout({
 
   const visibleNavigation = navigation.filter((item) => {
     if (currentUser?.role === "doctor") {
-      return ["/dashboard/assistant", "/dashboard/patients", "/dashboard/appointments", "/dashboard/medical-records"].includes(item.path);
+      return [
+        "/dashboard/assistant",
+        "/dashboard/patients",
+        "/dashboard/appointments",
+        "/dashboard/medical-records",
+        "/dashboard/crm",
+        "/dashboard/lab",
+        "/dashboard/pharmacy"
+      ].includes(item.path);
     }
 
     if (item.path === "/dashboard/appointments") {
@@ -349,6 +368,22 @@ export default function DashboardLayout({
 
     if (item.path === "/dashboard/medical-records") {
       return canAccessMedicalRecords(currentUser?.role);
+    }
+
+    if (item.path === "/dashboard/crm") {
+      return canAccessCrm(currentUser?.role);
+    }
+
+    if (item.path === "/dashboard/lab") {
+      return canAccessLab(currentUser?.role);
+    }
+
+    if (item.path === "/dashboard/pharmacy") {
+      return canAccessPharmacy(currentUser?.role);
+    }
+
+    if (item.path === "/dashboard/inventory") {
+      return canAccessInventory(currentUser?.role);
     }
 
     if (item.path === "/dashboard/patients") {

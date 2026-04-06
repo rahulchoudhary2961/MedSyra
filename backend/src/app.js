@@ -14,6 +14,12 @@ const { getHealthStatus } = require("./services/health.service");
 
 const app = express();
 
+const captureRawBody = (req, _res, buf) => {
+  if (buf?.length) {
+    req.rawBody = buf.toString("utf8");
+  }
+};
+
 const allowedOrigins = env.corsOrigin === "*"
   ? true
   : env.corsOrigin
@@ -32,7 +38,7 @@ app.use(botProtection);
 app.use(requestSecurityMonitor);
 app.use(globalApiLimiter);
 app.use(enforceJsonContentType);
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "10mb", verify: captureRawBody }));
 
 app.get("/health", async (_req, res) => {
   const health = await getHealthStatus();

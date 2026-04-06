@@ -31,6 +31,32 @@ const toDateKey = (value) => {
   ].join("-");
 };
 
+const parseBaseDateValue = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const parsed = normalized.includes("T")
+      ? new Date(normalized)
+      : new Date(`${normalized}T00:00:00Z`);
+
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const deriveFollowUpDate = (payload, baseDateValue) => {
   if (payload.followUpDate) {
     return payload.followUpDate;
@@ -40,8 +66,8 @@ const deriveFollowUpDate = (payload, baseDateValue) => {
     return undefined;
   }
 
-  const baseDate = new Date(`${baseDateValue}T00:00:00Z`);
-  if (Number.isNaN(baseDate.getTime())) {
+  const baseDate = parseBaseDateValue(baseDateValue);
+  if (!baseDate) {
     return undefined;
   }
 
@@ -292,7 +318,17 @@ const upsertAppointmentConsultationRecord = async (organizationId, payload) => {
     return updated;
   }
 
-  const created = await medicalRecordsRepository.createMedicalRecord(organizationId, payload);
+  const normalizedPayload = {
+    ...payload,
+    followUpDate: deriveFollowUpDate(payload, payload.recordDate),
+  };
+  normalizedPayload.followUpReminderStatus = deriveFollowUpReminderStatus(
+    payload,
+    normalizedPayload.followUpDate,
+    payload.followUpReminderStatus
+  );
+
+  const created = await medicalRecordsRepository.createMedicalRecord(organizationId, normalizedPayload);
   await invalidateMedicalRecordCaches(organizationId);
   return created;
 };

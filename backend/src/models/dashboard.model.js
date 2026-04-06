@@ -1,7 +1,9 @@
 const pool = require("../config/db");
+const { getCurrentDateKey } = require("../utils/date");
 
 const getSummary = async (organizationId) => {
-  const [metrics, activities] = await Promise.all([
+  const currentDateKey = getCurrentDateKey();
+  const [metrics, activities, followUpQueue, recallQueue] = await Promise.all([
     pool.query(
       `
       WITH most_common_issue AS (
@@ -21,12 +23,12 @@ const getSummary = async (organizationId) => {
         (SELECT COUNT(*)::int
          FROM appointments
          WHERE organization_id = $1
-           AND appointment_date = CURRENT_DATE) AS today_appointments,
+           AND appointment_date = $2::date) AS today_appointments,
         (SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2)
          FROM payments p
          WHERE p.organization_id = $1
            AND p.status = 'completed'
-           AND p.paid_at::date = CURRENT_DATE) AS today_revenue,
+           AND p.paid_at::date = $2::date) AS today_revenue,
         (SELECT COUNT(*)::int
          FROM invoices
          WHERE organization_id = $1
@@ -35,34 +37,34 @@ const getSummary = async (organizationId) => {
         (SELECT COUNT(*)::int
          FROM appointments
          WHERE organization_id = $1
-           AND appointment_date = CURRENT_DATE
+           AND appointment_date = $2::date
            AND status = 'no-show') AS no_shows,
         (SELECT COUNT(*)::int
          FROM patients
          WHERE organization_id = $1
            AND is_active = true
            AND last_visit_at IS NOT NULL
-           AND last_visit_at < CURRENT_DATE - INTERVAL '30 days') AS patients_did_not_return,
+           AND last_visit_at < $2::date - INTERVAL '30 days') AS patients_did_not_return,
         COALESCE((SELECT issue_label FROM most_common_issue), NULL) AS most_common_issue,
         COALESCE((SELECT issue_count FROM most_common_issue), 0)::int AS most_common_issue_count,
         (SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2)
          FROM payments p
          WHERE p.organization_id = $1
            AND p.status = 'completed'
-           AND p.paid_at >= DATE_TRUNC('week', CURRENT_DATE::timestamp)
-           AND p.paid_at < DATE_TRUNC('week', CURRENT_DATE::timestamp) + INTERVAL '7 days') AS weekly_revenue,
+           AND p.paid_at >= DATE_TRUNC('week', $2::date::timestamp)
+           AND p.paid_at < DATE_TRUNC('week', $2::date::timestamp) + INTERVAL '7 days') AS weekly_revenue,
         (SELECT COALESCE(SUM(p.amount), 0)::numeric(12,2)
          FROM payments p
          WHERE p.organization_id = $1
            AND p.status = 'completed'
-           AND p.paid_at >= DATE_TRUNC('month', CURRENT_DATE::timestamp)
-           AND p.paid_at < DATE_TRUNC('month', CURRENT_DATE::timestamp) + INTERVAL '1 month') AS monthly_revenue,
+           AND p.paid_at >= DATE_TRUNC('month', $2::date::timestamp)
+           AND p.paid_at < DATE_TRUNC('month', $2::date::timestamp) + INTERVAL '1 month') AS monthly_revenue,
         (SELECT COUNT(*)::int
          FROM medical_records
          WHERE organization_id = $1
-           AND follow_up_date = CURRENT_DATE) AS follow_ups_due_today
+           AND follow_up_date = $2::date) AS follow_ups_due_today
       `,
-      [organizationId]
+      [organizationId, currentDateKey]
     ),
     pool.query(
       `SELECT id, event_type, title, entity_name, event_time
@@ -71,6 +73,83 @@ const getSummary = async (organizationId) => {
        ORDER BY event_time DESC
        LIMIT 10`,
       [organizationId]
+    ),
+    pool.query(
+      `
+      WITH ranked_follow_ups AS (
+        SELECT DISTINCT ON (mr.patient_id)
+          mr.id AS record_id,
+          mr.patient_id,
+          p.patient_code,
+          p.full_name AS patient_name,
+          p.phone,
+          d.full_name AS doctor_name,
+          mr.record_type,
+          mr.follow_up_date,
+          COALESCE(mr.follow_up_reminder_status, 'pending') AS follow_up_reminder_status,
+          p.last_visit_at
+        FROM medical_records mr
+        JOIN patients p
+          ON p.id = mr.patient_id
+         AND p.organization_id = mr.organization_id
+         AND p.is_active = true
+        LEFT JOIN doctors d
+          ON d.id = mr.doctor_id
+         AND d.organization_id = mr.organization_id
+        WHERE mr.organization_id = $1
+          AND mr.follow_up_date IS NOT NULL
+          AND mr.follow_up_date <= $2::date
+          AND COALESCE(mr.follow_up_reminder_status, 'pending') <> 'disabled'
+        ORDER BY mr.patient_id, mr.follow_up_date ASC, mr.created_at DESC
+      )
+      SELECT
+        record_id,
+        patient_id,
+        patient_code,
+        patient_name,
+        phone,
+        doctor_name,
+        record_type,
+        follow_up_date::text AS follow_up_date,
+        follow_up_reminder_status,
+        last_visit_at::text AS last_visit_at,
+        GREATEST(($2::date - follow_up_date), 0)::int AS days_overdue
+      FROM ranked_follow_ups
+      ORDER BY follow_up_date ASC, patient_name ASC
+      LIMIT 6
+      `,
+      [organizationId, currentDateKey]
+    ),
+    pool.query(
+      `
+      SELECT
+        p.id AS patient_id,
+        p.patient_code,
+        p.full_name AS patient_name,
+        p.phone,
+        p.last_visit_at::text AS last_visit_at,
+        last_doctor.doctor_name AS last_doctor_name,
+        GREATEST(($2::date - p.last_visit_at::date), 0)::int AS days_since_last_visit
+      FROM patients p
+      LEFT JOIN LATERAL (
+        SELECT d.full_name AS doctor_name
+        FROM appointments a
+        LEFT JOIN doctors d
+          ON d.id = a.doctor_id
+         AND d.organization_id = a.organization_id
+        WHERE a.organization_id = p.organization_id
+          AND a.patient_id = p.id
+        ORDER BY a.appointment_date DESC, a.appointment_time DESC
+        LIMIT 1
+      ) AS last_doctor ON true
+      WHERE p.organization_id = $1
+        AND p.is_active = true
+        AND p.last_visit_at IS NOT NULL
+        AND p.last_visit_at::date < $2::date - 30
+      ORDER BY p.last_visit_at ASC, p.full_name ASC
+      LIMIT 6
+      `,
+      [organizationId, currentDateKey]
     )
   ]);
 
@@ -90,6 +169,30 @@ const getSummary = async (organizationId) => {
       weeklyRevenue: Number(metrics.rows[0].weekly_revenue || 0),
       monthlyRevenue: Number(metrics.rows[0].monthly_revenue || 0),
       followUpsDueToday: Number(metrics.rows[0].follow_ups_due_today || 0)
+    },
+    crm: {
+      followUpQueue: followUpQueue.rows.map((row) => ({
+        recordId: row.record_id,
+        patientId: row.patient_id,
+        patientCode: row.patient_code || null,
+        patientName: row.patient_name,
+        phone: row.phone || null,
+        doctorName: row.doctor_name || null,
+        recordType: row.record_type || null,
+        followUpDate: row.follow_up_date,
+        followUpReminderStatus: row.follow_up_reminder_status || "pending",
+        lastVisitAt: row.last_visit_at || null,
+        daysOverdue: Number(row.days_overdue || 0)
+      })),
+      recallQueue: recallQueue.rows.map((row) => ({
+        patientId: row.patient_id,
+        patientCode: row.patient_code || null,
+        patientName: row.patient_name,
+        phone: row.phone || null,
+        lastVisitAt: row.last_visit_at || null,
+        lastDoctorName: row.last_doctor_name || null,
+        daysSinceLastVisit: Number(row.days_since_last_visit || 0)
+      }))
     },
     recentActivity: activities.rows
   };

@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CalendarDays, CreditCard, Download, Eye, FileText, Pencil } from "lucide-react";
+import { CalendarDays, CreditCard, Download, Eye, FileText, Pencil, Pill, Stethoscope, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import { isUuid } from "@/lib/uuid";
-import { MedicalRecord, Patient, SmartSummaryItem } from "@/types/api";
+import { LabOrder, MedicalRecord, Patient, PharmacyDispense, SmartSummaryItem } from "@/types/api";
 
 type PatientVisit = {
   id: string;
@@ -35,6 +35,8 @@ type PatientProfileResponse = {
       status: string;
       issue_date: string;
     }>;
+    labOrders: LabOrder[];
+    pharmacyDispenses: PharmacyDispense[];
     smartSummary: SmartSummaryItem[];
     summary: {
       totalVisits: number;
@@ -141,6 +143,8 @@ export default function PatientProfilePage() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [visits, setVisits] = useState<PatientVisit[]>([]);
   const [records, setRecords] = useState<MedicalRecord[]>([]);
+  const [labOrders, setLabOrders] = useState<LabOrder[]>([]);
+  const [pharmacyDispenses, setPharmacyDispenses] = useState<PharmacyDispense[]>([]);
   const [smartSummary, setSmartSummary] = useState<SmartSummaryItem[]>([]);
   const [summary, setSummary] = useState<{
     totalVisits: number;
@@ -158,6 +162,8 @@ export default function PatientProfilePage() {
         setPatient(response.data.patient);
         setVisits(response.data.visits || []);
         setRecords(response.data.medicalRecords || []);
+        setLabOrders(response.data.labOrders || []);
+        setPharmacyDispenses(response.data.pharmacyDispenses || []);
         setSmartSummary(response.data.smartSummary || []);
         setSummary(response.data.summary || null);
       })
@@ -305,6 +311,30 @@ export default function PatientProfilePage() {
         label: "Medical Records",
         description: "View diagnosis, prescription, and follow-up history.",
         icon: FileText,
+        tone: "border-gray-200 bg-white text-gray-900 hover:border-emerald-200 hover:bg-emerald-50",
+        descriptionTone: "text-gray-600"
+      },
+      {
+        href: `/dashboard/crm?patientId=${encodeURIComponent(patient.id)}`,
+        label: "CRM",
+        description: "Track follow-up ownership, recall status, and outreach notes.",
+        icon: Users,
+        tone: "border-gray-200 bg-white text-gray-900 hover:border-emerald-200 hover:bg-emerald-50",
+        descriptionTone: "text-gray-600"
+      },
+      {
+        href: `/dashboard/pharmacy?patientId=${encodeURIComponent(patient.id)}`,
+        label: "Pharmacy",
+        description: "Review dispensed medicines, batch history, and linked pharmacy bills.",
+        icon: Pill,
+        tone: "border-gray-200 bg-white text-gray-900 hover:border-emerald-200 hover:bg-emerald-50",
+        descriptionTone: "text-gray-600"
+      },
+      {
+        href: `/dashboard/lab?patientId=${encodeURIComponent(patient.id)}`,
+        label: "Lab & Diagnostics",
+        description: "View diagnostic orders, report status, and completed lab work.",
+        icon: Stethoscope,
         tone: "border-gray-200 bg-white text-gray-900 hover:border-emerald-200 hover:bg-emerald-50",
         descriptionTone: "text-gray-600"
       },
@@ -472,6 +502,54 @@ export default function PatientProfilePage() {
       <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
         <div className="flex items-end justify-between gap-3">
           <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Dispensing</p>
+            <h2 className="mt-2 text-xl text-gray-900">Pharmacy History</h2>
+          </div>
+          <Link
+            href={`/dashboard/pharmacy?patientId=${encodeURIComponent(patient.id)}`}
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Open Pharmacy
+          </Link>
+        </div>
+
+        {pharmacyDispenses.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-5 py-10 text-center text-sm text-gray-500">
+            No pharmacy dispenses recorded for this patient yet.
+          </div>
+        ) : (
+          <div className="mt-6 space-y-3">
+            {pharmacyDispenses.slice(0, 6).map((dispense) => (
+              <article key={dispense.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{dispense.dispense_number}</p>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Dispensed {formatDate(dispense.dispensed_date)}{dispense.doctor_name ? ` | ${dispense.doctor_name}` : ""}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600 ring-1 ring-gray-200">
+                    {dispense.invoice_number ? `Invoice ${dispense.invoice_number}` : "No invoice"}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {dispense.items.map((item) => (
+                    <span key={item.id} className="rounded-full bg-white px-3 py-1 text-xs text-gray-700 ring-1 ring-gray-200">
+                      {item.medicine_name} | {item.batch_number} | {item.quantity}
+                    </span>
+                  ))}
+                </div>
+                {dispense.prescription_snapshot && <p className="mt-3 text-sm leading-6 text-gray-700">{dispense.prescription_snapshot}</p>}
+                {dispense.notes && <p className="mt-2 text-sm leading-6 text-gray-700">{dispense.notes}</p>}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+        <div className="flex items-end justify-between gap-3">
+          <div>
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">History</p>
             <h2 className="mt-2 text-xl text-gray-900">Visit History</h2>
           </div>
@@ -554,6 +632,57 @@ export default function PatientProfilePage() {
                     Follow-up {formatDate(record.follow_up_date)}
                   </p>
                 )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Diagnostics</p>
+            <h2 className="mt-2 text-xl text-gray-900">Lab Orders</h2>
+          </div>
+          <Link
+            href={`/dashboard/lab?patientId=${encodeURIComponent(patient.id)}`}
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Open Lab
+          </Link>
+        </div>
+
+        {labOrders.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-5 py-10 text-center text-sm text-gray-500">
+            No diagnostic orders recorded for this patient yet.
+          </div>
+        ) : (
+          <div className="mt-6 space-y-3">
+            {labOrders.slice(0, 6).map((order) => (
+              <article key={order.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{order.order_number}</p>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Ordered {formatDate(order.ordered_date)}{order.doctor_name ? ` | ${order.doctor_name}` : ""}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600 ring-1 ring-gray-200">
+                    {order.status.replace(/_/g, " ")}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {order.items.map((item) => (
+                    <span key={item.id} className="rounded-full bg-white px-3 py-1 text-xs text-gray-700 ring-1 ring-gray-200">
+                      {item.test_name}
+                    </span>
+                  ))}
+                </div>
+                {order.notes && <p className="mt-3 text-sm leading-6 text-gray-700">{order.notes}</p>}
+                <div className="mt-3 flex flex-wrap gap-3 text-xs font-medium uppercase tracking-[0.14em] text-gray-500">
+                  <span>Due {formatDate(order.due_date)}</span>
+                  <span>{order.report_file_url ? "Report attached" : "Report pending"}</span>
+                </div>
               </article>
             ))}
           </div>

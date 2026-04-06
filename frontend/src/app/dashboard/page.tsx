@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Users, FileText, UserRound, IndianRupee } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import StatCard from "../components/StatCard";
@@ -8,6 +9,35 @@ import PatientActivityTimeline from "../components/PatientActivityTimeline";
 import { apiRequest, ApiRequestError } from "@/lib/api";
 import { isUuid } from "@/lib/uuid";
 import { ActivityLog, Patient } from "@/types/api";
+
+type DashboardFollowUpQueueItem = {
+  recordId: string;
+  patientId: string;
+  patientCode: string | null;
+  patientName: string;
+  phone: string | null;
+  doctorName: string | null;
+  recordType: string | null;
+  followUpDate: string;
+  followUpReminderStatus: string | null;
+  lastVisitAt: string | null;
+  daysOverdue: number;
+};
+
+type DashboardRecallQueueItem = {
+  patientId: string;
+  patientCode: string | null;
+  patientName: string;
+  phone: string | null;
+  lastVisitAt: string | null;
+  lastDoctorName: string | null;
+  daysSinceLastVisit: number;
+};
+
+type DashboardCrmState = {
+  followUpQueue: DashboardFollowUpQueueItem[];
+  recallQueue: DashboardRecallQueueItem[];
+};
 
 type DashboardResponse = {
   success: boolean;
@@ -27,6 +57,7 @@ type DashboardResponse = {
       weeklyRevenue: number;
       followUpsDueToday: number;
     };
+    crm: DashboardCrmState;
     recentActivity: ActivityLog[];
   };
 };
@@ -73,6 +104,10 @@ const initialPatientForm: EditPatientForm = {
 };
 
 const formatRupee = (value: number) => `Rs. ${Number(value || 0).toLocaleString()}`;
+const emptyCrmState: DashboardCrmState = {
+  followUpQueue: [],
+  recallQueue: []
+};
 
 const calculateAgeFromDateOfBirth = (value: string) => {
   if (!value) return "";
@@ -114,6 +149,7 @@ export default function Dashboard() {
   });
   const [patients, setPatients] = useState<Patient[]>([]);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
+  const [crm, setCrm] = useState<DashboardCrmState>(emptyCrmState);
   const [viewPatient, setViewPatient] = useState<Patient | null>(null);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
   const [patientForm, setPatientForm] = useState<EditPatientForm>(initialPatientForm);
@@ -130,6 +166,7 @@ export default function Dashboard() {
       .then(([dashboardRes, patientsRes]) => {
         setStats(dashboardRes.data.stats);
         setInsights(dashboardRes.data.insights);
+        setCrm(dashboardRes.data.crm || emptyCrmState);
         setActivities(dashboardRes.data.recentActivity || []);
         setPatients(patientsRes.data.items || []);
       })
@@ -146,6 +183,7 @@ export default function Dashboard() {
       .then(([dashboardRes, patientsRes]) => {
         setStats(dashboardRes.data.stats);
         setInsights(dashboardRes.data.insights);
+        setCrm(dashboardRes.data.crm || emptyCrmState);
         setActivities(dashboardRes.data.recentActivity || []);
         setPatients(patientsRes.data.items || []);
       })
@@ -189,6 +227,35 @@ export default function Dashboard() {
       day: "2-digit"
     });
   };
+
+  const formatReminderStatus = (value: string | null) => {
+    const normalized = (value || "pending").toLowerCase();
+    if (normalized === "sent") return "Sent";
+    if (normalized === "failed") return "Failed";
+    if (normalized === "disabled") return "Disabled";
+    if (normalized === "skipped") return "Skipped";
+    return "Pending";
+  };
+
+  const getReminderStatusTone = (value: string | null) => {
+    const normalized = (value || "pending").toLowerCase();
+    if (normalized === "sent") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+    if (normalized === "failed") return "bg-red-50 text-red-700 ring-red-200";
+    if (normalized === "disabled") return "bg-gray-100 text-gray-600 ring-gray-200";
+    if (normalized === "skipped") return "bg-amber-50 text-amber-700 ring-amber-200";
+    return "bg-blue-50 text-blue-700 ring-blue-200";
+  };
+
+  const formatFollowUpState = (item: DashboardFollowUpQueueItem) =>
+    item.daysOverdue > 0
+      ? `Overdue by ${item.daysOverdue} day${item.daysOverdue === 1 ? "" : "s"}`
+      : "Due today";
+
+  const getFollowUpStateTone = (item: DashboardFollowUpQueueItem) =>
+    item.daysOverdue > 0 ? "bg-red-50 text-red-700 ring-red-200" : "bg-amber-50 text-amber-700 ring-amber-200";
+
+  const getRecallStateTone = (daysSinceLastVisit: number) =>
+    daysSinceLastVisit >= 60 ? "bg-red-50 text-red-700 ring-red-200" : "bg-blue-50 text-blue-700 ring-blue-200";
 
   const openViewPatient = async (patient: Patient) => {
     if (!isUuid(patient.id)) {
@@ -331,6 +398,169 @@ export default function Dashboard() {
         </div>
       </section>
 
+      <section className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="theme-heading text-lg">CRM Workspace</h2>
+            <p className="theme-copy mt-1">Track patients who need follow-up today and patients who have not returned in time.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/dashboard/medical-records"
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Open Medical Records
+            </Link>
+            <Link
+              href="/dashboard/appointments"
+              className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-100"
+            >
+              Open Appointments
+            </Link>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="theme-panel rounded-xl p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm theme-muted">Follow-up Queue</p>
+                <p className="mt-1 text-sm theme-copy">Patients with due or overdue follow-up action.</p>
+              </div>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                {crm.followUpQueue.length} Active
+              </span>
+            </div>
+
+            {crm.followUpQueue.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                No follow-ups are due right now.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {crm.followUpQueue.map((item) => (
+                  <article key={item.recordId} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{item.patientName}</p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {[item.patientCode, item.phone].filter(Boolean).join(" | ") || "No contact saved"}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ring-1 ${getFollowUpStateTone(item)}`}>
+                        {formatFollowUpState(item)}
+                      </span>
+                    </div>
+
+                    <p className="mt-3 text-sm text-gray-700">
+                      Due {formatLastVisitDate(item.followUpDate)}
+                      {item.doctorName ? ` with ${item.doctorName}` : ""}
+                      {item.recordType ? ` | ${item.recordType}` : ""}
+                    </p>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ring-1 ${getReminderStatusTone(item.followUpReminderStatus)}`}>
+                        Reminder {formatReminderStatus(item.followUpReminderStatus)}
+                      </span>
+                      {item.lastVisitAt ? (
+                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600 ring-1 ring-gray-200">
+                          Last visit {formatLastVisitDate(item.lastVisitAt)}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Link
+                        href={`/dashboard/patients/${encodeURIComponent(item.patientId)}`}
+                        className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Open Patient
+                      </Link>
+                      <Link
+                        href={`/dashboard/medical-records?patientId=${encodeURIComponent(item.patientId)}`}
+                        className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Open Records
+                      </Link>
+                      <Link
+                        href={`/dashboard/appointments?patientId=${encodeURIComponent(item.patientId)}`}
+                        className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-100"
+                      >
+                        Book Visit
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="theme-panel rounded-xl p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm theme-muted">Recall Queue</p>
+                <p className="mt-1 text-sm theme-copy">Patients who have not returned in more than 30 days.</p>
+              </div>
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">
+                {crm.recallQueue.length} Patients
+              </span>
+            </div>
+
+            {crm.recallQueue.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                No recall candidates right now.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {crm.recallQueue.map((item) => (
+                  <article key={item.patientId} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{item.patientName}</p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {[item.patientCode, item.phone].filter(Boolean).join(" | ") || "No contact saved"}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ring-1 ${getRecallStateTone(item.daysSinceLastVisit)}`}>
+                        {item.daysSinceLastVisit} day{item.daysSinceLastVisit === 1 ? "" : "s"} gap
+                      </span>
+                    </div>
+
+                    <p className="mt-3 text-sm text-gray-700">
+                      Last visit {formatLastVisitDate(item.lastVisitAt)}
+                      {item.lastDoctorName ? ` with ${item.lastDoctorName}` : ""}
+                    </p>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Link
+                        href={`/dashboard/patients/${encodeURIComponent(item.patientId)}`}
+                        className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Open Patient
+                      </Link>
+                      <Link
+                        href={`/dashboard/appointments?patientId=${encodeURIComponent(item.patientId)}`}
+                        className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-100"
+                      >
+                        Book Follow-up
+                      </Link>
+                      {item.phone ? (
+                        <a
+                          href={`tel:${item.phone}`}
+                          className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Call
+                        </a>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <RecentPatientsTable patients={patients} onView={openViewPatient} onEdit={openEditPatient} />
@@ -348,7 +578,7 @@ export default function Dashboard() {
               <h2 className="text-xl theme-heading">Patient Details</h2>
               <p className="text-sm theme-copy mt-1">
                 {viewPatient.full_name}
-                {viewPatient.patient_code ? ` • ${viewPatient.patient_code}` : ""}
+                {viewPatient.patient_code ? ` | ${viewPatient.patient_code}` : ""}
               </p>
             </div>
             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">

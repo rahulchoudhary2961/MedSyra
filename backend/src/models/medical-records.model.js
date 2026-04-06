@@ -1,5 +1,6 @@
 const pool = require("../config/db");
 const parsePagination = require("../utils/pagination");
+const { getCurrentDateKey } = require("../utils/date");
 
 const listMedicalRecords = async (organizationId, query) => {
   const { offset, limit, page } = parsePagination(query);
@@ -267,10 +268,11 @@ const getMedicalRecordReminderContext = async (organizationId, id) => {
 };
 
 const listDueFollowUpReminders = async (organizationId = null) => {
-  const values = [];
+  const currentDateKey = getCurrentDateKey();
+  const values = [currentDateKey];
   const conditions = [
     "mr.follow_up_date IS NOT NULL",
-    "mr.follow_up_date = CURRENT_DATE",
+    "mr.follow_up_date = $1::date",
     "COALESCE(mr.follow_up_reminder_status, 'pending') <> 'sent'",
     "COALESCE(mr.follow_up_reminder_status, 'pending') <> 'disabled'"
   ];

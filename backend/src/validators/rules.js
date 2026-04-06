@@ -154,12 +154,16 @@ const phoneRule = (options = {}) => {
   return stringRule({ minLength: 7, maxLength: 20, pattern: /^[+()\-\s\d]+$/ });
 };
 
-const dateRule = () => (value, fieldName) => {
-  const normalized = stringRule({ minLength: 10, maxLength: 10, safe: false })(value, fieldName);
-  if (!DATE_REGEX.test(normalized) || Number.isNaN(Date.parse(normalized))) {
+const dateRule = (options = {}) => (value, fieldName) => {
+  const maxLength = options.allowDateTime ? 40 : 10;
+  const normalized = stringRule({ minLength: 10, maxLength, safe: false })(value, fieldName);
+  const candidate = options.allowDateTime ? normalized.slice(0, 10) : normalized;
+
+  if (!DATE_REGEX.test(candidate) || Number.isNaN(Date.parse(candidate))) {
     throw new ApiError(400, `${fieldName} must be a valid date in YYYY-MM-DD format`);
   }
-  return normalized;
+
+  return candidate;
 };
 
 const timeRule = () => (value, fieldName) => {

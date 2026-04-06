@@ -222,6 +222,96 @@ const getPatientProfile = async (organizationId, id) => {
     `,
     [organizationId, id]
   );
+  const labOrdersPromise = pool.query(
+    `
+    SELECT
+      lo.id,
+      lo.order_number,
+      lo.status,
+      lo.ordered_date::text AS ordered_date,
+      lo.due_date::text AS due_date,
+      lo.report_file_url,
+      d.full_name AS doctor_name,
+      COALESCE(
+        JSON_AGG(
+          JSON_BUILD_OBJECT(
+            'id', loi.id,
+            'lab_test_id', loi.lab_test_id,
+            'test_name', loi.test_name,
+            'price', loi.price,
+            'result_summary', loi.result_summary
+          )
+          ORDER BY loi.created_at ASC
+        ) FILTER (WHERE loi.id IS NOT NULL),
+        '[]'::json
+      ) AS items
+    FROM lab_orders lo
+    LEFT JOIN doctors d
+      ON d.id = lo.doctor_id
+     AND d.organization_id = lo.organization_id
+    LEFT JOIN lab_order_items loi
+      ON loi.lab_order_id = lo.id
+    WHERE lo.organization_id = $1
+      AND lo.patient_id = $2
+    GROUP BY lo.id, d.full_name
+    ORDER BY lo.ordered_date DESC, lo.created_at DESC
+    `,
+    [organizationId, id]
+  );
+  const pharmacyDispensesPromise = pool.query(
+    `
+    SELECT
+      pd.id,
+      pd.dispense_number,
+      pd.status,
+      pd.dispensed_date::text AS dispensed_date,
+      pd.prescription_snapshot,
+      pd.notes,
+      d.full_name AS doctor_name,
+      i.invoice_id,
+      i.invoice_number,
+      i.invoice_status,
+      COALESCE(
+        JSON_AGG(
+          JSON_BUILD_OBJECT(
+            'id', pdi.id,
+            'medicine_id', pdi.medicine_id,
+            'medicine_batch_id', pdi.medicine_batch_id,
+            'medicine_name', pdi.medicine_name,
+            'batch_number', pdi.batch_number,
+            'expiry_date', pdi.expiry_date,
+            'quantity', pdi.quantity,
+            'unit_price', pdi.unit_price,
+            'total_amount', pdi.total_amount,
+            'directions', pdi.directions
+          )
+          ORDER BY pdi.created_at ASC
+        ) FILTER (WHERE pdi.id IS NOT NULL),
+        '[]'::json
+      ) AS items
+    FROM pharmacy_dispenses pd
+    LEFT JOIN doctors d
+      ON d.id = pd.doctor_id
+     AND d.organization_id = pd.organization_id
+    LEFT JOIN LATERAL (
+      SELECT
+        inv.id AS invoice_id,
+        inv.invoice_number,
+        inv.status AS invoice_status
+      FROM invoices inv
+      WHERE inv.id = pd.invoice_id
+        AND inv.organization_id = pd.organization_id
+      LIMIT 1
+    ) i ON true
+    LEFT JOIN pharmacy_dispense_items pdi
+      ON pdi.dispense_id = pd.id
+    WHERE pd.organization_id = $1
+      AND pd.patient_id = $2
+    GROUP BY pd.id, d.full_name, i.invoice_id, i.invoice_number, i.invoice_status
+    ORDER BY pd.dispensed_date DESC, pd.created_at DESC
+    `,
+    [organizationId, id]
+  );
   const summaryPromise = pool.query(
     `
     SELECT
@@ -243,11 +333,13 @@ const getPatientProfile = async (organizationId, id) => {
     [organizationId, id]
   );
 
-  const [patient, appointmentsRes, medicalRecordsRes, invoicesRes, summaryRes] = await Promise.all([
+  const [patient, appointmentsRes, medicalRecordsRes, invoicesRes, labOrdersRes, pharmacyDispensesRes, summaryRes] = await Promise.all([
     patientPromise,
     appointmentsPromise,
     medicalRecordsPromise,
     invoicesPromise,
+    labOrdersPromise,
+    pharmacyDispensesPromise,
     summaryPromise
   ]);
 
@@ -256,6 +348,26 @@ const getPatientProfile = async (organizationId, id) => {
     visits: appointmentsRes.rows,
     medicalRecords: medicalRecordsRes.rows,
     invoices: invoicesRes.rows,
+    labOrders: labOrdersRes.rows.map((row) => ({
+      ...row,
+      items: Array.isArray(row.items)
+        ? row.items.map((item) => ({
+            ...item,
+            price: Number(item.price || 0)
+          }))
+        : []
+    })),
+    pharmacyDispenses: pharmacyDispensesRes.rows.map((row) => ({
+      ...row,
+      items: Array.isArray(row.items)
+        ? row.items.map((item) => ({
+            ...item,
+            quantity: Number(item.quantity || 0),
+            unit_price: Number(item.unit_price || 0),
+            total_amount: Number(item.total_amount || 0)
+          }))
+        : []
+    })),
     summary: summaryRes.rows[0] || {
       total_visits: 0,
       total_spent: 0,
