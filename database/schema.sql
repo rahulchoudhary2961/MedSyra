@@ -130,6 +130,246 @@ CREATE TABLE IF NOT EXISTS medical_records (
 CREATE INDEX IF NOT EXISTS idx_medical_records_org_date ON medical_records (organization_id, record_date);
 CREATE INDEX IF NOT EXISTS idx_medical_records_org_follow_up_date ON medical_records (organization_id, follow_up_date) WHERE follow_up_date IS NOT NULL;
 
+CREATE TABLE IF NOT EXISTS crm_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  source_record_id UUID REFERENCES medical_records(id) ON DELETE SET NULL,
+  source_appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+  task_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'medium',
+  status TEXT NOT NULL DEFAULT 'open',
+  due_date DATE NOT NULL,
+  assigned_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  last_contacted_at TIMESTAMPTZ,
+  next_action_at TIMESTAMPTZ,
+  outcome_notes TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT crm_tasks_type_check CHECK (task_type IN ('follow_up', 'recall', 'retention')),
+  CONSTRAINT crm_tasks_priority_check CHECK (priority IN ('high', 'medium', 'low')),
+  CONSTRAINT crm_tasks_status_check CHECK (status IN ('open', 'contacted', 'scheduled', 'not_reachable', 'closed', 'dismissed'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_tasks_org_status_due
+  ON crm_tasks (organization_id, status, due_date);
+CREATE INDEX IF NOT EXISTS idx_crm_tasks_org_patient_created
+  ON crm_tasks (organization_id, patient_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crm_tasks_org_type_due
+  ON crm_tasks (organization_id, task_type, due_date);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_crm_tasks_follow_up_source
+  ON crm_tasks (organization_id, task_type, source_record_id)
+  WHERE source_record_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS lab_tests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  code TEXT,
+  name TEXT NOT NULL,
+  department TEXT NOT NULL,
+  price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  turnaround_hours INT NOT NULL DEFAULT 24,
+  instructions TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lab_tests_org_active
+  ON lab_tests (organization_id, is_active, name);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_lab_tests_org_code
+  ON lab_tests (organization_id, code)
+  WHERE code IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS lab_orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  order_number TEXT NOT NULL,
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
+  appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+  ordered_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'ordered',
+  ordered_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  due_date DATE,
+  notes TEXT,
+  report_file_url TEXT,
+  sample_collected_at TIMESTAMPTZ,
+  processing_started_at TIMESTAMPTZ,
+  report_ready_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT lab_orders_status_check CHECK (
+    status IN ('ordered', 'sample_collected', 'processing', 'report_ready', 'completed', 'cancelled')
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_lab_orders_org_number
+  ON lab_orders (organization_id, order_number);
+CREATE INDEX IF NOT EXISTS idx_lab_orders_org_status_date
+  ON lab_orders (organization_id, status, ordered_date DESC);
+CREATE INDEX IF NOT EXISTS idx_lab_orders_org_patient
+  ON lab_orders (organization_id, patient_id, ordered_date DESC);
+
+CREATE TABLE IF NOT EXISTS lab_order_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lab_order_id UUID NOT NULL REFERENCES lab_orders(id) ON DELETE CASCADE,
+  lab_test_id UUID REFERENCES lab_tests(id) ON DELETE SET NULL,
+  test_name TEXT NOT NULL,
+  price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  result_summary TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lab_order_items_order
+  ON lab_order_items (lab_order_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS medicines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  code TEXT,
+  name TEXT NOT NULL,
+  generic_name TEXT,
+  dosage_form TEXT,
+  strength TEXT,
+  unit TEXT NOT NULL DEFAULT 'unit',
+  reorder_level NUMERIC(10,2) NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_medicines_org_active_name
+  ON medicines (organization_id, is_active, name);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_medicines_org_code
+  ON medicines (organization_id, code)
+  WHERE code IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS medicine_batches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  medicine_id UUID NOT NULL REFERENCES medicines(id) ON DELETE CASCADE,
+  batch_number TEXT NOT NULL,
+  manufacturer TEXT,
+  expiry_date DATE NOT NULL,
+  received_quantity NUMERIC(12,2) NOT NULL,
+  available_quantity NUMERIC(12,2) NOT NULL,
+  purchase_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  sale_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  received_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT medicine_batches_received_quantity_check CHECK (received_quantity > 0),
+  CONSTRAINT medicine_batches_available_quantity_check CHECK (available_quantity >= 0),
+  CONSTRAINT medicine_batches_price_check CHECK (purchase_price >= 0 AND sale_price >= 0)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_medicine_batches_org_batch
+  ON medicine_batches (organization_id, medicine_id, batch_number);
+CREATE INDEX IF NOT EXISTS idx_medicine_batches_org_expiry
+  ON medicine_batches (organization_id, expiry_date, available_quantity DESC);
+CREATE INDEX IF NOT EXISTS idx_medicine_batches_org_medicine
+  ON medicine_batches (organization_id, medicine_id, expiry_date ASC);
+
+CREATE TABLE IF NOT EXISTS pharmacy_dispenses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  dispense_number TEXT NOT NULL,
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
+  appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+  medical_record_id UUID REFERENCES medical_records(id) ON DELETE SET NULL,
+  invoice_id UUID,
+  dispensed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'dispensed',
+  dispensed_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  prescription_snapshot TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT pharmacy_dispenses_status_check CHECK (status IN ('dispensed', 'cancelled'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pharmacy_dispenses_org_number
+  ON pharmacy_dispenses (organization_id, dispense_number);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pharmacy_dispenses_org_invoice
+  ON pharmacy_dispenses (organization_id, invoice_id)
+  WHERE invoice_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pharmacy_dispenses_org_patient_date
+  ON pharmacy_dispenses (organization_id, patient_id, dispensed_date DESC);
+CREATE INDEX IF NOT EXISTS idx_pharmacy_dispenses_org_status_date
+  ON pharmacy_dispenses (organization_id, status, dispensed_date DESC);
+
+CREATE TABLE IF NOT EXISTS pharmacy_dispense_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  dispense_id UUID NOT NULL REFERENCES pharmacy_dispenses(id) ON DELETE CASCADE,
+  medicine_id UUID NOT NULL REFERENCES medicines(id) ON DELETE RESTRICT,
+  medicine_batch_id UUID NOT NULL REFERENCES medicine_batches(id) ON DELETE RESTRICT,
+  medicine_name TEXT NOT NULL,
+  batch_number TEXT NOT NULL,
+  expiry_date DATE,
+  quantity NUMERIC(10,2) NOT NULL,
+  unit_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  directions TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT pharmacy_dispense_items_quantity_check CHECK (quantity > 0),
+  CONSTRAINT pharmacy_dispense_items_price_check CHECK (unit_price >= 0 AND total_amount >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pharmacy_dispense_items_dispense
+  ON pharmacy_dispense_items (dispense_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  code TEXT,
+  name TEXT NOT NULL,
+  category TEXT,
+  unit TEXT NOT NULL DEFAULT 'unit',
+  reorder_level NUMERIC(10,2) NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_items_org_active_name
+  ON inventory_items (organization_id, is_active, name);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_inventory_items_org_code
+  ON inventory_items (organization_id, code)
+  WHERE code IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS inventory_movements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  item_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+  movement_type TEXT NOT NULL,
+  quantity NUMERIC(12,2) NOT NULL,
+  unit_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+  total_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+  notes TEXT,
+  movement_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  performed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT inventory_movements_type_check CHECK (
+    movement_type IN ('stock_in', 'usage', 'wastage', 'adjustment_in', 'adjustment_out')
+  ),
+  CONSTRAINT inventory_movements_quantity_check CHECK (quantity > 0),
+  CONSTRAINT inventory_movements_cost_check CHECK (unit_cost >= 0 AND total_cost >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_movements_org_item_date
+  ON inventory_movements (organization_id, item_id, movement_date DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inventory_movements_org_type_date
+  ON inventory_movements (organization_id, movement_type, movement_date DESC, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS activity_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id),
@@ -283,6 +523,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_org_number ON invoices (organizati
 CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_org_appointment ON invoices (organization_id, appointment_id) WHERE appointment_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_invoices_org_status_date ON invoices (organization_id, status, issue_date DESC);
 
+ALTER TABLE pharmacy_dispenses
+  DROP CONSTRAINT IF EXISTS pharmacy_dispenses_invoice_id_fkey;
+
+ALTER TABLE pharmacy_dispenses
+  ADD CONSTRAINT pharmacy_dispenses_invoice_id_fkey
+  FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL;
+
 CREATE TABLE IF NOT EXISTS invoice_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
@@ -313,6 +560,36 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payments_org_invoice ON payments (organization_id, invoice_id, paid_at DESC);
+
+CREATE TABLE IF NOT EXISTS invoice_payment_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  provider_link_id TEXT NOT NULL,
+  short_url TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'created',
+  amount NUMERIC(12,2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  expires_at TIMESTAMPTZ,
+  paid_at TIMESTAMPTZ,
+  last_synced_at TIMESTAMPTZ,
+  provider_payment_id TEXT,
+  provider_payload JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT invoice_payment_links_provider_check CHECK (provider IN ('razorpay')),
+  CONSTRAINT invoice_payment_links_status_check CHECK (
+    status IN ('created', 'partially_paid', 'paid', 'cancelled', 'expired', 'failed')
+  ),
+  CONSTRAINT uq_invoice_payment_links_provider UNIQUE (provider, provider_link_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoice_payment_links_org_invoice_time
+  ON invoice_payment_links (organization_id, invoice_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_invoice_payment_links_provider_status
+  ON invoice_payment_links (provider, status, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS billing_audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

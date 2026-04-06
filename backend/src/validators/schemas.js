@@ -36,6 +36,12 @@ const reportPeriods = ["7d", "30d", "90d", "12m"];
 const notificationTypes = ["appointment_reminder", "follow_up_reminder", "staff_daily_schedule", "appointment_no_show"];
 const notificationChannels = ["whatsapp", "sms", "email"];
 const notificationLogStatuses = ["sent", "failed", "fallback", "opened", "skipped"];
+const crmTaskTypes = ["follow_up", "recall", "retention"];
+const crmTaskPriorities = ["high", "medium", "low"];
+const crmTaskStatuses = ["open", "contacted", "scheduled", "not_reachable", "closed", "dismissed"];
+const labOrderStatuses = ["ordered", "sample_collected", "processing", "report_ready", "completed", "cancelled"];
+const pharmacyDispenseStatuses = ["dispensed", "cancelled"];
+const inventoryMovementTypes = ["stock_in", "usage", "wastage", "adjustment_in", "adjustment_out"];
 const invoiceItemsRule = (value, fieldName) => {
   if (!Array.isArray(value) || value.length === 0) {
     throw new ApiError(400, `${fieldName} must be a non-empty array`);
@@ -56,6 +62,74 @@ const invoiceItemsRule = (value, fieldName) => {
       description: stringRule({ minLength: 2, maxLength: 200 })(item.description, `${fieldName}[${index}].description`),
       quantity: numberRule({ min: 0.01, max: 100000 })(item.quantity, `${fieldName}[${index}].quantity`),
       unitPrice: numberRule({ min: 0.01, max: 10000000 })(item.unitPrice, `${fieldName}[${index}].unitPrice`)
+    };
+  });
+};
+
+const labOrderItemsRule = (value, fieldName) => {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new ApiError(400, `${fieldName} must be a non-empty array`);
+  }
+
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new ApiError(400, `${fieldName}[${index}] must be an object`);
+    }
+
+    const allowedKeys = new Set(["labTestId", "testName", "price", "resultSummary"]);
+    const unknownKeys = Object.keys(item).filter((key) => !allowedKeys.has(key));
+    if (unknownKeys.length > 0) {
+      throw new ApiError(400, `Unknown ${fieldName}[${index}] fields: ${unknownKeys.join(", ")}`);
+    }
+
+    const normalized = {
+      labTestId: item.labTestId ? uuidRule()(item.labTestId, `${fieldName}[${index}].labTestId`) : undefined,
+      testName: item.testName
+        ? stringRule({ minLength: 2, maxLength: 120 })(item.testName, `${fieldName}[${index}].testName`)
+        : undefined,
+      price: item.price !== undefined
+        ? numberRule({ min: 0, max: 10000000 })(item.price, `${fieldName}[${index}].price`)
+        : undefined,
+      resultSummary: item.resultSummary
+        ? stringRule({ maxLength: 2000 })(item.resultSummary, `${fieldName}[${index}].resultSummary`)
+        : undefined
+    };
+
+    if (!normalized.labTestId && !normalized.testName) {
+      throw new ApiError(400, `${fieldName}[${index}] requires labTestId or testName`);
+    }
+
+    return normalized;
+  });
+};
+
+const pharmacyDispenseItemsRule = (value, fieldName) => {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new ApiError(400, `${fieldName} must be a non-empty array`);
+  }
+
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new ApiError(400, `${fieldName}[${index}] must be an object`);
+    }
+
+    const allowedKeys = new Set(["medicineBatchId", "quantity", "unitPrice", "directions"]);
+    const unknownKeys = Object.keys(item).filter((key) => !allowedKeys.has(key));
+    if (unknownKeys.length > 0) {
+      throw new ApiError(400, `Unknown ${fieldName}[${index}] fields: ${unknownKeys.join(", ")}`);
+    }
+
+    return {
+      medicineBatchId: uuidRule()(item.medicineBatchId, `${fieldName}[${index}].medicineBatchId`),
+      quantity: numberRule({ min: 0.01, max: 100000 })(item.quantity, `${fieldName}[${index}].quantity`),
+      unitPrice:
+        item.unitPrice !== undefined
+          ? numberRule({ min: 0, max: 10000000 })(item.unitPrice, `${fieldName}[${index}].unitPrice`)
+          : undefined,
+      directions:
+        item.directions !== undefined
+          ? stringRule({ maxLength: 500 })(item.directions, `${fieldName}[${index}].directions`)
+          : undefined
     };
   });
 };
@@ -362,7 +436,7 @@ const billingsSchemas = {
       items: optional(invoiceItemsRule),
       currency: optional(stringRule({ minLength: 3, maxLength: 3, pattern: /^[A-Z]{3}$/, safe: false })),
       issueDate: optional(dateRule()),
-      dueDate: optional(dateRule()),
+      dueDate: optional(dateRule({ allowDateTime: true })),
       status: optional(stringRule({ enumValues: invoiceStatuses, maxLength: 20 })),
       notes: optional(stringRule({ maxLength: 1000 }))
     }
@@ -372,7 +446,7 @@ const billingsSchemas = {
       description: optional(stringRule({ minLength: 2, maxLength: 200 })),
       amount: optional(numberRule({ min: 0.01, max: 10000000 })),
       items: optional(invoiceItemsRule),
-      dueDate: optional(dateRule()),
+      dueDate: optional(dateRule({ allowDateTime: true })),
       status: optional(stringRule({ enumValues: invoiceStatuses, maxLength: 20 })),
       notes: optional(stringRule({ maxLength: 1000 }))
     },
@@ -380,7 +454,7 @@ const billingsSchemas = {
   },
   issueBody: {
     fields: {
-      dueDate: optional(dateRule())
+      dueDate: optional(dateRule({ allowDateTime: true }))
     }
   },
   paymentBody: {
@@ -405,6 +479,17 @@ const billingsSchemas = {
       reference: optional(stringRule({ maxLength: 120 }))
     }
   },
+  paymentLinkBody: {
+    fields: {
+      expiresAt: optional(dateRule())
+    }
+  },
+  paymentLinkParams: {
+    fields: {
+      id: uuidRule(),
+      linkId: uuidRule()
+    }
+  },
   idParams: idParamsSchema
 };
 
@@ -414,6 +499,271 @@ const dashboardSchemas = {
       period: optional(stringRule({ enumValues: reportPeriods, maxLength: 10 }))
     }
   }
+};
+
+const crmSchemas = {
+  listQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      taskType: optional(stringRule({ enumValues: crmTaskTypes, maxLength: 20 })),
+      status: optional(stringRule({ enumValues: crmTaskStatuses, maxLength: 30 })),
+      patientId: optional(uuidRule()),
+      assignedUserId: optional(uuidRule())
+    }
+  },
+  createBody: {
+    fields: {
+      patientId: uuidRule(),
+      sourceRecordId: optional(uuidRule()),
+      sourceAppointmentId: optional(uuidRule()),
+      taskType: stringRule({ enumValues: crmTaskTypes, maxLength: 20 }),
+      title: optional(stringRule({ minLength: 2, maxLength: 200 })),
+      priority: optional(stringRule({ enumValues: crmTaskPriorities, maxLength: 20 })),
+      status: optional(stringRule({ enumValues: crmTaskStatuses, maxLength: 30 })),
+      dueDate: dateRule(),
+      assignedUserId: optional(uuidRule()),
+      nextActionAt: optional(stringRule({ minLength: 10, maxLength: 40, safe: false })),
+      outcomeNotes: optional(stringRule({ maxLength: 2000 }))
+    }
+  },
+  updateBody: {
+    fields: {
+      title: optional(stringRule({ minLength: 2, maxLength: 200 })),
+      priority: optional(stringRule({ enumValues: crmTaskPriorities, maxLength: 20 })),
+      status: optional(stringRule({ enumValues: crmTaskStatuses, maxLength: 30 })),
+      dueDate: optional(dateRule()),
+      assignedUserId: optional(uuidRule()),
+      lastContactedAt: optional(stringRule({ minLength: 10, maxLength: 40, safe: false })),
+      nextActionAt: optional(stringRule({ minLength: 10, maxLength: 40, safe: false })),
+      outcomeNotes: optional(stringRule({ maxLength: 2000 }))
+    },
+    requireAtLeastOne: true
+  },
+  idParams: idParamsSchema
+};
+
+const labSchemas = {
+  testsListQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      active: optional(stringRule({ enumValues: ["true", "false"], maxLength: 5, safe: false }))
+    }
+  },
+  testCreateBody: {
+    fields: {
+      code: optional(stringRule({ minLength: 2, maxLength: 30, safe: false })),
+      name: stringRule({ minLength: 2, maxLength: 120 }),
+      department: optional(stringRule({ minLength: 2, maxLength: 80 })),
+      price: numberRule({ min: 0, max: 10000000 }),
+      turnaroundHours: optional(integerRule({ min: 0, max: 720 })),
+      instructions: optional(stringRule({ maxLength: 2000 })),
+      isActive: optional(booleanRule())
+    }
+  },
+  testUpdateBody: {
+    fields: {
+      code: optional(stringRule({ minLength: 2, maxLength: 30, safe: false })),
+      name: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      department: optional(stringRule({ minLength: 2, maxLength: 80 })),
+      price: optional(numberRule({ min: 0, max: 10000000 })),
+      turnaroundHours: optional(integerRule({ min: 0, max: 720 })),
+      instructions: optional(stringRule({ maxLength: 2000 })),
+      isActive: optional(booleanRule())
+    },
+    requireAtLeastOne: true
+  },
+  ordersListQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      status: optional(stringRule({ enumValues: labOrderStatuses, maxLength: 30 })),
+      patientId: optional(uuidRule()),
+      doctorId: optional(uuidRule())
+    }
+  },
+  orderCreateBody: {
+    fields: {
+      patientId: uuidRule(),
+      doctorId: optional(uuidRule()),
+      appointmentId: optional(uuidRule()),
+      orderedDate: dateRule(),
+      dueDate: optional(dateRule()),
+      notes: optional(stringRule({ maxLength: 2000 })),
+      items: labOrderItemsRule,
+      status: optional(stringRule({ enumValues: labOrderStatuses, maxLength: 30 }))
+    }
+  },
+  orderUpdateBody: {
+    fields: {
+      doctorId: optional(uuidRule()),
+      appointmentId: optional(uuidRule()),
+      orderedDate: optional(dateRule()),
+      dueDate: optional(dateRule()),
+      notes: optional(stringRule({ maxLength: 2000 })),
+      items: optional(labOrderItemsRule),
+      status: optional(stringRule({ enumValues: labOrderStatuses, maxLength: 30 }))
+    },
+    requireAtLeastOne: true
+  },
+  uploadBody: {
+    fields: {
+      fileName: stringRule({ minLength: 1, maxLength: 120, safe: false }),
+      contentType: stringRule({ enumValues: medicalRecordUploadContentTypes, maxLength: 40, safe: false }),
+      dataBase64: stringRule({ minLength: 20, maxLength: 8_000_000, safe: false })
+    }
+  },
+  idParams: idParamsSchema
+};
+
+const pharmacySchemas = {
+  medicinesListQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      active: optional(stringRule({ enumValues: ["true", "false"], maxLength: 5, safe: false }))
+    }
+  },
+  medicineCreateBody: {
+    fields: {
+      code: optional(stringRule({ minLength: 2, maxLength: 40, safe: false })),
+      name: stringRule({ minLength: 2, maxLength: 120 }),
+      genericName: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      dosageForm: optional(stringRule({ minLength: 2, maxLength: 80 })),
+      strength: optional(stringRule({ minLength: 1, maxLength: 80, safe: false })),
+      unit: optional(stringRule({ minLength: 1, maxLength: 30, safe: false })),
+      reorderLevel: optional(numberRule({ min: 0, max: 100000 })),
+      isActive: optional(booleanRule())
+    }
+  },
+  medicineUpdateBody: {
+    fields: {
+      code: optional(stringRule({ minLength: 2, maxLength: 40, safe: false })),
+      name: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      genericName: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      dosageForm: optional(stringRule({ minLength: 2, maxLength: 80 })),
+      strength: optional(stringRule({ minLength: 1, maxLength: 80, safe: false })),
+      unit: optional(stringRule({ minLength: 1, maxLength: 30, safe: false })),
+      reorderLevel: optional(numberRule({ min: 0, max: 100000 })),
+      isActive: optional(booleanRule())
+    },
+    requireAtLeastOne: true
+  },
+  batchesListQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      medicineId: optional(uuidRule())
+    }
+  },
+  batchCreateBody: {
+    fields: {
+      medicineId: uuidRule(),
+      batchNumber: stringRule({ minLength: 2, maxLength: 60, safe: false }),
+      manufacturer: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      expiryDate: dateRule(),
+      receivedQuantity: numberRule({ min: 0.01, max: 1000000 }),
+      availableQuantity: optional(numberRule({ min: 0, max: 1000000 })),
+      purchasePrice: optional(numberRule({ min: 0, max: 10000000 })),
+      salePrice: optional(numberRule({ min: 0, max: 10000000 })),
+      receivedDate: optional(dateRule())
+    }
+  },
+  batchUpdateBody: {
+    fields: {
+      batchNumber: optional(stringRule({ minLength: 2, maxLength: 60, safe: false })),
+      manufacturer: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      expiryDate: optional(dateRule()),
+      receivedQuantity: optional(numberRule({ min: 0.01, max: 1000000 })),
+      availableQuantity: optional(numberRule({ min: 0, max: 1000000 })),
+      purchasePrice: optional(numberRule({ min: 0, max: 10000000 })),
+      salePrice: optional(numberRule({ min: 0, max: 10000000 })),
+      receivedDate: optional(dateRule())
+    },
+    requireAtLeastOne: true
+  },
+  dispensesListQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      status: optional(stringRule({ enumValues: pharmacyDispenseStatuses, maxLength: 30 })),
+      patientId: optional(uuidRule()),
+      doctorId: optional(uuidRule())
+    }
+  },
+  dispenseCreateBody: {
+    fields: {
+      patientId: uuidRule(),
+      doctorId: optional(uuidRule()),
+      appointmentId: optional(uuidRule()),
+      medicalRecordId: optional(uuidRule()),
+      dispensedDate: dateRule(),
+      prescriptionSnapshot: optional(stringRule({ maxLength: 4000 })),
+      notes: optional(stringRule({ maxLength: 2000 })),
+      createInvoice: optional(booleanRule()),
+      items: pharmacyDispenseItemsRule
+    }
+  },
+  idParams: idParamsSchema
+};
+
+const inventorySchemas = {
+  itemsListQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      active: optional(stringRule({ enumValues: ["true", "false"], maxLength: 5, safe: false }))
+    }
+  },
+  itemCreateBody: {
+    fields: {
+      code: optional(stringRule({ minLength: 2, maxLength: 40, safe: false })),
+      name: stringRule({ minLength: 2, maxLength: 120 }),
+      category: optional(stringRule({ minLength: 2, maxLength: 80 })),
+      unit: optional(stringRule({ minLength: 1, maxLength: 30, safe: false })),
+      reorderLevel: optional(numberRule({ min: 0, max: 1000000 })),
+      isActive: optional(booleanRule())
+    }
+  },
+  itemUpdateBody: {
+    fields: {
+      code: optional(stringRule({ minLength: 2, maxLength: 40, safe: false })),
+      name: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      category: optional(stringRule({ minLength: 2, maxLength: 80 })),
+      unit: optional(stringRule({ minLength: 1, maxLength: 30, safe: false })),
+      reorderLevel: optional(numberRule({ min: 0, max: 1000000 })),
+      isActive: optional(booleanRule())
+    },
+    requireAtLeastOne: true
+  },
+  movementsListQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      itemId: optional(uuidRule()),
+      movementType: optional(stringRule({ enumValues: inventoryMovementTypes, maxLength: 30 }))
+    }
+  },
+  movementCreateBody: {
+    fields: {
+      itemId: uuidRule(),
+      movementType: stringRule({ enumValues: inventoryMovementTypes, maxLength: 30 }),
+      quantity: numberRule({ min: 0.01, max: 1000000 }),
+      unitCost: optional(numberRule({ min: 0, max: 10000000 })),
+      notes: optional(stringRule({ maxLength: 1000 })),
+      movementDate: dateRule()
+    }
+  },
+  idParams: idParamsSchema
 };
 
 const notificationsSchemas = {
@@ -508,6 +858,10 @@ module.exports = {
   medicalRecordsSchemas,
   billingsSchemas,
   dashboardSchemas,
+  crmSchemas,
+  labSchemas,
+  pharmacySchemas,
+  inventorySchemas,
   notificationsSchemas,
   commercialSchemas,
   aiSchemas,

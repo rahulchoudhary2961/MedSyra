@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle, Clock, Download, IndianRupee, Plus, TrendingUp } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle, Clock, Download, ExternalLink, IndianRupee, Link2, Plus, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import { canAccessBilling } from "@/lib/roles";
-import { Doctor, Invoice, Patient } from "@/types/api";
+import { Doctor, Invoice, InvoicePaymentLink, Patient, ReconciliationReport } from "@/types/api";
 
 type BillingsResponse = {
   success: boolean;
@@ -29,10 +29,19 @@ type DoctorsResponse = { success: boolean; data: { items: Doctor[] } };
 type PatientsResponse = { success: boolean; data: { items: Patient[] } };
 type MeResponse = { success: boolean; data: { role: string } };
 type CreateInvoiceResponse = { success: boolean; data: Invoice };
+type ReconciliationResponse = { success: boolean; data: ReconciliationReport };
+type PaymentLinkResponse = {
+  success: boolean;
+  data: {
+    invoice: Invoice;
+    paymentLink: InvoicePaymentLink;
+  };
+};
 
 const formatRupee = (value: number) => `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const formatInvoiceMoney = (amount: number, currency?: string | null) =>
   currency && currency !== "INR" ? `${currency} ${Number(amount || 0).toFixed(2)}` : `Rs. ${Number(amount || 0).toFixed(2)}`;
+const normalizeDateInput = (value?: string | null) => (value ? String(value).slice(0, 10) : null);
 
 type InvoiceFormItem = {
   id: string;
@@ -72,6 +81,27 @@ const statusClass = (status: string) => {
   return "bg-gray-100 text-gray-700";
 };
 
+const paymentLinkStatusClass = (status: string) => {
+  const normalized = status.toLowerCase();
+  if (normalized === "paid") return "bg-green-50 text-green-700";
+  if (normalized === "partially_paid") return "bg-amber-50 text-amber-700";
+  if (normalized === "expired" || normalized === "failed" || normalized === "cancelled") {
+    return "bg-red-50 text-red-700";
+  }
+  return "bg-sky-50 text-sky-700";
+};
+
+const initialReconciliation: ReconciliationReport = {
+  summary: {
+    totalInvoices: 0,
+    mismatchedInvoices: 0,
+    outstandingInvoices: 0,
+    refundedPayments: 0,
+    refundedAmount: 0
+  },
+  items: []
+};
+
 export default function BillingsPage() {
   const searchParams = useSearchParams();
   const patientFilterId = searchParams.get("patientId") || "";
@@ -87,6 +117,7 @@ export default function BillingsPage() {
     upiTotal: 0,
     cardTotal: 0
   });
+  const [reconciliation, setReconciliation] = useState<ReconciliationReport>(initialReconciliation);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -101,6 +132,9 @@ export default function BillingsPage() {
   const [appliedSearch, setAppliedSearch] = useState("");
   const [appliedStatusFilter, setAppliedStatusFilter] = useState("");
   const [currentRole, setCurrentRole] = useState("");
+  const [creatingPaymentLinkId, setCreatingPaymentLinkId] = useState<string | null>(null);
+  const [refreshingPaymentLinkId, setRefreshingPaymentLinkId] = useState<string | null>(null);
+  const loadRequestRef = useRef(0);
 
   const invoiceDraftTotal = useMemo(
     () =>
@@ -113,6 +147,7 @@ export default function BillingsPage() {
   );
 
   const loadInvoices = useCallback(() => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setError("");
 
@@ -122,8 +157,14 @@ export default function BillingsPage() {
     if (appliedStatusFilter) params.set("status", appliedStatusFilter);
     if (patientFilterId) params.set("patientId", patientFilterId);
 
-    apiRequest<BillingsResponse>(`/billings?${params.toString()}`, { authenticated: true })
-      .then((billingRes) => {
+    Promise.all([
+      apiRequest<BillingsResponse>(`/billings?${params.toString()}`, { authenticated: true }),
+      apiRequest<ReconciliationResponse>("/billings/reconciliation", { authenticated: true })
+    ])
+      .then(([billingRes, reconciliationRes]) => {
+        if (requestId !== loadRequestRef.current) {
+          return;
+        }
         setInvoices(billingRes.data.items || []);
         setStats(
           billingRes.data.stats || {
@@ -136,9 +177,20 @@ export default function BillingsPage() {
             cardTotal: 0
           }
         );
+        setReconciliation(reconciliationRes.data || initialReconciliation);
       })
-      .catch((err: Error) => setError(err.message || "Failed to load billing data"))
-      .finally(() => setLoading(false));
+      .catch((err: Error) => {
+        if (requestId !== loadRequestRef.current) {
+          return;
+        }
+
+        setError(err.message || "Failed to load billing data");
+      })
+      .finally(() => {
+        if (requestId === loadRequestRef.current) {
+          setLoading(false);
+        }
+      });
   }, [appliedSearch, appliedStatusFilter, patientFilterId]);
 
   const loadMetadata = useCallback(() => {
@@ -203,6 +255,30 @@ export default function BillingsPage() {
     [invoiceForm.doctorId, doctors]
   );
 
+  const replaceInvoiceInState = (nextInvoice: Invoice) => {
+    setInvoices((previous) => previous.map((invoice) => (invoice.id === nextInvoice.id ? nextInvoice : invoice)));
+  };
+
+  const invoiceMatchesCurrentView = (invoice: Invoice) => {
+    if (patientFilterId && invoice.patient_id !== patientFilterId) {
+      return false;
+    }
+
+    if (appliedStatusFilter && invoice.status !== appliedStatusFilter) {
+      return false;
+    }
+
+    const query = appliedSearch.trim().toLowerCase();
+    if (!query) {
+      return true;
+    }
+
+    return (
+      invoice.invoice_number.toLowerCase().includes(query) ||
+      (invoice.patient_name || "").toLowerCase().includes(query)
+    );
+  };
+
   if (currentRole && !canAccessBilling(currentRole)) {
     return <p className="text-red-600">You do not have access to billing.</p>;
   }
@@ -237,14 +313,39 @@ export default function BillingsPage() {
       });
 
       const createdInvoice = response.data;
-      setInvoices((previous) => [createdInvoice, ...previous.filter((invoice) => invoice.id !== createdInvoice.id)]);
+      if (invoiceMatchesCurrentView(createdInvoice)) {
+        setInvoices((previous) => [createdInvoice, ...previous.filter((invoice) => invoice.id !== createdInvoice.id)]);
+      }
+
+      if (!patientFilterId || createdInvoice.patient_id === patientFilterId) {
+        setStats((previous) => ({
+          ...previous,
+          totalRevenue: Number((previous.totalRevenue + Number(createdInvoice.total_amount || 0)).toFixed(2)),
+          paidInvoices: previous.paidInvoices + (createdInvoice.status === "paid" ? 1 : 0),
+          pendingInvoices:
+            previous.pendingInvoices + (createdInvoice.status === "issued" || createdInvoice.status === "partially_paid" ? 1 : 0),
+          overdueInvoices: previous.overdueInvoices + (createdInvoice.status === "overdue" ? 1 : 0)
+        }));
+      }
+
+      setReconciliation((previous) => ({
+        ...previous,
+        summary: {
+          ...previous.summary,
+          totalInvoices: previous.summary.totalInvoices + 1,
+          outstandingInvoices:
+            previous.summary.outstandingInvoices +
+            (createdInvoice.status === "issued" || createdInvoice.status === "partially_paid" || createdInvoice.status === "overdue"
+              ? 1
+              : 0)
+        }
+      }));
 
       setShowCreate(false);
       setInvoiceForm({
         ...initialInvoiceForm,
         items: [createInvoiceFormItem()]
       });
-      loadInvoices();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create invoice");
     } finally {
@@ -294,7 +395,7 @@ export default function BillingsPage() {
       await apiRequest(`/billings/${invoice.id}/issue`, {
         method: "POST",
         authenticated: true,
-        body: { dueDate: invoice.due_date || null }
+        body: { dueDate: normalizeDateInput(invoice.due_date) }
       });
       loadInvoices();
     } catch (err) {
@@ -380,6 +481,53 @@ export default function BillingsPage() {
       URL.revokeObjectURL(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to download invoice");
+    }
+  };
+
+  const handleCreatePaymentLink = async (invoice: Invoice) => {
+    setCreatingPaymentLinkId(invoice.id);
+    setError("");
+    try {
+      const response = await apiRequest<PaymentLinkResponse>(`/billings/${invoice.id}/payment-links`, {
+        method: "POST",
+        authenticated: true,
+        body: {}
+      });
+
+      replaceInvoiceInState(response.data.invoice);
+      loadInvoices();
+
+      if (response.data.paymentLink?.short_url) {
+        window.open(response.data.paymentLink.short_url, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create payment link");
+    } finally {
+      setCreatingPaymentLinkId(null);
+    }
+  };
+
+  const handleRefreshPaymentLink = async (invoice: Invoice) => {
+    const paymentLink = invoice.latest_payment_link;
+    if (!paymentLink?.id) {
+      return;
+    }
+
+    setRefreshingPaymentLinkId(paymentLink.id);
+    setError("");
+    try {
+      const response = await apiRequest<PaymentLinkResponse>(`/billings/${invoice.id}/payment-links/${paymentLink.id}/refresh`, {
+        method: "POST",
+        authenticated: true,
+        body: {}
+      });
+
+      replaceInvoiceInState(response.data.invoice);
+      loadInvoices();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to refresh payment link");
+    } finally {
+      setRefreshingPaymentLinkId(null);
     }
   };
 
@@ -485,6 +633,72 @@ export default function BillingsPage() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-600">Reconciliation</p>
+          <p className="mt-2 text-xl text-gray-900">{reconciliation.summary.totalInvoices}</p>
+          <p className="mt-1 text-xs text-gray-500">Tracked invoices in the audit check</p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-600">Mismatches</p>
+          <p className="mt-2 text-xl text-gray-900">{reconciliation.summary.mismatchedInvoices}</p>
+          <p className="mt-1 text-xs text-gray-500">Invoices needing payment review</p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-600">Outstanding</p>
+          <p className="mt-2 text-xl text-gray-900">{reconciliation.summary.outstandingInvoices}</p>
+          <p className="mt-1 text-xs text-gray-500">Issued invoices still carrying balance</p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-600">Refunded</p>
+          <p className="mt-2 text-xl text-gray-900">{formatRupee(reconciliation.summary.refundedAmount)}</p>
+          <p className="mt-1 text-xs text-gray-500">{reconciliation.summary.refundedPayments} refunded payments</p>
+        </div>
+      </div>
+
+      {reconciliation.items.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-amber-950">Payment Reconciliation Review</p>
+              <p className="mt-1 text-sm text-amber-800">
+                These invoices have a mismatch between invoice totals and recorded payments.
+              </p>
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs text-amber-700">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              {reconciliation.summary.mismatchedInvoices} flagged
+            </div>
+          </div>
+          <div className="mt-4 overflow-x-auto rounded-xl border border-amber-200 bg-white">
+            <table className="w-full">
+              <thead className="border-b border-amber-100 bg-amber-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs uppercase tracking-[0.14em] text-amber-700">Invoice</th>
+                  <th className="px-4 py-3 text-left text-xs uppercase tracking-[0.14em] text-amber-700">Status</th>
+                  <th className="px-4 py-3 text-left text-xs uppercase tracking-[0.14em] text-amber-700">Stored Paid</th>
+                  <th className="px-4 py-3 text-left text-xs uppercase tracking-[0.14em] text-amber-700">Computed Paid</th>
+                  <th className="px-4 py-3 text-left text-xs uppercase tracking-[0.14em] text-amber-700">Stored Balance</th>
+                  <th className="px-4 py-3 text-left text-xs uppercase tracking-[0.14em] text-amber-700">Computed Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reconciliation.items.map((item) => (
+                  <tr key={item.id} className="border-b border-amber-100 last:border-0">
+                    <td className="px-4 py-3 text-sm text-amber-950">{item.invoice_number}</td>
+                    <td className="px-4 py-3 text-sm text-amber-900">{item.status}</td>
+                    <td className="px-4 py-3 text-sm text-amber-900">{formatRupee(item.paid_amount)}</td>
+                    <td className="px-4 py-3 text-sm text-amber-900">{formatRupee(item.computed_paid_amount)}</td>
+                    <td className="px-4 py-3 text-sm text-amber-900">{formatRupee(item.balance_amount)}</td>
+                    <td className="px-4 py-3 text-sm text-amber-900">{formatRupee(item.computed_balance_amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl p-4 border border-gray-200">
         <div className="flex flex-col sm:flex-row gap-3">
           <input
@@ -540,6 +754,22 @@ export default function BillingsPage() {
                   <td className="px-6 py-4">
                     <p className="text-emerald-700">{invoice.invoice_number}</p>
                     <p className="mt-1 text-xs text-gray-500">{invoice.currency}</p>
+                    {invoice.latest_payment_link && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full px-2 py-1 text-[11px] font-medium uppercase tracking-[0.12em] ${paymentLinkStatusClass(
+                            invoice.latest_payment_link.status
+                          )}`}
+                        >
+                          {invoice.latest_payment_link.provider} {invoice.latest_payment_link.status}
+                        </span>
+                        {invoice.latest_payment_link.expires_at && (
+                          <span className="text-[11px] text-gray-500">
+                            Expires {new Date(invoice.latest_payment_link.expires_at).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <p className="text-gray-800">{invoice.patient_name}</p>
@@ -582,6 +812,37 @@ export default function BillingsPage() {
                           className="px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white hover:bg-green-700"
                         >
                           Add Payment
+                        </button>
+                      )}
+                      {invoice.balance_amount > 0 && ["issued", "partially_paid", "overdue"].includes(invoice.status) && (
+                        <button
+                          onClick={() => handleCreatePaymentLink(invoice)}
+                          disabled={creatingPaymentLinkId === invoice.id}
+                          className="px-3 py-1.5 text-xs rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50 disabled:opacity-60 inline-flex items-center gap-1"
+                        >
+                          <Link2 className="w-3 h-3" />
+                          {creatingPaymentLinkId === invoice.id ? "Creating..." : "Create Link"}
+                        </button>
+                      )}
+                      {invoice.latest_payment_link?.short_url && (
+                        <button
+                          onClick={() => window.open(invoice.latest_payment_link?.short_url || "", "_blank", "noopener,noreferrer")}
+                          className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-1"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          Open Link
+                        </button>
+                      )}
+                      {invoice.latest_payment_link && !["paid", "cancelled", "expired", "failed"].includes(invoice.latest_payment_link.status) && (
+                        <button
+                          onClick={() => handleRefreshPaymentLink(invoice)}
+                          disabled={refreshingPaymentLinkId === invoice.latest_payment_link?.id}
+                          className="px-3 py-1.5 text-xs rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50 disabled:opacity-60 inline-flex items-center gap-1"
+                        >
+                          <RefreshCw
+                            className={`w-3 h-3 ${refreshingPaymentLinkId === invoice.latest_payment_link?.id ? "animate-spin" : ""}`}
+                          />
+                          Refresh Link
                         </button>
                       )}
                       {invoice.balance_amount > 0 && invoice.status !== "void" && (
@@ -633,8 +894,8 @@ export default function BillingsPage() {
                 <p className="text-sm font-medium text-sky-950">{selectedInvoicePatient.full_name}</p>
                 <p className="mt-1 text-xs text-sky-800">
                   {selectedInvoicePatient.patient_code}
-                  {selectedInvoicePatient.phone ? ` • ${selectedInvoicePatient.phone}` : ""}
-                  {selectedInvoicePatient.age !== null ? ` • ${selectedInvoicePatient.age} yrs` : ""}
+                  {selectedInvoicePatient.phone ? ` | ${selectedInvoicePatient.phone}` : ""}
+                  {selectedInvoicePatient.age !== null ? ` | ${selectedInvoicePatient.age} yrs` : ""}
                 </p>
               </div>
             )}
@@ -681,7 +942,7 @@ export default function BillingsPage() {
                 <p className="mt-1 text-xs text-emerald-800">
                   {selectedInvoiceDoctor.specialty}
                   {selectedInvoiceDoctor.consultation_fee !== null && selectedInvoiceDoctor.consultation_fee !== undefined
-                    ? ` • Consultation ${formatRupee(selectedInvoiceDoctor.consultation_fee)}`
+                    ? ` | Consultation ${formatRupee(selectedInvoiceDoctor.consultation_fee)}`
                     : ""}
                 </p>
               </div>

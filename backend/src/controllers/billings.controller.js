@@ -1,5 +1,6 @@
 const asyncHandler = require("../utils/async-handler");
 const billingsService = require("../services/billings.service");
+const onlinePaymentsService = require("../services/online-payments.service");
 
 const listInvoices = asyncHandler(async (req, res) => {
   const data = await billingsService.listInvoices(req.user.organizationId, req.query);
@@ -46,6 +47,20 @@ const getReconciliationReport = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+const createPaymentLink = asyncHandler(async (req, res) => {
+  const data = await onlinePaymentsService.createInvoicePaymentLink(req.user.organizationId, req.params.id, req.body);
+  res.status(201).json({ success: true, message: "Payment link created", data });
+});
+
+const refreshPaymentLink = asyncHandler(async (req, res) => {
+  const data = await onlinePaymentsService.refreshInvoicePaymentLinkStatus(
+    req.user.organizationId,
+    req.params.id,
+    req.params.linkId
+  );
+  res.json({ success: true, message: "Payment link refreshed", data });
+});
+
 const downloadInvoicePdf = asyncHandler(async (req, res) => {
   const pdf = await billingsService.generateInvoicePdf(req.user.organizationId, req.params.id);
   res.setHeader("Content-Type", "application/pdf");
@@ -67,6 +82,8 @@ module.exports = {
   recordPayment,
   refundPayment,
   getReconciliationReport,
+  createPaymentLink,
+  refreshPaymentLink,
   markInvoicePaid,
   downloadInvoicePdf,
   deleteInvoice

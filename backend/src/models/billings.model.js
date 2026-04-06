@@ -1,11 +1,45 @@
 const pool = require("../config/db");
 const parsePagination = require("../utils/pagination");
 const billingAuditModel = require("./billing-audit.model");
+const paymentLinksModel = require("./payment-links.model");
+
+const normalizeDateValue = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value).slice(0, 10);
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const mapInvoiceRow = (row) => {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...row,
+    issue_date: normalizeDateValue(row.issue_date),
+    due_date: normalizeDateValue(row.due_date)
+  };
+};
 
 const getInvoiceByIdWithDb = async (db, organizationId, id) => {
   const invoiceQuery = `
     SELECT
       i.id,
+      i.organization_id,
       i.invoice_number,
       o.name AS organization_name,
       i.patient_id,
@@ -43,7 +77,7 @@ const getInvoiceByIdWithDb = async (db, organizationId, id) => {
   `;
 
   const invoiceResult = await db.query(invoiceQuery, [organizationId, id]);
-  const invoice = invoiceResult.rows[0];
+  const invoice = mapInvoiceRow(invoiceResult.rows[0]);
   if (!invoice) {
     return null;
   }
@@ -56,7 +90,8 @@ const getInvoiceByIdWithDb = async (db, organizationId, id) => {
   return {
     ...invoice,
     items: itemsRes.rows,
-    payments: paymentsRes.rows
+    payments: paymentsRes.rows,
+    payment_links: await paymentLinksModel.listPaymentLinksByInvoiceId(organizationId, id, db)
   };
 };
 
@@ -117,12 +152,32 @@ const listInvoices = async (organizationId, query) => {
       i.balance_amount,
       i.currency,
       i.notes,
+      pl.latest_payment_link_id,
+      pl.latest_payment_link_provider,
+      pl.latest_payment_link_url,
+      pl.latest_payment_link_status,
+      pl.latest_payment_link_expires_at,
+      pl.latest_payment_link_paid_at,
       i.created_at,
       i.updated_at
     FROM invoices i
     JOIN organizations o ON o.id = i.organization_id
     LEFT JOIN patients p ON p.id = i.patient_id AND p.organization_id = i.organization_id
     LEFT JOIN doctors d ON d.id = i.doctor_id AND d.organization_id = i.organization_id
+    LEFT JOIN LATERAL (
+      SELECT
+        link.id AS latest_payment_link_id,
+        link.provider AS latest_payment_link_provider,
+        link.short_url AS latest_payment_link_url,
+        link.status AS latest_payment_link_status,
+        link.expires_at AS latest_payment_link_expires_at,
+        link.paid_at AS latest_payment_link_paid_at
+      FROM invoice_payment_links link
+      WHERE link.organization_id = i.organization_id
+        AND link.invoice_id = i.id
+      ORDER BY link.created_at DESC
+      LIMIT 1
+    ) pl ON true
     WHERE ${where}
     ORDER BY i.created_at DESC
     LIMIT $${values.length - 1} OFFSET $${values.length}
@@ -197,7 +252,32 @@ const listInvoices = async (organizationId, query) => {
   ]);
 
   return {
-    items: rowsRes.rows,
+    items: rowsRes.rows.map((row) => {
+      const {
+        latest_payment_link_id,
+        latest_payment_link_provider,
+        latest_payment_link_url,
+        latest_payment_link_status,
+        latest_payment_link_expires_at,
+        latest_payment_link_paid_at,
+        ...invoice
+      } = row;
+
+      return mapInvoiceRow({
+        ...invoice,
+        latest_payment_link:
+          latest_payment_link_id
+            ? {
+                id: latest_payment_link_id,
+                provider: latest_payment_link_provider,
+                short_url: latest_payment_link_url,
+                status: latest_payment_link_status,
+                expires_at: latest_payment_link_expires_at,
+                paid_at: latest_payment_link_paid_at
+              }
+            : null
+      });
+    }),
     stats: {
       totalRevenue: Number(statsRes.rows[0].total_revenue || 0),
       paidInvoices: Number(statsRes.rows[0].paid_invoices || 0),
@@ -216,83 +296,112 @@ const listInvoices = async (organizationId, query) => {
   };
 };
 
+const getPaymentByReference = async (organizationId, invoiceId, reference, db = pool) => {
+  if (!reference) {
+    return null;
+  }
+
+  const query = `
+    SELECT id, amount, method, reference, status, paid_at, refunded_at, created_at
+    FROM payments
+    WHERE organization_id = $1 AND invoice_id = $2 AND reference = $3
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [organizationId, invoiceId, reference]);
+  return rows[0] || null;
+};
+
 const getInvoiceById = async (organizationId, id) => {
   return getInvoiceByIdWithDb(pool, organizationId, id);
+};
+
+const createInvoiceWithDb = async (
+  db,
+  organizationId,
+  payload,
+  actor = null,
+  extraAuditMetadata = {}
+) => {
+  await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [organizationId]);
+  const invoiceNumber = await getNextInvoiceNumber(db, organizationId);
+  const items = Array.isArray(payload.items) && payload.items.length > 0 ? payload.items : [];
+  const amount = Number(items.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0));
+  const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
+
+  const invoiceQuery = `
+    INSERT INTO invoices (
+      organization_id, invoice_number, patient_id, doctor_id,
+      appointment_id, issue_date, due_date, status, total_amount, paid_amount, balance_amount, currency, notes
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$9,$10,$11)
+    RETURNING *
+  `;
+
+  const invoiceValues = [
+    organizationId,
+    invoiceNumber,
+    payload.patientId,
+    payload.doctorId || null,
+    payload.appointmentId || null,
+    issueDate,
+    payload.dueDate || null,
+    payload.status || "draft",
+    amount,
+    payload.currency || "INR",
+    payload.notes || null
+  ];
+
+  const invoiceRes = await db.query(invoiceQuery, invoiceValues);
+  const invoice = invoiceRes.rows[0];
+
+  const itemQuery = `
+    INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total_amount)
+    VALUES ($1,$2,$3,$4,$5)
+    RETURNING *
+  `;
+  const itemRows = [];
+  for (const item of items) {
+    const itemRes = await db.query(itemQuery, [
+      invoice.id,
+      item.description,
+      Number(item.quantity),
+      Number(item.unitPrice),
+      Number(item.totalAmount)
+    ]);
+    itemRows.push(itemRes.rows[0]);
+  }
+
+  const createdInvoice = {
+    ...invoice,
+    items: itemRows,
+    payments: []
+  };
+
+  await billingAuditModel.createBillingAuditLog(db, {
+    organizationId,
+    invoiceId: invoice.id,
+    actorUserId: actor?.sub || actor?.id || null,
+    action: "invoice_created",
+    beforeState: null,
+    afterState: createdInvoice,
+    metadata: {
+      appointmentId: payload.appointmentId || null,
+      ...extraAuditMetadata
+    }
+  });
+
+  return getInvoiceByIdWithDb(db, organizationId, invoice.id);
 };
 
 const createInvoice = async (organizationId, payload, actor = null) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-
-    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [organizationId]);
-    const invoiceNumber = await getNextInvoiceNumber(client, organizationId);
-    const items = Array.isArray(payload.items) && payload.items.length > 0 ? payload.items : [];
-    const amount = Number(items.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0));
-    const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
-
-    const invoiceQuery = `
-      INSERT INTO invoices (
-        organization_id, invoice_number, patient_id, doctor_id,
-        appointment_id, issue_date, due_date, status, total_amount, paid_amount, balance_amount, currency, notes
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$9,$10,$11)
-      RETURNING *
-    `;
-
-    const invoiceValues = [
-      organizationId,
-      invoiceNumber,
-      payload.patientId,
-      payload.doctorId || null,
-      payload.appointmentId || null,
-      issueDate,
-      payload.dueDate || null,
-      payload.status || "draft",
-      amount,
-      payload.currency || "INR",
-      payload.notes || null
-    ];
-
-    const invoiceRes = await client.query(invoiceQuery, invoiceValues);
-    const invoice = invoiceRes.rows[0];
-
-    const itemQuery = `
-      INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total_amount)
-      VALUES ($1,$2,$3,$4,$5)
-      RETURNING *
-    `;
-    const itemRows = [];
-    for (const item of items) {
-      const itemRes = await client.query(itemQuery, [
-        invoice.id,
-        item.description,
-        Number(item.quantity),
-        Number(item.unitPrice),
-        Number(item.totalAmount)
-      ]);
-      itemRows.push(itemRes.rows[0]);
-    }
-    const createdInvoice = {
-      ...invoice,
-      items: itemRows,
-      payments: []
-    };
-
-    await billingAuditModel.createBillingAuditLog(client, {
-      organizationId,
-      invoiceId: invoice.id,
-      actorUserId: actor?.sub || actor?.id || null,
-      action: "invoice_created",
-      beforeState: null,
-      afterState: createdInvoice,
-      metadata: {
-        appointmentId: payload.appointmentId || null
-      }
-    });
-
+    const created = await createInvoiceWithDb(client, organizationId, payload, actor);
     await client.query("COMMIT");
-    return getInvoiceById(organizationId, invoice.id);
+    return created;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -831,10 +940,13 @@ const getReconciliationReport = async (organizationId) => {
 module.exports = {
   listInvoices,
   getInvoiceById,
+  getInvoiceByIdWithDb,
+  createInvoiceWithDb,
   createInvoice,
   updateInvoice,
   issueInvoice,
   addPayment,
+  getPaymentByReference,
   refundPayment,
   getReconciliationReport,
   markInvoicePaid,

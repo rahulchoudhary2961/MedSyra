@@ -37,3 +37,21 @@ export const canAccessMedicalRecords = (role?: string | null) =>
   isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
 
 export const canDeleteMedicalRecords = (role?: string | null) => isFullAccessRole(role);
+
+export const canAccessCrm = (role?: string | null) =>
+  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
+
+export const canAccessLab = (role?: string | null) =>
+  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
+
+export const canManageLabCatalog = (role?: string | null) => isFullAccessRole(role);
+
+export const canAccessPharmacy = (role?: string | null) =>
+  isFullAccessRole(role) || isReceptionRole(role) || isBillingRole(role) || role === "doctor";
+
+export const canManagePharmacyCatalog = (role?: string | null) => isFullAccessRole(role);
+
+export const canAccessInventory = (role?: string | null) =>
+  isFullAccessRole(role) || isReceptionRole(role) || isBillingRole(role);
+
+export const canManageInventory = (role?: string | null) => isFullAccessRole(role);

@@ -109,6 +109,7 @@ export interface Invoice {
   id: string;
   invoice_number: string;
   organization_name?: string;
+  organization_id?: string;
   patient_id: string;
   patient_name: string;
   doctor_id: string | null;
@@ -124,6 +125,8 @@ export interface Invoice {
   notes: string | null;
   items?: InvoiceItem[];
   payments?: Payment[];
+  payment_links?: InvoicePaymentLink[];
+  latest_payment_link?: InvoicePaymentLink | null;
 }
 
 export interface Payment {
@@ -141,6 +144,45 @@ export interface InvoiceItem {
   quantity: number;
   unit_price: number;
   total_amount: number;
+}
+
+export interface InvoicePaymentLink {
+  id: string;
+  organization_id?: string;
+  invoice_id?: string;
+  provider: string;
+  provider_link_id?: string | null;
+  short_url: string | null;
+  status: string;
+  amount: number;
+  currency: string;
+  expires_at: string | null;
+  paid_at: string | null;
+  last_synced_at?: string | null;
+  provider_payment_id?: string | null;
+  provider_payload?: Record<string, unknown> | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ReconciliationReport {
+  summary: {
+    totalInvoices: number;
+    mismatchedInvoices: number;
+    outstandingInvoices: number;
+    refundedPayments: number;
+    refundedAmount: number;
+  };
+  items: Array<{
+    id: string;
+    invoice_number: string;
+    status: string;
+    total_amount: number;
+    paid_amount: number;
+    balance_amount: number;
+    computed_paid_amount: number;
+    computed_balance_amount: number;
+  }>;
 }
 
 export interface NotificationDelivery {
@@ -189,6 +231,204 @@ export interface NotificationLog {
   error_message: string | null;
   metadata?: Record<string, unknown>;
   created_at: string;
+}
+
+export interface CrmTask {
+  id: string;
+  patient_id: string;
+  patient_code: string | null;
+  patient_name: string;
+  phone: string | null;
+  source_record_id: string | null;
+  source_appointment_id: string | null;
+  task_type: "follow_up" | "recall" | "retention";
+  title: string;
+  priority: "high" | "medium" | "low";
+  status: "open" | "contacted" | "scheduled" | "not_reachable" | "closed" | "dismissed";
+  due_date: string;
+  days_until_due: number;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  last_contacted_at: string | null;
+  next_action_at: string | null;
+  outcome_notes: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  record_type?: string | null;
+  next_appointment_id?: string | null;
+  appointment_date?: string | null;
+  appointment_time?: string | null;
+  next_appointment_status?: string | null;
+}
+
+export interface LabTest {
+  id: string;
+  organization_id: string;
+  code: string | null;
+  name: string;
+  department: string | null;
+  price: number;
+  turnaround_hours: number | null;
+  instructions: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface LabOrderItem {
+  id: string;
+  lab_test_id: string | null;
+  test_name: string;
+  price: number;
+  result_summary: string | null;
+}
+
+export interface LabOrder {
+  id: string;
+  organization_id: string;
+  order_number: string;
+  patient_id: string;
+  patient_code: string | null;
+  patient_name: string;
+  phone: string | null;
+  doctor_id: string | null;
+  doctor_name: string | null;
+  appointment_id: string | null;
+  ordered_by_user_id: string | null;
+  ordered_by_name: string | null;
+  status: "ordered" | "sample_collected" | "processing" | "report_ready" | "completed" | "cancelled";
+  ordered_date: string;
+  due_date: string | null;
+  notes: string | null;
+  report_file_url: string | null;
+  sample_collected_at: string | null;
+  processing_started_at: string | null;
+  report_ready_at: string | null;
+  completed_at: string | null;
+  items: LabOrderItem[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Medicine {
+  id: string;
+  organization_id: string;
+  code: string | null;
+  name: string;
+  generic_name: string | null;
+  dosage_form: string | null;
+  strength: string | null;
+  unit: string;
+  reorder_level: number;
+  is_active: boolean;
+  current_stock?: number;
+  active_batch_count?: number;
+  nearest_expiry_date?: string | null;
+  expiring_batch_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface MedicineBatch {
+  id: string;
+  organization_id: string;
+  medicine_id: string;
+  medicine_code: string | null;
+  medicine_name: string;
+  generic_name: string | null;
+  unit: string;
+  reorder_level?: number;
+  batch_number: string;
+  manufacturer: string | null;
+  expiry_date: string;
+  received_quantity: number;
+  available_quantity: number;
+  purchase_price: number;
+  sale_price: number;
+  received_date: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PharmacyDispenseItem {
+  id: string;
+  medicine_id: string;
+  medicine_batch_id: string;
+  medicine_name: string;
+  batch_number: string;
+  expiry_date: string | null;
+  quantity: number;
+  unit_price: number;
+  total_amount: number;
+  directions: string | null;
+}
+
+export interface PharmacyDispense {
+  id: string;
+  organization_id: string;
+  dispense_number: string;
+  patient_id: string;
+  patient_code: string | null;
+  patient_name: string;
+  phone: string | null;
+  doctor_id: string | null;
+  doctor_name: string | null;
+  appointment_id: string | null;
+  medical_record_id: string | null;
+  medical_record_date: string | null;
+  medical_record_type: string | null;
+  invoice_id: string | null;
+  invoice_number: string | null;
+  invoice_status: string | null;
+  dispensed_by_user_id: string | null;
+  dispensed_by_name: string | null;
+  status: "dispensed" | "cancelled";
+  dispensed_date: string;
+  prescription_snapshot: string | null;
+  notes: string | null;
+  items: PharmacyDispenseItem[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface InventoryItem {
+  id: string;
+  organization_id: string;
+  code: string | null;
+  name: string;
+  category: string | null;
+  unit: string;
+  reorder_level: number;
+  is_active: boolean;
+  current_stock: number;
+  total_movements: number;
+  last_movement_date?: string | null;
+  latest_unit_cost: number;
+  wastage_quantity: number;
+  wastage_value: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface InventoryMovement {
+  id: string;
+  organization_id: string;
+  item_id: string;
+  item_code: string | null;
+  item_name: string;
+  item_category: string | null;
+  item_unit: string;
+  movement_type: "stock_in" | "usage" | "wastage" | "adjustment_in" | "adjustment_out";
+  quantity: number;
+  unit_cost: number;
+  total_cost: number;
+  notes: string | null;
+  movement_date: string;
+  performed_by_user_id: string | null;
+  performed_by_name: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface SmartSummaryItem {

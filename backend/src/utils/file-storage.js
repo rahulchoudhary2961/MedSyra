@@ -9,6 +9,10 @@ const PRIVATE_MEDICAL_RECORDS_DIR = path.join(PRIVATE_UPLOAD_ROOT, "medical-reco
 const LEGACY_MEDICAL_RECORDS_DIR = path.join(LEGACY_UPLOAD_ROOT, "medical-records");
 const PRIVATE_MEDICAL_RECORDS_PREFIX = "/private-uploads/medical-records/";
 const LEGACY_MEDICAL_RECORDS_PREFIX = "/uploads/medical-records/";
+const PRIVATE_LAB_REPORTS_DIR = path.join(PRIVATE_UPLOAD_ROOT, "lab-reports");
+const LEGACY_LAB_REPORTS_DIR = path.join(LEGACY_UPLOAD_ROOT, "lab-reports");
+const PRIVATE_LAB_REPORTS_PREFIX = "/private-uploads/lab-reports/";
+const LEGACY_LAB_REPORTS_PREFIX = "/uploads/lab-reports/";
 
 const ALLOWED_CONTENT_TYPES = {
   "image/jpeg": ".jpg",
@@ -31,9 +35,9 @@ const sanitizeBaseName = (fileName) =>
     .replace(/^\.+/, "")
     .slice(0, 60) || "attachment";
 
-const parseStoredMedicalRecordPath = (fileUrl) => {
+const parseStoredPath = (fileUrl, folderName) => {
   const normalized = String(fileUrl || "").trim().replace(/\\/g, "/");
-  const match = normalized.match(/^\/(private-uploads|uploads)\/medical-records\/([a-z0-9._-]+)$/i);
+  const match = normalized.match(new RegExp(`^\\/(private-uploads|uploads)\\/${folderName}\\/([a-z0-9._-]+)$`, "i"));
 
   if (!match) {
     throw new ApiError(400, "Attachment path is invalid");
@@ -46,15 +50,10 @@ const parseStoredMedicalRecordPath = (fileUrl) => {
   };
 };
 
-const getMedicalRecordAbsolutePath = (parsedAttachmentPath) =>
-  path.join(
-    parsedAttachmentPath.storageScope === "private"
-      ? PRIVATE_MEDICAL_RECORDS_DIR
-      : LEGACY_MEDICAL_RECORDS_DIR,
-    parsedAttachmentPath.storedFileName
-  );
+const getScopedAbsolutePath = (parsedAttachmentPath, privateDir, legacyDir) =>
+  path.join(parsedAttachmentPath.storageScope === "private" ? privateDir : legacyDir, parsedAttachmentPath.storedFileName);
 
-const deriveMedicalRecordDownloadFileName = (storedFileName) => {
+const deriveDownloadFileName = (storedFileName) => {
   const normalized = String(storedFileName || "attachment");
   const stripped =
     normalized.match(/^\d{13}-[0-9a-f-]{36}-(.+)$/i)?.[1] ||
@@ -63,10 +62,21 @@ const deriveMedicalRecordDownloadFileName = (storedFileName) => {
   return stripped.replace(/[^a-zA-Z0-9._-]/g, "-") || "attachment";
 };
 
+const parseStoredMedicalRecordPath = (fileUrl) => {
+  return parseStoredPath(fileUrl, "medical-records");
+};
+
+const getMedicalRecordAbsolutePath = (parsedAttachmentPath) =>
+  getScopedAbsolutePath(parsedAttachmentPath, PRIVATE_MEDICAL_RECORDS_DIR, LEGACY_MEDICAL_RECORDS_DIR);
+
+const deriveMedicalRecordDownloadFileName = (storedFileName) => {
+  return deriveDownloadFileName(storedFileName);
+};
+
 const getMedicalRecordContentType = (storedFileName) =>
   CONTENT_TYPE_BY_EXTENSION[path.extname(storedFileName).toLowerCase()] || "application/octet-stream";
 
-const saveMedicalRecordAttachment = async ({ fileName, contentType, dataBase64 }) => {
+const saveScopedAttachment = async ({ fileName, contentType, dataBase64, privateDir, privatePrefix }) => {
   const extension = ALLOWED_CONTENT_TYPES[contentType];
   if (!extension) {
     throw new ApiError(400, "Only JPG, PNG, WEBP, GIF, and PDF files are allowed");
@@ -87,21 +97,39 @@ const saveMedicalRecordAttachment = async ({ fileName, contentType, dataBase64 }
     throw new ApiError(400, "File must be 5MB or smaller");
   }
 
-  await fs.mkdir(PRIVATE_MEDICAL_RECORDS_DIR, { recursive: true });
+  await fs.mkdir(privateDir, { recursive: true });
 
   const safeBaseName = sanitizeBaseName(path.parse(fileName).name);
   const storedFileName = `${Date.now()}-${crypto.randomUUID()}-${safeBaseName}${extension}`;
-  const absolutePath = path.join(PRIVATE_MEDICAL_RECORDS_DIR, storedFileName);
+  const absolutePath = path.join(privateDir, storedFileName);
 
   await fs.writeFile(absolutePath, buffer);
 
   return {
-    fileUrl: `${PRIVATE_MEDICAL_RECORDS_PREFIX}${storedFileName}`,
+    fileUrl: `${privatePrefix}${storedFileName}`,
     fileName: storedFileName,
     contentType,
     size: buffer.length
   };
 };
+
+const saveMedicalRecordAttachment = async ({ fileName, contentType, dataBase64 }) =>
+  saveScopedAttachment({
+    fileName,
+    contentType,
+    dataBase64,
+    privateDir: PRIVATE_MEDICAL_RECORDS_DIR,
+    privatePrefix: PRIVATE_MEDICAL_RECORDS_PREFIX
+  });
+
+const saveLabReportAttachment = async ({ fileName, contentType, dataBase64 }) =>
+  saveScopedAttachment({
+    fileName,
+    contentType,
+    dataBase64,
+    privateDir: PRIVATE_LAB_REPORTS_DIR,
+    privatePrefix: PRIVATE_LAB_REPORTS_PREFIX
+  });
 
 const loadMedicalRecordAttachment = async (fileUrl) => {
   const parsedAttachmentPath = parseStoredMedicalRecordPath(fileUrl);
@@ -128,13 +156,48 @@ const loadMedicalRecordAttachment = async (fileUrl) => {
   };
 };
 
+const parseStoredLabReportPath = (fileUrl) => parseStoredPath(fileUrl, "lab-reports");
+
+const getLabReportAbsolutePath = (parsedAttachmentPath) =>
+  getScopedAbsolutePath(parsedAttachmentPath, PRIVATE_LAB_REPORTS_DIR, LEGACY_LAB_REPORTS_DIR);
+
+const loadLabReportAttachment = async (fileUrl) => {
+  const parsedAttachmentPath = parseStoredLabReportPath(fileUrl);
+  const absolutePath = getLabReportAbsolutePath(parsedAttachmentPath);
+
+  let buffer;
+  try {
+    buffer = await fs.readFile(absolutePath);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      throw new ApiError(404, "Lab report file not found");
+    }
+    throw error;
+  }
+
+  return {
+    absolutePath,
+    buffer,
+    size: buffer.length,
+    storedFileName: parsedAttachmentPath.storedFileName,
+    downloadFileName: deriveDownloadFileName(parsedAttachmentPath.storedFileName),
+    contentType: getMedicalRecordContentType(parsedAttachmentPath.storedFileName),
+    storageScope: parsedAttachmentPath.storageScope
+  };
+};
+
 module.exports = {
   saveMedicalRecordAttachment,
+  saveLabReportAttachment,
   loadMedicalRecordAttachment,
+  loadLabReportAttachment,
   parseStoredMedicalRecordPath,
+  parseStoredLabReportPath,
   deriveMedicalRecordDownloadFileName,
   PRIVATE_MEDICAL_RECORDS_PREFIX,
   LEGACY_MEDICAL_RECORDS_PREFIX,
+  PRIVATE_LAB_REPORTS_PREFIX,
+  LEGACY_LAB_REPORTS_PREFIX,
   ALLOWED_CONTENT_TYPES: Object.keys(ALLOWED_CONTENT_TYPES),
   MAX_FILE_SIZE_BYTES
 };

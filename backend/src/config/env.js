@@ -64,7 +64,11 @@ const env = {
   smsReminderEnabled: parseBoolean(process.env.SMS_REMINDER_ENABLED, false),
   twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || "",
   twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || "",
-  twilioFromNumber: process.env.TWILIO_FROM_NUMBER || ""
+  twilioFromNumber: process.env.TWILIO_FROM_NUMBER || "",
+  razorpayKeyId: process.env.RAZORPAY_KEY_ID || "",
+  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || "",
+  razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || "",
+  appBaseUrl: process.env.APP_BASE_URL || process.env.CORS_ORIGIN || "http://localhost:3000"
 };
 
 const weakJwtSecret = env.jwtSecret.length < 32 || env.jwtSecret.toLowerCase().includes("change-this-secret");

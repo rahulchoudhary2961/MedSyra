@@ -388,6 +388,8 @@ const getPatientProfile = async (organizationId, id) => {
     visits: profile.visits,
     medicalRecords: profile.medicalRecords,
     invoices: profile.invoices,
+    labOrders: profile.labOrders || [],
+    pharmacyDispenses: profile.pharmacyDispenses || [],
     smartSummary: buildSmartSummary(profile),
     summary: {
       totalVisits: Number(profile.summary.total_visits || 0),
