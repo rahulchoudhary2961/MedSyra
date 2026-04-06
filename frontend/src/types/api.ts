@@ -120,6 +120,50 @@ export interface MedicalRecord {
   updated_at?: string;
 }
 
+export interface AiPrescriptionSuggestionItem {
+  name: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  instructions: string;
+  reason: string;
+}
+
+export interface AiPrescriptionSuggestion {
+  id: string;
+  organization_id?: string;
+  branch_id?: string | null;
+  patient_id: string;
+  patient_name?: string | null;
+  doctor_id?: string | null;
+  doctor_name?: string | null;
+  appointment_id?: string | null;
+  medical_record_id?: string | null;
+  generated_by_user_id?: string | null;
+  generated_by_name?: string | null;
+  reviewed_by_user_id?: string | null;
+  reviewed_by_name?: string | null;
+  status: "generated" | "accepted" | "rejected";
+  input_symptoms?: string | null;
+  input_diagnosis?: string | null;
+  input_notes?: string | null;
+  clinical_summary?: string | null;
+  prescription_text?: string | null;
+  suggestion_items: AiPrescriptionSuggestionItem[];
+  care_plan: string[];
+  guardrails: string[];
+  red_flags: string[];
+  confidence: "low" | "medium" | "high";
+  disclaimer: string;
+  suggestion_payload?: Record<string, unknown>;
+  patient_snapshot?: Record<string, unknown>;
+  review_note?: string | null;
+  reviewed_at?: string | null;
+  model_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ActivityLog {
   id: string;
   event_type: string;

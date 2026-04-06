@@ -3,10 +3,18 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Plus, Sparkles } from "lucide-react";
 import { ApiRequestError, apiRequest } from "@/lib/api";
-import { canDeleteAppointments, canManageAppointments } from "@/lib/roles";
-import { Appointment, Doctor, Invoice, MedicalRecord, NotificationDelivery, Patient } from "@/types/api";
+import { canDeleteAppointments, canManageAppointments, canUseAiPrescription } from "@/lib/roles";
+import {
+  AiPrescriptionSuggestion,
+  Appointment,
+  Doctor,
+  Invoice,
+  MedicalRecord,
+  NotificationDelivery,
+  Patient
+} from "@/types/api";
 
 type AppointmentsResponse = {
   success: boolean;
@@ -99,6 +107,18 @@ type FollowUpReminderResponse = {
 type CreateInvoiceResponse = {
   success: boolean;
   data: Invoice;
+};
+
+type AiPrescriptionSuggestionsResponse = {
+  success: boolean;
+  data: {
+    items: AiPrescriptionSuggestion[];
+  };
+};
+
+type AiPrescriptionSuggestionMutationResponse = {
+  success: boolean;
+  data: AiPrescriptionSuggestion;
 };
 
 type ViewMode = "day" | "week" | "month";
@@ -580,6 +600,10 @@ export default function AppointmentsPage() {
   const [isSendingReminder, setIsSendingReminder] = useState(false);
   const [isSendingAppointmentReminder, setIsSendingAppointmentReminder] = useState(false);
   const [isSavingNoShow, setIsSavingNoShow] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<AiPrescriptionSuggestion[]>([]);
+  const [aiSuggestionError, setAiSuggestionError] = useState("");
+  const [isGeneratingAiSuggestion, setIsGeneratingAiSuggestion] = useState(false);
+  const [reviewingAiSuggestionId, setReviewingAiSuggestionId] = useState<string | null>(null);
   const [noShowNotificationOptions, setNoShowNotificationOptions] = useState({
     sms: true,
     email: true
@@ -673,6 +697,8 @@ export default function AppointmentsPage() {
   useEffect(() => {
     if (!selectedAppointment?.id) {
       setSelectedConsultationRecord(null);
+      setAiSuggestions([]);
+      setAiSuggestionError("");
       return;
     }
 
@@ -687,6 +713,29 @@ export default function AppointmentsPage() {
         setSelectedConsultationRecord(null);
       });
   }, [selectedAppointment]);
+
+  useEffect(() => {
+    if (!selectedAppointment?.id || !canUseAiPrescription(currentRole)) {
+      setAiSuggestions([]);
+      setAiSuggestionError("");
+      return;
+    }
+
+    apiRequest<AiPrescriptionSuggestionsResponse>(
+      `/ai/prescription-suggestions?appointmentId=${encodeURIComponent(selectedAppointment.id)}&limit=5`,
+      {
+        authenticated: true
+      }
+    )
+      .then((response) => {
+        setAiSuggestions(response.data.items || []);
+        setAiSuggestionError("");
+      })
+      .catch((err: Error) => {
+        setAiSuggestions([]);
+        setAiSuggestionError(err.message || "Failed to load AI prescription suggestions");
+      });
+  }, [currentRole, selectedAppointment]);
 
   useEffect(() => {
     if (!toast) {
@@ -740,6 +789,144 @@ export default function AppointmentsPage() {
   }, [appointments, pendingDeletedIds, selectedDoctor]);
   const canManageCalendar = canManageAppointments(currentRole);
   const canDeleteCalendarAppointments = canDeleteAppointments(currentRole);
+  const canGenerateAiPrescription = canUseAiPrescription(currentRole);
+
+  const mergePrescriptionText = (current: string, next: string) => {
+    const currentValue = current.trim();
+    const nextValue = next.trim();
+
+    if (!nextValue) {
+      return currentValue;
+    }
+
+    if (!currentValue) {
+      return nextValue;
+    }
+
+    if (currentValue.includes(nextValue)) {
+      return currentValue;
+    }
+
+    return `${currentValue}\n\n${nextValue}`.trim();
+  };
+
+  const syncAcceptedSuggestionsToMedicalRecord = useCallback(
+    async (medicalRecordId: string) => {
+      const acceptedSuggestions = aiSuggestions.filter((item) => item.status === "accepted" && !item.medical_record_id);
+      if (acceptedSuggestions.length === 0 || !selectedAppointment?.id) {
+        return;
+      }
+
+      try {
+        const responses = await Promise.all(
+          acceptedSuggestions.map((item) =>
+            apiRequest<AiPrescriptionSuggestionMutationResponse>(`/ai/prescription-suggestions/${item.id}/review`, {
+              method: "PATCH",
+              authenticated: true,
+              body: {
+                status: "accepted",
+                appointmentId: selectedAppointment.id,
+                medicalRecordId
+              }
+            })
+          )
+        );
+
+        setAiSuggestions((current) =>
+          current.map((item) => responses.find((entry) => entry.data.id === item.id)?.data || item)
+        );
+      } catch {
+        // Linking accepted suggestions to the saved record is best-effort.
+      }
+    },
+    [aiSuggestions, selectedAppointment]
+  );
+
+  const generateAiPrescriptionSuggestion = async () => {
+    if (!selectedAppointment) {
+      return;
+    }
+
+    setIsGeneratingAiSuggestion(true);
+    setAiSuggestionError("");
+
+    try {
+      const response = await apiRequest<AiPrescriptionSuggestionMutationResponse>("/ai/prescription-suggestions/generate", {
+        method: "POST",
+        authenticated: true,
+        body: {
+          appointmentId: selectedAppointment.id,
+          patientId: selectedAppointment.patient_id || undefined,
+          doctorId: selectedAppointment.doctor_id || undefined,
+          symptoms: consultationForm.symptoms.trim() || undefined,
+          diagnosis: consultationForm.diagnosis.trim() || undefined,
+          notes: consultationForm.notes.trim() || undefined
+        }
+      });
+
+      setAiSuggestions((current) => [response.data, ...current.filter((item) => item.id !== response.data.id)]);
+      setToast({ type: "success", message: "AI prescription suggestion generated" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to generate AI prescription suggestion";
+      setAiSuggestionError(message);
+      setToast({ type: "error", message });
+    } finally {
+      setIsGeneratingAiSuggestion(false);
+    }
+  };
+
+  const reviewAiPrescriptionSuggestion = async (
+    suggestion: AiPrescriptionSuggestion,
+    status: "accepted" | "rejected"
+  ) => {
+    if (!selectedAppointment) {
+      return;
+    }
+
+    setReviewingAiSuggestionId(suggestion.id);
+    setAiSuggestionError("");
+
+    try {
+      const response = await apiRequest<AiPrescriptionSuggestionMutationResponse>(
+        `/ai/prescription-suggestions/${suggestion.id}/review`,
+        {
+          method: "PATCH",
+          authenticated: true,
+          body: {
+            status,
+            appointmentId: selectedAppointment.id,
+            medicalRecordId: selectedConsultationRecord?.id || undefined,
+            reviewNote:
+              status === "accepted"
+                ? "Applied in consultation review"
+                : "Rejected during consultation review"
+          }
+        }
+      );
+
+      setAiSuggestions((current) =>
+        current.map((item) => (item.id === suggestion.id ? response.data : item))
+      );
+
+      if (status === "accepted" && response.data.prescription_text) {
+        setConsultationForm((current) => ({
+          ...current,
+          prescription: mergePrescriptionText(current.prescription, response.data.prescription_text || "")
+        }));
+      }
+
+      setToast({
+        type: "success",
+        message: status === "accepted" ? "AI suggestion applied for review" : "AI suggestion rejected"
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to review AI prescription suggestion";
+      setAiSuggestionError(message);
+      setToast({ type: "error", message });
+    } finally {
+      setReviewingAiSuggestionId(null);
+    }
+  };
   const selectedPatientFilter = useMemo(
     () => patients.find((patient) => patient.id === patientFilterId) || null,
     [patientFilterId, patients]
@@ -1522,6 +1709,7 @@ export default function AppointmentsPage() {
         prev && prev.id === updatedAppointment.id ? { ...prev, ...updatedAppointment } : prev
       );
       setSelectedConsultationRecord(updatedRecord);
+      await syncAcceptedSuggestionsToMedicalRecord(updatedRecord.id);
       setConsultationForm({
         symptoms: updatedRecord.symptoms || "",
         diagnosis: updatedRecord.diagnosis || "",
@@ -2734,6 +2922,140 @@ export default function AppointmentsPage() {
                   placeholder="Upper respiratory tract infection"
                 />
               </label>
+
+              {canGenerateAiPrescription && (
+                <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 md:col-span-2">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="inline-flex items-center gap-2 text-sm font-medium text-violet-900">
+                        <Sparkles className="h-4 w-4" />
+                        AI Prescription Suggestions
+                      </p>
+                      <p className="mt-1 text-sm text-violet-800">
+                        Generate a conservative prescription draft from the current symptoms and diagnosis. A doctor must review it before use.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void generateAiPrescriptionSuggestion()}
+                      disabled={
+                        isGeneratingAiSuggestion ||
+                        (!consultationForm.symptoms.trim() && !consultationForm.diagnosis.trim())
+                      }
+                      className="rounded-lg border border-violet-300 bg-white px-4 py-2 text-sm text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isGeneratingAiSuggestion ? "Generating..." : "Generate Suggestion"}
+                    </button>
+                  </div>
+
+                  {aiSuggestionError && <p className="mt-3 text-sm text-red-600">{aiSuggestionError}</p>}
+
+                  {aiSuggestions.length === 0 ? (
+                    <p className="mt-4 rounded-xl border border-dashed border-violet-200 bg-white px-4 py-3 text-sm text-violet-700">
+                      No AI prescription drafts yet for this consultation.
+                    </p>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      {aiSuggestions.map((suggestion) => (
+                        <div key={suggestion.id} className="rounded-xl border border-violet-200 bg-white p-4">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`rounded-full px-3 py-1 text-xs uppercase tracking-[0.16em] ${
+                                  suggestion.status === "accepted"
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : suggestion.status === "rejected"
+                                      ? "bg-rose-100 text-rose-700"
+                                      : "bg-violet-100 text-violet-800"
+                                }`}
+                              >
+                                {suggestion.status}
+                              </span>
+                              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs uppercase tracking-[0.16em] text-slate-700">
+                                {suggestion.confidence} confidence
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500">
+                              {suggestion.created_at ? new Date(suggestion.created_at).toLocaleString() : "Draft"}
+                            </p>
+                          </div>
+
+                          {suggestion.clinical_summary && (
+                            <p className="mt-3 text-sm text-gray-700">{suggestion.clinical_summary}</p>
+                          )}
+
+                          {suggestion.prescription_text && (
+                            <div className="mt-3 rounded-xl bg-violet-50 px-4 py-3 text-sm leading-6 text-violet-950 whitespace-pre-wrap">
+                              {suggestion.prescription_text}
+                            </div>
+                          )}
+
+                          {suggestion.care_plan.length > 0 && (
+                            <div className="mt-3">
+                              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Care Plan</p>
+                              <ul className="mt-2 space-y-1 text-sm text-gray-700">
+                                {suggestion.care_plan.map((item) => (
+                                  <li key={item}>- {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {suggestion.guardrails.length > 0 && (
+                            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.14em] text-amber-700">Guardrails</p>
+                              <ul className="mt-2 space-y-1 text-sm text-amber-900">
+                                {suggestion.guardrails.map((item) => (
+                                  <li key={item}>- {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {suggestion.red_flags.length > 0 && (
+                            <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.14em] text-rose-700">Red Flags</p>
+                              <ul className="mt-2 space-y-1 text-sm text-rose-900">
+                                {suggestion.red_flags.map((item) => (
+                                  <li key={item}>- {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          <p className="mt-3 text-xs text-gray-500">{suggestion.disclaimer}</p>
+
+                          {suggestion.status === "generated" ? (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void reviewAiPrescriptionSuggestion(suggestion, "accepted")}
+                                disabled={reviewingAiSuggestionId === suggestion.id}
+                                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
+                              >
+                                {reviewingAiSuggestionId === suggestion.id ? "Saving..." : "Apply Suggestion"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void reviewAiPrescriptionSuggestion(suggestion, "rejected")}
+                                disabled={reviewingAiSuggestionId === suggestion.id}
+                                className="rounded-lg border border-rose-300 px-4 py-2 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                              >
+                                Reject Draft
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="mt-4 text-xs text-gray-500">
+                              Reviewed {suggestion.reviewed_at ? new Date(suggestion.reviewed_at).toLocaleString() : "recently"}
+                              {suggestion.reviewed_by_name ? ` by ${suggestion.reviewed_by_name}` : ""}.
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <label className="block space-y-2 md:col-span-2">
                 <span className="text-sm text-gray-700">Prescription / Plan</span>

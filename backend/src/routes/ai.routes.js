@@ -13,4 +13,28 @@ router.post(
   controller.askAssistant
 );
 
+router.get(
+  "/prescription-suggestions",
+  authorizeRoles("full_access", "doctor"),
+  validateRequest({ query: aiSchemas.listPrescriptionSuggestionsQuery }),
+  controller.listPrescriptionSuggestions
+);
+
+router.post(
+  "/prescription-suggestions/generate",
+  authorizeRoles("full_access", "doctor"),
+  validateRequest({ body: aiSchemas.generatePrescriptionSuggestionBody }),
+  controller.generatePrescriptionSuggestion
+);
+
+router.patch(
+  "/prescription-suggestions/:id/review",
+  authorizeRoles("full_access", "doctor"),
+  validateRequest({
+    params: aiSchemas.idParams,
+    body: aiSchemas.reviewPrescriptionSuggestionBody
+  }),
+  controller.reviewPrescriptionSuggestion
+);
+
 module.exports = router;

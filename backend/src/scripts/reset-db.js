@@ -21,6 +21,7 @@ const resetDb = async () => {
       invoice_items,
       payments,
       invoices,
+      ai_prescription_suggestions,
       notification_logs,
       notification_preferences,
       audit_logs,

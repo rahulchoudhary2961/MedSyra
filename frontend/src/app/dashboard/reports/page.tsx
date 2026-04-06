@@ -169,6 +169,66 @@ type ReportsResponse = {
       stream: string;
       total: number;
     }>;
+    predictiveAnalytics: {
+      revisitPrediction: {
+        totalPatientsModeled: number;
+        highLikelihoodCount: number;
+        mediumLikelihoodCount: number;
+        lowLikelihoodCount: number;
+        patients: Array<{
+          patientId: string;
+          patientCode: string | null;
+          patientName: string;
+          phone: string | null;
+          lastVisitAt: string | null;
+          nextFollowUpDate: string | null;
+          latestDiagnosis: string | null;
+          daysSinceLastVisit: number | null;
+          daysUntilFollowUp: number | null;
+          completedVisitsLast180: number;
+          totalVisitsLast365: number;
+          noShowsLast180: number;
+          repeatDiagnosisCount: number;
+          revisitScore: number;
+          likelihood: "high" | "medium" | "low";
+          predictedWindow: string;
+          reasons: string[];
+        }>;
+      };
+      diseaseTrends: {
+        currentWindowLabel: string;
+        previousWindowLabel: string;
+        risingCount: number;
+        newSignals: number;
+        stableCount: number;
+        decliningCount: number;
+        items: Array<{
+          diagnosis: string;
+          currentCases: number;
+          previousCases: number;
+          deltaPercent: number;
+          trend: "rising" | "new" | "stable" | "declining";
+          lastSeenAt: string | null;
+        }>;
+      };
+      revenueForecasting: {
+        currentMonthLabel: string;
+        monthToDateCollected: number;
+        projectedMonthEndCollected: number;
+        trailingThreeMonthAverage: number;
+        forecastRangeLow: number;
+        forecastRangeHigh: number;
+        projectedGrowthVsLastMonth: number;
+        elapsedDays: number;
+        remainingDays: number;
+        confidence: "high" | "medium" | "low";
+        series: Array<{
+          label: string;
+          actualCollected: number;
+          projectedCollected: number | null;
+        }>;
+      };
+    };
   };
 };
 
@@ -605,6 +665,40 @@ export default function ReportsPage() {
         item.lastSeenAt
       ]),
       [],
+      ["Predictive Revisit Signals"],
+      ["Patient", "Patient Code", "Score", "Likelihood", "Window", "Last Visit", "Follow-up", "Diagnosis"],
+      ...report.predictiveAnalytics.revisitPrediction.patients.map((patient) => [
+        patient.patientName,
+        patient.patientCode || "-",
+        patient.revisitScore,
+        patient.likelihood,
+        patient.predictedWindow,
+        patient.lastVisitAt || "-",
+        patient.nextFollowUpDate || "-",
+        patient.latestDiagnosis || "-"
+      ]),
+      [],
+      ["Disease Trend Signals"],
+      ["Diagnosis", "Current Cases", "Previous Cases", "Delta %", "Trend", "Last Seen"],
+      ...report.predictiveAnalytics.diseaseTrends.items.map((item) => [
+        item.diagnosis,
+        item.currentCases,
+        item.previousCases,
+        item.deltaPercent,
+        item.trend,
+        item.lastSeenAt || "-"
+      ]),
+      [],
+      ["Revenue Forecast"],
+      ["Metric", "Value"],
+      ["Month To Date Collected", report.predictiveAnalytics.revenueForecasting.monthToDateCollected],
+      ["Projected Month End Collected", report.predictiveAnalytics.revenueForecasting.projectedMonthEndCollected],
+      ["Forecast Range Low", report.predictiveAnalytics.revenueForecasting.forecastRangeLow],
+      ["Forecast Range High", report.predictiveAnalytics.revenueForecasting.forecastRangeHigh],
+      ["Trailing 3 Month Average", report.predictiveAnalytics.revenueForecasting.trailingThreeMonthAverage],
+      ["Projected Growth Vs Last Month", report.predictiveAnalytics.revenueForecasting.projectedGrowthVsLastMonth],
+      ["Forecast Confidence", report.predictiveAnalytics.revenueForecasting.confidence],
+      [],
       ["Top Doctors"],
       ["Name", "Specialty", "Appointments", "Completed", "Completion %", "No-show %", "Revenue"],
       ...report.topDoctors.map((doctor) => [
@@ -691,6 +785,25 @@ export default function ReportsPage() {
       ...report.diseasePatterns.items.slice(0, 5).map(
         (item) => `${item.diagnosis} | ${item.caseCount} cases | ${item.patientCount} patients | ${item.sharePercent}%`
       ),
+      "",
+      "Predictive Revisit Signals:",
+      ...report.predictiveAnalytics.revisitPrediction.patients.slice(0, 5).map(
+        (patient) =>
+          `${patient.patientName} | ${patient.patientCode || "-"} | score ${patient.revisitScore} | ${patient.likelihood} | ${patient.predictedWindow}`
+      ),
+      "",
+      "Disease Trend Signals:",
+      ...report.predictiveAnalytics.diseaseTrends.items.slice(0, 5).map(
+        (item) =>
+          `${item.diagnosis} | current ${item.currentCases} | previous ${item.previousCases} | ${item.deltaPercent >= 0 ? "+" : ""}${item.deltaPercent}% | ${item.trend}`
+      ),
+      "",
+      "Revenue Forecast:",
+      `MTD Collected: ${currency(report.predictiveAnalytics.revenueForecasting.monthToDateCollected)}`,
+      `Projected Month End: ${currency(report.predictiveAnalytics.revenueForecasting.projectedMonthEndCollected)}`,
+      `Forecast Range: ${currency(report.predictiveAnalytics.revenueForecasting.forecastRangeLow)} to ${currency(report.predictiveAnalytics.revenueForecasting.forecastRangeHigh)}`,
+      `Projected Growth vs Last Month: ${report.predictiveAnalytics.revenueForecasting.projectedGrowthVsLastMonth >= 0 ? "+" : ""}${percentage(report.predictiveAnalytics.revenueForecasting.projectedGrowthVsLastMonth)}`,
+      `Confidence: ${report.predictiveAnalytics.revenueForecasting.confidence}`,
       "",
       "Top Doctors:",
       ...report.topDoctors.slice(0, 5).map(
@@ -819,11 +932,19 @@ export default function ReportsPage() {
     () => (report?.diseasePatterns.items || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[index % PIE_COLORS.length] })),
     [report]
   );
+  const diseaseTrendSignalData = useMemo(
+    () => (report?.predictiveAnalytics.diseaseTrends.items || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[index % PIE_COLORS.length] })),
+    [report]
+  );
   const monthlyTrendData = useMemo(() => report?.monthlyTrends || [], [report]);
+  const forecastSeries = useMemo(() => report?.predictiveAnalytics.revenueForecasting.series || [], [report]);
   const doctorLeader = report?.topDoctors[0] || null;
   const outstandingTotal = report?.outstandingInvoices.reduce((sum, invoice) => sum + Number(invoice.balanceAmount || 0), 0) || 0;
   const doctorHighlights = report?.doctorHighlights || null;
   const leadingDiagnosis = diseasePatternData[0] || null;
+  const revisitPrediction = report?.predictiveAnalytics.revisitPrediction || null;
+  const diseaseTrends = report?.predictiveAnalytics.diseaseTrends || null;
+  const revenueForecasting = report?.predictiveAnalytics.revenueForecasting || null;
 
   if (currentRole && !canAccessReports(currentRole)) {
     return <p className="text-red-600">You do not have access to reports.</p>;
@@ -1426,6 +1547,261 @@ export default function ReportsPage() {
                     Combine these highlights with the doctor table below to spot capacity imbalance, underperforming schedules, and billing opportunity by clinician.
                   </p>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-gray-200 bg-white p-6">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h2 className="text-gray-900">Predictive Analytics</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  Forward-looking revisit, disease, and revenue signals built from the current clinical and billing history.
+                </p>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {revisitPrediction?.totalPatientsModeled || 0} patients modeled
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-sm text-emerald-700">High-likelihood Revisits</p>
+                <p className="mt-2 text-3xl text-emerald-950">{revisitPrediction?.highLikelihoodCount || 0}</p>
+                <p className="mt-2 text-xs text-emerald-800">Patients with due follow-up or strong repeat-visit signals.</p>
+              </div>
+              <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                <p className="text-sm text-sky-700">Rising Disease Signals</p>
+                <p className="mt-2 text-3xl text-sky-950">
+                  {(diseaseTrends?.risingCount || 0) + (diseaseTrends?.newSignals || 0)}
+                </p>
+                <p className="mt-2 text-xs text-sky-800">New or rising diagnosis patterns comparing the last 30 days with the prior 30 days.</p>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm text-amber-700">Projected Month-End Collections</p>
+                <p className="mt-2 text-3xl text-amber-950">{currency(revenueForecasting?.projectedMonthEndCollected || 0)}</p>
+                <p className="mt-2 text-xs text-amber-800">
+                  Range {currency(revenueForecasting?.forecastRangeLow || 0)} to {currency(revenueForecasting?.forecastRangeHigh || 0)}.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+              <div className="border-b border-gray-200 px-6 py-4">
+                <h2 className="text-gray-900">Revisit Prediction</h2>
+                <p className="mt-1 text-sm text-gray-500">Patients most likely to return soon, prioritized using follow-up timing, visit frequency, and repeat diagnosis patterns.</p>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {(revisitPrediction?.patients || []).length === 0 && (
+                  <div className="px-6 py-5 text-sm text-gray-500">Not enough patient history yet for revisit predictions.</div>
+                )}
+                {(revisitPrediction?.patients || []).map((patient) => {
+                  const likelihoodClasses =
+                    patient.likelihood === "high"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : patient.likelihood === "medium"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-gray-200 bg-gray-50 text-gray-700";
+
+                  return (
+                    <div key={patient.patientId} className="px-6 py-4">
+                      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm text-gray-900">{patient.patientName}</p>
+                            {patient.patientCode && <span className="text-xs text-gray-500">{patient.patientCode}</span>}
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-[0.14em] ${likelihoodClasses}`}>
+                              {patient.likelihood} likelihood
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs text-gray-500">
+                            Score {patient.revisitScore} | Window {patient.predictedWindow} | Last visit{" "}
+                            {patient.lastVisitAt ? new Date(patient.lastVisitAt).toLocaleDateString() : "-"}
+                            {patient.nextFollowUpDate ? ` | Follow-up ${new Date(patient.nextFollowUpDate).toLocaleDateString()}` : ""}
+                          </p>
+                          <p className="mt-2 text-sm text-gray-600">{patient.latestDiagnosis || "No coded diagnosis yet"}</p>
+                          {patient.reasons.length > 0 && (
+                            <p className="mt-2 text-xs text-gray-500">{patient.reasons.join(" | ")}</p>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-right text-xs text-gray-500 xl:min-w-[220px]">
+                          <div className="rounded-lg bg-gray-50 px-3 py-2">
+                            <p>Completed 180d</p>
+                            <p className="mt-1 text-sm text-gray-900">{patient.completedVisitsLast180}</p>
+                          </div>
+                          <div className="rounded-lg bg-gray-50 px-3 py-2">
+                            <p>Repeat Dx</p>
+                            <p className="mt-1 text-sm text-gray-900">{patient.repeatDiagnosisCount}</p>
+                          </div>
+                          <div className="rounded-lg bg-gray-50 px-3 py-2">
+                            <p>No-shows 180d</p>
+                            <p className="mt-1 text-sm text-gray-900">{patient.noShowsLast180}</p>
+                          </div>
+                          <div className="rounded-lg bg-gray-50 px-3 py-2">
+                            <p>Days Since Visit</p>
+                            <p className="mt-1 text-sm text-gray-900">{patient.daysSinceLastVisit ?? "-"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-6">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-gray-900">Revenue Forecasting</h2>
+                  <p className="mt-1 text-sm text-gray-500">Month-end collection forecast using month-to-date pace smoothed by the last three completed months.</p>
+                </div>
+                <TrendingUp className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">Month to Date</p>
+                  <p className="mt-2 text-2xl text-gray-900">{currency(revenueForecasting?.monthToDateCollected || 0)}</p>
+                  <p className="mt-2 text-xs text-gray-500">{revenueForecasting?.elapsedDays || 0} elapsed days in {revenueForecasting?.currentMonthLabel || "the current month"}.</p>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="text-sm text-emerald-700">Projected Month End</p>
+                  <p className="mt-2 text-2xl text-emerald-950">{currency(revenueForecasting?.projectedMonthEndCollected || 0)}</p>
+                  <p className="mt-2 text-xs text-emerald-800">
+                    {(revenueForecasting?.projectedGrowthVsLastMonth || 0) >= 0 ? "+" : ""}
+                    {percentage(revenueForecasting?.projectedGrowthVsLastMonth || 0)} vs last completed month.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">Forecast Range</p>
+                  <p className="mt-2 text-lg text-gray-900">
+                    {currency(revenueForecasting?.forecastRangeLow || 0)} - {currency(revenueForecasting?.forecastRangeHigh || 0)}
+                  </p>
+                  <p className="mt-2 text-xs text-gray-500">{revenueForecasting?.remainingDays || 0} days remaining in the month.</p>
+                </div>
+                <div
+                  className={`rounded-xl border p-4 ${
+                    revenueForecasting?.confidence === "high"
+                      ? "border-emerald-200 bg-emerald-50"
+                      : revenueForecasting?.confidence === "medium"
+                        ? "border-amber-200 bg-amber-50"
+                        : "border-gray-200 bg-gray-50"
+                  }`}
+                >
+                  <p className="text-sm text-gray-600">Forecast Confidence</p>
+                  <p className="mt-2 text-2xl text-gray-900 capitalize">{revenueForecasting?.confidence || "low"}</p>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Trailing 3-month baseline {currency(revenueForecasting?.trailingThreeMonthAverage || 0)}.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-5">
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={forecastSeries}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="label" stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" />
+                    <Tooltip
+                      formatter={(value, name) => {
+                        const normalized = Number(Array.isArray(value) ? value[0] : value);
+                        if (name === "projectedCollected") {
+                          return [currency(normalized), "Forecast"];
+                        }
+
+                        return [currency(normalized), "Actual / MTD"];
+                      }}
+                    />
+                    <Legend />
+                    <Bar dataKey="actualCollected" fill="#10b981" radius={[6, 6, 0, 0]} name="Actual / MTD" />
+                    <Bar dataKey="projectedCollected" fill="#f59e0b" radius={[6, 6, 0, 0]} name="Forecast" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-gray-200 bg-white p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-gray-900">Disease Trend Signals</h2>
+                <p className="mt-1 text-sm text-gray-500">Diagnosis movement comparing the last 30 days with the previous 30-day window.</p>
+              </div>
+              <Stethoscope className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-sm text-emerald-700">Rising</p>
+                <p className="mt-2 text-2xl text-emerald-950">{diseaseTrends?.risingCount || 0}</p>
+              </div>
+              <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                <p className="text-sm text-sky-700">New</p>
+                <p className="mt-2 text-2xl text-sky-950">{diseaseTrends?.newSignals || 0}</p>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">Stable</p>
+                <p className="mt-2 text-2xl text-gray-900">{diseaseTrends?.stableCount || 0}</p>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm text-amber-700">Declining</p>
+                <p className="mt-2 text-2xl text-amber-950">{diseaseTrends?.decliningCount || 0}</p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={diseaseTrendSignalData} layout="vertical" margin={{ left: 24 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis type="number" stroke="#6b7280" />
+                  <YAxis type="category" dataKey="diagnosis" stroke="#6b7280" width={130} />
+                  <Tooltip
+                    formatter={(value, name) => {
+                      const normalized = Number(Array.isArray(value) ? value[0] : value);
+                      if (name === "currentCases") {
+                        return [normalized.toLocaleString(), diseaseTrends?.currentWindowLabel || "Current window"];
+                      }
+
+                      return [normalized.toLocaleString(), diseaseTrends?.previousWindowLabel || "Previous window"];
+                    }}
+                  />
+                  <Legend />
+                  <Bar dataKey="currentCases" fill="#10b981" radius={[0, 6, 6, 0]} name={diseaseTrends?.currentWindowLabel || "Current window"} />
+                  <Bar dataKey="previousCases" fill="#94a3b8" radius={[0, 6, 6, 0]} name={diseaseTrends?.previousWindowLabel || "Previous window"} />
+                </BarChart>
+              </ResponsiveContainer>
+              <div className="space-y-3">
+                {diseaseTrendSignalData.length === 0 && <p className="text-sm text-gray-500">No diagnosis movement detected yet.</p>}
+                {diseaseTrendSignalData.map((entry) => {
+                  const trendClasses =
+                    entry.trend === "new"
+                      ? "border-sky-200 bg-sky-50 text-sky-800"
+                      : entry.trend === "rising"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : entry.trend === "declining"
+                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          : "border-gray-200 bg-gray-50 text-gray-700";
+
+                  return (
+                    <div key={entry.diagnosis} className="rounded-xl border border-gray-200 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm text-gray-900">{entry.diagnosis}</p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Current {entry.currentCases} | Previous {entry.previousCases}
+                            {entry.lastSeenAt ? ` | Last seen ${new Date(entry.lastSeenAt).toLocaleDateString()}` : ""}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-[0.14em] ${trendClasses}`}>
+                            {entry.trend}
+                          </span>
+                          <p className="mt-2 text-sm text-gray-900">
+                            {entry.deltaPercent >= 0 ? "+" : ""}
+                            {percentage(entry.deltaPercent)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Eye, FileText, Pencil, Plus, Send, Trash2 } from "lucide-react";
+import { Download, Eye, FileText, Pencil, Plus, Send, Sparkles, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
-import { canAccessMedicalRecords, canDeleteMedicalRecords, isFullAccessRole } from "@/lib/roles";
-import { Doctor, MedicalRecord, Patient } from "@/types/api";
+import {
+  canAccessMedicalRecords,
+  canDeleteMedicalRecords,
+  canUseAiPrescription,
+  isFullAccessRole
+} from "@/lib/roles";
+import { AiPrescriptionSuggestion, Doctor, MedicalRecord, Patient } from "@/types/api";
 
 type MedicalRecordsResponse = {
   success: boolean;
@@ -57,6 +62,18 @@ type UploadAttachmentResponse = {
 type MedicalRecordMutationResponse = {
   success: boolean;
   data: MedicalRecord;
+};
+
+type AiPrescriptionSuggestionsResponse = {
+  success: boolean;
+  data: {
+    items: AiPrescriptionSuggestion[];
+  };
+};
+
+type AiPrescriptionSuggestionMutationResponse = {
+  success: boolean;
+  data: AiPrescriptionSuggestion;
 };
 
 type FollowUpReminderResponse = {
@@ -114,6 +131,10 @@ export default function MedicalRecordsPage() {
   const [currentRole, setCurrentRole] = useState("");
   const [form, setForm] = useState(initialForm);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<AiPrescriptionSuggestion[]>([]);
+  const [aiSuggestionError, setAiSuggestionError] = useState("");
+  const [isGeneratingAiSuggestion, setIsGeneratingAiSuggestion] = useState(false);
+  const [reviewingAiSuggestionId, setReviewingAiSuggestionId] = useState<string | null>(null);
 
   const patientsMap = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient.full_name])),
@@ -157,6 +178,8 @@ export default function MedicalRecordsPage() {
     });
     setEditingRecordId(null);
     setSelectedFile(null);
+    setAiSuggestions([]);
+    setAiSuggestionError("");
   };
 
   const getAttachmentEndpoint = (recordId: string) => {
@@ -274,6 +297,43 @@ export default function MedicalRecordsPage() {
     loadRecords();
   }, [loadRecords]);
 
+  useEffect(() => {
+    if (!showFormModal || !canUseAiPrescription(currentRole)) {
+      setAiSuggestions([]);
+      setAiSuggestionError("");
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set("limit", "5");
+
+    if (editingRecordId) {
+      params.set("medicalRecordId", editingRecordId);
+    } else if (form.patientId) {
+      params.set("patientId", form.patientId);
+    } else {
+      setAiSuggestions([]);
+      setAiSuggestionError("");
+      return;
+    }
+
+    if (form.doctorId) {
+      params.set("doctorId", form.doctorId);
+    }
+
+    apiRequest<AiPrescriptionSuggestionsResponse>(`/ai/prescription-suggestions?${params.toString()}`, {
+      authenticated: true
+    })
+      .then((response) => {
+        setAiSuggestions(response.data.items || []);
+        setAiSuggestionError("");
+      })
+      .catch((err: Error) => {
+        setAiSuggestions([]);
+        setAiSuggestionError(err.message || "Failed to load AI prescription suggestions");
+      });
+  }, [currentRole, editingRecordId, form.doctorId, form.patientId, showFormModal]);
+
   const selectedPatient = useMemo(
     () => patients.find((patient) => patient.id === patientFilterId) || null,
     [patientFilterId, patients]
@@ -283,12 +343,134 @@ export default function MedicalRecordsPage() {
     return <p className="text-red-600">You do not have access to medical records.</p>;
   }
 
+  const canGenerateAiPrescription = canUseAiPrescription(currentRole);
+
+  const mergePrescriptionText = (current: string, next: string) => {
+    const currentValue = current.trim();
+    const nextValue = next.trim();
+
+    if (!nextValue) {
+      return currentValue;
+    }
+
+    if (!currentValue) {
+      return nextValue;
+    }
+
+    if (currentValue.includes(nextValue)) {
+      return currentValue;
+    }
+
+    return `${currentValue}\n\n${nextValue}`.trim();
+  };
+
+  const syncAcceptedSuggestionsToMedicalRecord = async (medicalRecordId: string) => {
+    const acceptedSuggestions = aiSuggestions.filter((item) => item.status === "accepted" && !item.medical_record_id);
+    if (acceptedSuggestions.length === 0) {
+      return;
+    }
+
+    try {
+      const responses = await Promise.all(
+        acceptedSuggestions.map((item) =>
+          apiRequest<AiPrescriptionSuggestionMutationResponse>(`/ai/prescription-suggestions/${item.id}/review`, {
+            method: "PATCH",
+            authenticated: true,
+            body: {
+              status: "accepted",
+              medicalRecordId,
+              appointmentId: form.appointmentId || undefined
+            }
+          })
+        )
+      );
+
+      setAiSuggestions((current) =>
+        current.map((item) => responses.find((entry) => entry.data.id === item.id)?.data || item)
+      );
+    } catch {
+      // Best-effort linkage only.
+    }
+  };
+
+  const generateAiPrescriptionSuggestion = async () => {
+    setIsGeneratingAiSuggestion(true);
+    setAiSuggestionError("");
+
+    try {
+      const response = await apiRequest<AiPrescriptionSuggestionMutationResponse>("/ai/prescription-suggestions/generate", {
+        method: "POST",
+        authenticated: true,
+        body: {
+          patientId: form.patientId || undefined,
+          doctorId: form.doctorId || undefined,
+          appointmentId: form.appointmentId || undefined,
+          medicalRecordId: editingRecordId || undefined,
+          symptoms: form.symptoms.trim() || undefined,
+          diagnosis: form.diagnosis.trim() || undefined,
+          notes: form.notes.trim() || undefined
+        }
+      });
+
+      setAiSuggestions((current) => [response.data, ...current.filter((item) => item.id !== response.data.id)]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to generate AI prescription suggestion";
+      setAiSuggestionError(message);
+    } finally {
+      setIsGeneratingAiSuggestion(false);
+    }
+  };
+
+  const reviewAiPrescriptionSuggestion = async (
+    suggestion: AiPrescriptionSuggestion,
+    status: "accepted" | "rejected"
+  ) => {
+    setReviewingAiSuggestionId(suggestion.id);
+    setAiSuggestionError("");
+
+    try {
+      const response = await apiRequest<AiPrescriptionSuggestionMutationResponse>(
+        `/ai/prescription-suggestions/${suggestion.id}/review`,
+        {
+          method: "PATCH",
+          authenticated: true,
+          body: {
+            status,
+            appointmentId: form.appointmentId || undefined,
+            medicalRecordId: editingRecordId || undefined,
+            reviewNote:
+              status === "accepted"
+                ? "Applied in medical-record review"
+                : "Rejected during medical-record review"
+          }
+        }
+      );
+
+      setAiSuggestions((current) =>
+        current.map((item) => (item.id === suggestion.id ? response.data : item))
+      );
+
+      if (status === "accepted" && response.data.prescription_text) {
+        setForm((current) => ({
+          ...current,
+          prescription: mergePrescriptionText(current.prescription, response.data.prescription_text || "")
+        }));
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to review AI prescription suggestion";
+      setAiSuggestionError(message);
+    } finally {
+      setReviewingAiSuggestionId(null);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError("");
 
     try {
+      let savedRecord: MedicalRecord | null = null;
       let fileUrl = form.fileUrl.trim() || null;
       if (selectedFile) {
         const dataBase64 = await fileToBase64(selectedFile);
@@ -314,6 +496,7 @@ export default function MedicalRecordsPage() {
           authenticated: true,
           body: payload
         });
+        savedRecord = response.data;
         setRecords((current) =>
           sortRecords(current.map((record) => (record.id === editingRecordId ? response.data : record)))
         );
@@ -324,7 +507,12 @@ export default function MedicalRecordsPage() {
           authenticated: true,
           body: payload
         });
+        savedRecord = response.data;
         setRecords((current) => sortRecords([response.data, ...current.filter((record) => record.id !== response.data.id)]));
+      }
+
+      if (savedRecord?.id) {
+        await syncAcceptedSuggestionsToMedicalRecord(savedRecord.id);
       }
 
       setShowFormModal(false);
@@ -782,6 +970,131 @@ export default function MedicalRecordsPage() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
               />
             </div>
+
+            {canGenerateAiPrescription && (
+              <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="inline-flex items-center gap-2 text-sm font-medium text-violet-900">
+                      <Sparkles className="h-4 w-4" />
+                      AI Prescription Suggestions
+                    </p>
+                    <p className="mt-1 text-sm text-violet-800">
+                      Generate a conservative draft from the current symptoms and diagnosis. A doctor must review it before use.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void generateAiPrescriptionSuggestion()}
+                    disabled={
+                      isGeneratingAiSuggestion ||
+                      !form.patientId ||
+                      !form.doctorId ||
+                      (!form.symptoms.trim() && !form.diagnosis.trim())
+                    }
+                    className="rounded-lg border border-violet-300 bg-white px-4 py-2 text-sm text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isGeneratingAiSuggestion ? "Generating..." : "Generate Suggestion"}
+                  </button>
+                </div>
+
+                {aiSuggestionError && <p className="mt-3 text-sm text-red-600">{aiSuggestionError}</p>}
+
+                {aiSuggestions.length === 0 ? (
+                  <p className="mt-4 rounded-xl border border-dashed border-violet-200 bg-white px-4 py-3 text-sm text-violet-700">
+                    No AI prescription drafts yet for this record.
+                  </p>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {aiSuggestions.map((suggestion) => (
+                      <div key={suggestion.id} className="rounded-xl border border-violet-200 bg-white p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs uppercase tracking-[0.16em] ${
+                                suggestion.status === "accepted"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : suggestion.status === "rejected"
+                                    ? "bg-rose-100 text-rose-700"
+                                    : "bg-violet-100 text-violet-800"
+                              }`}
+                            >
+                              {suggestion.status}
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs uppercase tracking-[0.16em] text-slate-700">
+                              {suggestion.confidence} confidence
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            {suggestion.created_at ? new Date(suggestion.created_at).toLocaleString() : "Draft"}
+                          </p>
+                        </div>
+
+                        {suggestion.clinical_summary && (
+                          <p className="mt-3 text-sm text-gray-700">{suggestion.clinical_summary}</p>
+                        )}
+
+                        {suggestion.prescription_text && (
+                          <div className="mt-3 rounded-xl bg-violet-50 px-4 py-3 text-sm leading-6 text-violet-950 whitespace-pre-wrap">
+                            {suggestion.prescription_text}
+                          </div>
+                        )}
+
+                        {suggestion.guardrails.length > 0 && (
+                          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                            <p className="text-xs uppercase tracking-[0.14em] text-amber-700">Guardrails</p>
+                            <ul className="mt-2 space-y-1 text-sm text-amber-900">
+                              {suggestion.guardrails.map((item) => (
+                                <li key={item}>- {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {suggestion.red_flags.length > 0 && (
+                          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                            <p className="text-xs uppercase tracking-[0.14em] text-rose-700">Red Flags</p>
+                            <ul className="mt-2 space-y-1 text-sm text-rose-900">
+                              {suggestion.red_flags.map((item) => (
+                                <li key={item}>- {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        <p className="mt-3 text-xs text-gray-500">{suggestion.disclaimer}</p>
+
+                        {suggestion.status === "generated" ? (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void reviewAiPrescriptionSuggestion(suggestion, "accepted")}
+                              disabled={reviewingAiSuggestionId === suggestion.id}
+                              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
+                            >
+                              {reviewingAiSuggestionId === suggestion.id ? "Saving..." : "Apply Suggestion"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void reviewAiPrescriptionSuggestion(suggestion, "rejected")}
+                              disabled={reviewingAiSuggestionId === suggestion.id}
+                              className="rounded-lg border border-rose-300 px-4 py-2 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                            >
+                              Reject Draft
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="mt-4 text-xs text-gray-500">
+                            Reviewed {suggestion.reviewed_at ? new Date(suggestion.reviewed_at).toLocaleString() : "recently"}
+                            {suggestion.reviewed_by_name ? ` by ${suggestion.reviewed_by_name}` : ""}.
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="block text-sm text-gray-700 mb-2">Prescription</label>

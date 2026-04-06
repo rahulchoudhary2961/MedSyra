@@ -6,11 +6,62 @@ const aiToolsModel = require("../models/ai-tools.model");
 const authModel = require("../models/auth.model");
 
 const DEFAULT_MODEL = "openai/gpt-oss-120b";
+const WORKFLOW_SUGGESTIONS = {
+  staff: {
+    operations: [
+      "What needs attention in this branch today?",
+      "How many appointments are left today?",
+      "What is this week's revenue?"
+    ],
+    patient_summary: [
+      "Summarize this patient in 3 lines",
+      "What follow-up action is needed for this patient?",
+      "What was last prescribed to this patient?"
+    ],
+    follow_up: [
+      "How many follow-ups are due today?",
+      "Which patients need recall attention next?",
+      "What follow-up action is needed for this patient?"
+    ],
+    billing: [
+      "How many unpaid invoices do I have?",
+      "What is my total income this month?",
+      "Which billing metric needs attention?"
+    ]
+  },
+  patient: {
+    appointment_help: [
+      "Help me understand my next appointment",
+      "What should I bring for my visit?",
+      "How do I reschedule or contact the clinic?"
+    ],
+    follow_up_help: [
+      "What follow-up is due for this patient?",
+      "What should the patient do next?",
+      "When should the patient contact the clinic urgently?"
+    ],
+    billing_help: [
+      "Explain the pending bill in simple language",
+      "How can the patient pay the invoice?",
+      "What should the patient ask the billing desk?"
+    ],
+    report_help: [
+      "Explain the latest report in simple non-clinical language",
+      "What should the patient ask the doctor about this report?",
+      "What follow-up visit should the patient plan?"
+    ]
+  }
+};
+const DEFAULT_WORKFLOW = {
+  staff: "operations",
+  patient: "appointment_help"
+};
 
 const formatCurrency = (value) => `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
-const buildClinicSnapshot = (summary, clinicName = null) => [
+const buildClinicSnapshot = (summary, clinicName = null, branchLabel = null) => [
   `Clinic name: ${clinicName || "-"}`,
+  `Branch scope: ${branchLabel || "All branches"}`,
   `Today's appointments: ${summary.stats.todayAppointments}`,
   `Today's revenue: ${formatCurrency(summary.stats.todayRevenue)}`,
   `Pending payments: ${summary.stats.pendingPayments}`,
@@ -56,10 +107,10 @@ const buildRecentActivitySnapshot = (activities) => {
   ];
 };
 
-const buildPrompt = ({ message, clinicSummary, patientProfile, clinicName }) => {
+const buildPrompt = ({ message, clinicSummary, patientProfile, clinicName, branchLabel = null }) => {
   const sections = [
     "Clinic context:",
-    ...buildClinicSnapshot(clinicSummary, clinicName),
+    ...buildClinicSnapshot(clinicSummary, clinicName, branchLabel),
     "",
     ...buildRecentActivitySnapshot(clinicSummary.recentActivity || [])
   ];
@@ -69,6 +120,75 @@ const buildPrompt = ({ message, clinicSummary, patientProfile, clinicName }) => 
   }
 
   sections.push("", `Staff question: ${message}`);
+  return sections.join("\n");
+};
+
+const buildConversationHistory = (history = []) => {
+  if (!Array.isArray(history) || history.length === 0) {
+    return ["Conversation history: none"];
+  }
+
+  const compactHistory = history
+    .filter((entry) => entry && typeof entry.content === "string" && typeof entry.role === "string")
+    .slice(-8);
+
+  if (compactHistory.length === 0) {
+    return ["Conversation history: none"];
+  }
+
+  return [
+    "Conversation history:",
+    ...compactHistory.map((entry) => `- ${entry.role}: ${entry.content.replace(/\s+/g, " ").trim()}`)
+  ];
+};
+
+const buildChatPrompt = ({
+  message,
+  clinicSummary,
+  patientProfile,
+  clinicName,
+  branchLabel,
+  persona,
+  workflow,
+  history
+}) => {
+  const sections = [
+    "Clinic context:",
+    ...buildClinicSnapshot(clinicSummary, clinicName, branchLabel),
+    "",
+    ...buildRecentActivitySnapshot(clinicSummary.recentActivity || []),
+    ""
+  ];
+
+  if (patientProfile) {
+    sections.push(...buildPatientSnapshot(patientProfile), "");
+  }
+
+  sections.push(...buildConversationHistory(history), "");
+
+  if (persona === "patient") {
+    sections.push(
+      `Workflow: ${workflow}`,
+      "Patient support guidance rules:",
+      "- Explain in simple non-clinical language.",
+      "- Never diagnose, prescribe, or change medicines.",
+      "- If symptoms sound risky or urgent, tell the patient to contact the clinic or doctor immediately.",
+      "- If patient-specific context is missing, say what clinic staff should ask for next.",
+      "",
+      `Patient question: ${message}`
+    );
+  } else {
+    sections.push(
+      `Workflow: ${workflow}`,
+      "Staff support guidance rules:",
+      "- Keep answers short, factual, and operational.",
+      "- Use the patient context when selected.",
+      "- If context is missing, say what is missing instead of guessing.",
+      "",
+      `Staff question: ${message}`
+    );
+  }
+
   return sections.join("\n");
 };
 
@@ -231,6 +351,21 @@ const inferIntentRuleBased = (message, hasPatientContext) => {
   return null;
 };
 
+const normalizePersona = (value) => (value === "patient" ? "patient" : "staff");
+
+const normalizeWorkflow = (persona, value, hasPatientContext) => {
+  const workflowSets = WORKFLOW_SUGGESTIONS[persona] || WORKFLOW_SUGGESTIONS.staff;
+  if (value && workflowSets[value]) {
+    return value;
+  }
+
+  if (persona === "staff" && hasPatientContext) {
+    return "patient_summary";
+  }
+
+  return DEFAULT_WORKFLOW[persona];
+};
+
 const inferIntentWithNvidia = async (message, hasPatientContext) => {
   const plannerReply = await askNvidia({
     systemPrompt:
@@ -267,7 +402,28 @@ const formatPatientSummaryReply = (profile) => {
   ].join("\n");
 };
 
-const formatToolResultReply = (plan, result, patientProfile) => {
+const formatToolResultReply = (plan, result, patientProfile, persona = "staff") => {
+  if (persona === "patient") {
+    switch (plan.tool) {
+      case "clinic_name":
+        return result?.clinicName ? `You are connected to ${result.clinicName}.` : "Clinic name is not available right now.";
+      case "appointments_count":
+        return `I can see ${result.total} appointment${result.total === 1 ? "" : "s"} in this context. Please confirm the exact visit timing with the clinic if needed.`;
+      case "followups_count":
+        return result.total > 0
+          ? `There ${result.total === 1 ? "is" : "are"} ${result.total} follow-up item${result.total === 1 ? "" : "s"} in this context. Please contact the clinic to confirm the next step.`
+          : "I do not see a due follow-up in the current context.";
+      case "outstanding_invoices":
+        return `There ${result.total === 1 ? "is" : "are"} ${result.total} pending invoice${result.total === 1 ? "" : "s"} with ${formatCurrency(result.balanceAmount)} still due. The billing desk can confirm payment options.`;
+      case "patient_summary":
+        return patientProfile
+          ? `Patient context: ${patientProfile.patient.full_name}. Last visit: ${patientProfile.summary?.lastVisitDate || patientProfile.patient.last_visit_at || "-"}. For medical interpretation or medicine changes, please speak with the doctor directly.`
+          : "Select a patient first for patient-specific help.";
+      default:
+        break;
+    }
+  }
+
   switch (plan.tool) {
     case "clinic_name":
       return result?.clinicName ? `Your clinic name is ${result.clinicName}.` : "Your clinic name is not available right now.";
@@ -295,33 +451,37 @@ const formatToolResultReply = (plan, result, patientProfile) => {
   }
 };
 
-const executeToolPlan = async (organizationId, plan, patientProfile) => {
+const executeToolPlan = async (organizationId, plan, patientProfile, branchId = null) => {
   const patientId = patientProfile?.patient?.id || null;
 
   switch (plan.tool) {
     case "clinic_name":
       return { clinicName: null };
     case "revenue":
-      return aiToolsModel.getRevenueMetric(organizationId, { range: plan.range });
+      return aiToolsModel.getRevenueMetric(organizationId, { range: plan.range, branchId });
     case "appointments_count":
       return aiToolsModel.getAppointmentsMetric(organizationId, {
         range: plan.range,
         status: plan.status || null,
-        patientId
+        patientId,
+        branchId
       });
     case "followups_count":
       return aiToolsModel.getFollowUpsMetric(organizationId, {
         range: plan.range,
-        patientId
+        patientId,
+        branchId
       });
     case "most_common_issue":
       return aiToolsModel.getMostCommonIssueMetric(organizationId, {
         range: plan.range,
-        patientId
+        patientId,
+        branchId
       });
     case "outstanding_invoices":
       return aiToolsModel.getOutstandingInvoicesMetric(organizationId, {
-        patientId
+        patientId,
+        branchId
       });
     case "patient_summary":
       return patientProfile;
@@ -330,8 +490,37 @@ const executeToolPlan = async (organizationId, plan, patientProfile) => {
   }
 };
 
-const getFallbackReply = ({ message, clinicSummary, patientProfile, clinicName = null }) => {
+const getFallbackReply = ({ message, clinicSummary, patientProfile, clinicName = null, persona = "staff" }) => {
   const normalized = message.toLowerCase();
+
+  if (persona === "patient") {
+    if (!patientProfile) {
+      return [
+        clinicName ? `${clinicName} support is available to help.` : "Clinic support is available to help.",
+        "Select the patient context or ask the front desk to confirm the appointment, follow-up, billing, or report details.",
+        "For urgent symptoms or medicine concerns, contact the clinic or doctor directly."
+      ].join(" ");
+    }
+
+    if (normalized.includes("bill") || normalized.includes("payment") || normalized.includes("invoice")) {
+      return `The patient has a pending amount of ${formatCurrency(patientProfile.summary?.pendingAmount || 0)}. Please confirm payment options with the billing desk.`;
+    }
+
+    if (normalized.includes("follow-up") || normalized.includes("follow up")) {
+      const followUpLine = (patientProfile.smartSummary || []).find((item) =>
+        String(item.label || "").toLowerCase().includes("follow-up")
+      );
+      return followUpLine
+        ? `${followUpLine.label}: ${followUpLine.value}. Contact the clinic if the patient needs a new date or has worsening symptoms.`
+        : "No active follow-up is visible in the current record. Please confirm with the clinic if a return visit is needed.";
+    }
+
+    return [
+      `Here is the current patient context for ${patientProfile.patient.full_name}.`,
+      `Last visit: ${patientProfile.summary?.lastVisitDate || patientProfile.patient.last_visit_at || "-"}.`,
+      "For medical interpretation or medicine changes, the patient should speak with the doctor directly."
+    ].join(" ");
+  }
 
   if (patientProfile && normalized.includes("patient")) {
     return formatPatientSummaryReply(patientProfile);
@@ -398,31 +587,34 @@ const resolveClinicName = async (currentUser) => {
   return null;
 };
 
-const getSuggestions = (patientProfile) =>
-  patientProfile
-    ? [
-        "Summarize this patient in 3 lines",
-        "What follow-up action is needed for this patient?",
-        "What was last prescribed to this patient?"
-      ]
-    : [
-        "What is my total income this month?",
-        "How many appointments are left today?",
-        "How many unpaid invoices do I have?"
-      ];
+const getSuggestions = (persona, workflow, patientProfile) => {
+  const workflowMap = WORKFLOW_SUGGESTIONS[persona] || WORKFLOW_SUGGESTIONS.staff;
+  const suggestions = workflowMap[workflow] || workflowMap[DEFAULT_WORKFLOW[persona]];
+
+  if (persona === "staff" && patientProfile?.patient && workflow !== "patient_summary") {
+    return WORKFLOW_SUGGESTIONS.staff.patient_summary;
+  }
+
+  return suggestions || WORKFLOW_SUGGESTIONS.staff.operations;
+};
 
 const shouldUseModelFormatting = (tool) => !["clinic_name", "revenue", "outstanding_invoices"].includes(tool || "");
 
-const askAssistant = async (organizationId, payload, currentUser = null) => {
+const askAssistant = async (organizationId, payload, currentUser = null, branchContext = null) => {
   await commercialService.ensureUsageAllowed(organizationId, {
     aiQueriesUsed: 1
   });
 
-  const clinicSummary = await dashboardService.getSummary(organizationId);
+  const persona = normalizePersona(payload.persona);
+  const branchId = branchContext?.readBranchId || null;
+  const branchLabel = branchContext?.selectedBranchName || branchContext?.assignedBranchName || null;
+  const clinicSummary = await dashboardService.getSummary(organizationId, branchId);
   const clinicName = await resolveClinicName(currentUser);
   const patientProfile = payload.patientId
     ? await patientsService.getPatientProfile(organizationId, payload.patientId)
     : null;
+  const workflow = normalizeWorkflow(persona, payload.workflow, Boolean(patientProfile));
+  const history = Array.isArray(payload.history) ? payload.history : [];
 
   let plan = inferIntentRuleBased(payload.message, Boolean(patientProfile));
   if (env.nvidiaApiKey) {
@@ -444,15 +636,17 @@ const askAssistant = async (organizationId, payload, currentUser = null) => {
     const toolResult =
       plan.tool === "clinic_name"
         ? { clinicName }
-        : await executeToolPlan(organizationId, plan, patientProfile);
+        : await executeToolPlan(organizationId, plan, patientProfile, branchId);
     tool = plan.tool;
-    reply = formatToolResultReply(plan, toolResult, patientProfile);
+    reply = formatToolResultReply(plan, toolResult, patientProfile, persona);
 
     if (env.nvidiaApiKey && toolResult && shouldUseModelFormatting(plan.tool)) {
       try {
         reply = await askNvidia({
           systemPrompt:
-            "You are MedSyra Clinic Assistant. A database tool result has already been executed. Answer only from that tool result. Keep it short, factual, and operational.",
+            persona === "patient"
+              ? "You are MedSyra Patient Support. A database tool result has already been executed. Answer only from that result. Use simple language. Do not diagnose, prescribe, or change medicines."
+              : "You are MedSyra Clinic Assistant. A database tool result has already been executed. Answer only from that tool result. Keep it short, factual, and operational.",
           userPrompt: buildToolAnswerPrompt({
             message: payload.message,
             toolName: plan.tool,
@@ -470,8 +664,19 @@ const askAssistant = async (organizationId, payload, currentUser = null) => {
     try {
       reply = await askNvidia({
         systemPrompt:
-          "You are MedSyra Clinic Assistant for a healthcare operations dashboard. Answer only from the provided clinic context. Keep answers short, factual, and operational. If context is missing, say so clearly. Do not invent patients, diagnoses, revenue, or schedules.",
-        userPrompt: buildPrompt({ message: payload.message, clinicSummary, patientProfile, clinicName }),
+          persona === "patient"
+            ? "You are MedSyra Patient Support for a healthcare clinic. Answer only from the provided clinic and patient context. Use simple language. Do not diagnose, prescribe, or change medicines. If the request needs a doctor or urgent care, say so clearly."
+            : "You are MedSyra Clinic Assistant for a healthcare operations dashboard. Answer only from the provided clinic context. Keep answers short, factual, and operational. If context is missing, say so clearly. Do not invent patients, diagnoses, revenue, or schedules.",
+        userPrompt: buildChatPrompt({
+          message: payload.message,
+          clinicSummary,
+          patientProfile,
+          clinicName,
+          branchLabel,
+          persona,
+          workflow,
+          history
+        }),
         temperature: 0.3
       });
       mode = "nvidia";
@@ -480,7 +685,8 @@ const askAssistant = async (organizationId, payload, currentUser = null) => {
         message: payload.message,
         clinicSummary,
         patientProfile,
-        clinicName
+        clinicName,
+        persona
       });
     }
   } else {
@@ -488,23 +694,26 @@ const askAssistant = async (organizationId, payload, currentUser = null) => {
       message: payload.message,
       clinicSummary,
       patientProfile,
-      clinicName
+      clinicName,
+      persona
     });
   }
 
   const credits = await commercialService.recordUsage(organizationId, {
     actorUserId: currentUser?.sub || null,
     aiQueriesUsed: 1,
-    sourceFeature: "ai_assistant",
+    sourceFeature: persona === "patient" || payload.workflow ? "ai_chatbot" : "ai_assistant",
     referenceId: payload.patientId || null,
-    note: "AI assistant query"
+    note: payload.workflow ? `AI chatbot query (${persona}:${workflow})` : "AI assistant query"
   });
 
   return {
     reply,
     mode,
     tool,
-    suggestions: getSuggestions(patientProfile),
+    persona,
+    workflow,
+    suggestions: getSuggestions(persona, workflow, patientProfile),
     patient:
       patientProfile?.patient
         ? {
@@ -517,6 +726,10 @@ const askAssistant = async (organizationId, payload, currentUser = null) => {
       lowBalanceThreshold: credits.wallet.lowBalanceThreshold,
       isLowBalance: credits.wallet.isLowBalance,
       chargedCredits: credits.chargedCredits
+    },
+    branch: {
+      id: branchId,
+      name: branchLabel || null
     },
     generatedAt: new Date().toISOString()
   };

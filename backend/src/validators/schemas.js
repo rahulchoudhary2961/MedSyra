@@ -77,6 +77,33 @@ const invoiceItemsRule = (value, fieldName) => {
   });
 };
 
+const aiChatHistoryRule = (value, fieldName) => {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new ApiError(400, `${fieldName} must be a non-empty array`);
+  }
+
+  if (value.length > 12) {
+    throw new ApiError(400, `${fieldName} must contain at most 12 messages`);
+  }
+
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new ApiError(400, `${fieldName}[${index}] must be an object`);
+    }
+
+    const allowedKeys = new Set(["role", "content"]);
+    const unknownKeys = Object.keys(item).filter((key) => !allowedKeys.has(key));
+    if (unknownKeys.length > 0) {
+      throw new ApiError(400, `Unknown ${fieldName}[${index}] fields: ${unknownKeys.join(", ")}`);
+    }
+
+    return {
+      role: stringRule({ enumValues: ["user", "assistant"], maxLength: 20 })(item.role, `${fieldName}[${index}].role`),
+      content: stringRule({ minLength: 1, maxLength: 2000, safe: false })(item.content, `${fieldName}[${index}].content`)
+    };
+  });
+};
+
 const labOrderItemsRule = (value, fieldName) => {
   if (!Array.isArray(value) || value.length === 0) {
     throw new ApiError(400, `${fieldName} must be a non-empty array`);
@@ -999,9 +1026,57 @@ const aiSchemas = {
   askAssistantBody: {
     fields: {
       message: stringRule({ minLength: 2, maxLength: 4000, safe: false }),
-      patientId: optional(uuidRule())
+      patientId: optional(uuidRule()),
+      persona: optional(stringRule({ enumValues: ["staff", "patient"], maxLength: 20 })),
+      workflow: optional(
+        stringRule({
+          enumValues: [
+            "operations",
+            "patient_summary",
+            "follow_up",
+            "billing",
+            "appointment_help",
+            "follow_up_help",
+            "billing_help",
+            "report_help"
+          ],
+          maxLength: 40
+        })
+      ),
+      history: optional(aiChatHistoryRule)
     }
-  }
+  },
+  listPrescriptionSuggestionsQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      patientId: optional(uuidRule()),
+      doctorId: optional(uuidRule()),
+      appointmentId: optional(uuidRule()),
+      medicalRecordId: optional(uuidRule()),
+      status: optional(stringRule({ enumValues: ["generated", "accepted", "rejected"], maxLength: 20 }))
+    }
+  },
+  generatePrescriptionSuggestionBody: {
+    fields: {
+      patientId: optional(uuidRule()),
+      doctorId: optional(uuidRule()),
+      appointmentId: optional(uuidRule()),
+      medicalRecordId: optional(uuidRule()),
+      symptoms: optional(stringRule({ maxLength: 2000, safe: false })),
+      diagnosis: optional(stringRule({ maxLength: 2000, safe: false })),
+      notes: optional(stringRule({ maxLength: 2000, safe: false }))
+    },
+    requireAtLeastOne: true
+  },
+  reviewPrescriptionSuggestionBody: {
+    fields: {
+      status: stringRule({ enumValues: ["accepted", "rejected"], maxLength: 20 }),
+      reviewNote: optional(stringRule({ maxLength: 500, safe: false })),
+      appointmentId: optional(uuidRule()),
+      medicalRecordId: optional(uuidRule())
+    }
+  },
+  idParams: idParamsSchema
 };
 
 const publicSchemas = {
