@@ -37,6 +37,9 @@ type ReportsResponse = {
       noShows: number;
       pendingInvoices: number;
       pendingAmount: number;
+      averageInvoiceValue: number;
+      averagePaymentValue: number;
+      refundedAmount: number;
       completionRate: number;
       cancellationRate: number;
       collectionRate: number;
@@ -63,6 +66,12 @@ type ReportsResponse = {
       appointments: number;
       completed: number;
       noShows: number;
+      uniquePatients: number;
+      invoiceCount: number;
+      avgInvoiceValue: number;
+      completionRate: number;
+      noShowRate: number;
+      avgRevenuePerCompleted: number;
       revenue: number;
     }>;
     outstandingInvoices: Array<{
@@ -81,6 +90,84 @@ type ReportsResponse = {
     recordTypes: Array<{
       type: string;
       count: number;
+    }>;
+    monthlyTrends: Array<{
+      label: string;
+      invoicedAmount: number;
+      collectedAmount: number;
+      appointments: number;
+      newPatients: number;
+    }>;
+    diseasePatterns: {
+      diagnosedRecords: number;
+      uniqueDiagnoses: number;
+      items: Array<{
+        diagnosis: string;
+        caseCount: number;
+        patientCount: number;
+        lastSeenAt: string;
+        sharePercent: number;
+      }>;
+    };
+    doctorHighlights: {
+      highestRevenueDoctor: null | {
+        id: string;
+        name: string;
+        specialty: string;
+        appointments: number;
+        completed: number;
+        noShows: number;
+        uniquePatients: number;
+        invoiceCount: number;
+        avgInvoiceValue: number;
+        completionRate: number;
+        noShowRate: number;
+        avgRevenuePerCompleted: number;
+        revenue: number;
+      };
+      busiestDoctor: null | {
+        id: string;
+        name: string;
+        specialty: string;
+        appointments: number;
+        completed: number;
+        noShows: number;
+        uniquePatients: number;
+        invoiceCount: number;
+        avgInvoiceValue: number;
+        completionRate: number;
+        noShowRate: number;
+        avgRevenuePerCompleted: number;
+        revenue: number;
+      };
+      bestCompletionDoctor: null | {
+        id: string;
+        name: string;
+        specialty: string;
+        appointments: number;
+        completed: number;
+        noShows: number;
+        uniquePatients: number;
+        invoiceCount: number;
+        avgInvoiceValue: number;
+        completionRate: number;
+        noShowRate: number;
+        avgRevenuePerCompleted: number;
+        revenue: number;
+      };
+    };
+    revenueAnalysis: {
+      invoicedAmount: number;
+      collectedAmount: number;
+      outstandingAmount: number;
+      refundedAmount: number;
+      averageInvoiceValue: number;
+      averagePaymentValue: number;
+      monthOverMonthGrowth: number;
+    };
+    revenueStreams: Array<{
+      stream: string;
+      total: number;
     }>;
   };
 };
@@ -224,6 +311,7 @@ const PLAN_PRICING_DEFAULTS: Record<string, Omit<PricingForm, "planTier" | "lowB
 };
 
 const currency = (value: number) => `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const percentage = (value: number) => `${Number(value || 0).toFixed(1)}%`;
 const escapeCsv = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
 const escapePdfText = (text: string) => text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 const formatTimestamp = (value: string | null) => (value ? new Date(value).toLocaleString() : "-");
@@ -476,13 +564,58 @@ export default function ReportsPage() {
       ["No-shows", report.stats.noShows],
       ["Pending Invoices", report.stats.pendingInvoices],
       ["Pending Amount", report.stats.pendingAmount],
+      ["Average Invoice Value", report.stats.averageInvoiceValue],
+      ["Average Payment Value", report.stats.averagePaymentValue],
+      ["Refunded Amount", report.stats.refundedAmount],
       ["Completion Rate", report.stats.completionRate],
       ["Cancellation Rate", report.stats.cancellationRate],
       ["Collection Rate", report.stats.collectionRate],
+      ["Revenue MoM Growth", report.revenueAnalysis.monthOverMonthGrowth],
+      [],
+      ["Revenue Analysis"],
+      ["Metric", "Value"],
+      ["Invoiced Amount", report.revenueAnalysis.invoicedAmount],
+      ["Collected Amount", report.revenueAnalysis.collectedAmount],
+      ["Outstanding Amount", report.revenueAnalysis.outstandingAmount],
+      ["Refunded Amount", report.revenueAnalysis.refundedAmount],
+      ["Average Invoice Value", report.revenueAnalysis.averageInvoiceValue],
+      ["Average Payment Value", report.revenueAnalysis.averagePaymentValue],
+      [],
+      ["Monthly Trends"],
+      ["Month", "Invoiced", "Collected", "Appointments", "New Patients"],
+      ...report.monthlyTrends.map((entry) => [
+        entry.label,
+        entry.invoicedAmount,
+        entry.collectedAmount,
+        entry.appointments,
+        entry.newPatients
+      ]),
+      [],
+      ["Revenue Streams"],
+      ["Stream", "Total"],
+      ...report.revenueStreams.map((entry) => [entry.stream, entry.total]),
+      [],
+      ["Disease Patterns"],
+      ["Diagnosis", "Cases", "Patients", "Share %", "Last Seen"],
+      ...report.diseasePatterns.items.map((item) => [
+        item.diagnosis,
+        item.caseCount,
+        item.patientCount,
+        item.sharePercent,
+        item.lastSeenAt
+      ]),
       [],
       ["Top Doctors"],
-      ["Name", "Specialty", "Appointments", "Completed", "No-shows", "Revenue"],
-      ...report.topDoctors.map((doctor) => [doctor.name, doctor.specialty, doctor.appointments, doctor.completed, doctor.noShows, doctor.revenue]),
+      ["Name", "Specialty", "Appointments", "Completed", "Completion %", "No-show %", "Revenue"],
+      ...report.topDoctors.map((doctor) => [
+        doctor.name,
+        doctor.specialty,
+        doctor.appointments,
+        doctor.completed,
+        doctor.completionRate,
+        doctor.noShowRate,
+        doctor.revenue
+      ]),
       [],
       ["Outstanding Invoices"],
       ["Invoice", "Patient", "Doctor", "Issue Date", "Balance", "Status"],
@@ -532,12 +665,43 @@ export default function ReportsPage() {
       `No-shows: ${report.stats.noShows}`,
       `Revenue: ${currency(report.stats.revenue)}`,
       `Pending Amount: ${currency(report.stats.pendingAmount)}`,
+      `Average Invoice Value: ${currency(report.stats.averageInvoiceValue)}`,
+      `Average Payment Value: ${currency(report.stats.averagePaymentValue)}`,
+      `Refunded Amount: ${currency(report.stats.refundedAmount)}`,
       `Collection Rate: ${report.stats.collectionRate}%`,
+      `Revenue MoM Growth: ${report.revenueAnalysis.monthOverMonthGrowth >= 0 ? "+" : ""}${report.revenueAnalysis.monthOverMonthGrowth}%`,
+      "",
+      "Revenue Analysis:",
+      `Invoiced: ${currency(report.revenueAnalysis.invoicedAmount)}`,
+      `Collected: ${currency(report.revenueAnalysis.collectedAmount)}`,
+      `Outstanding: ${currency(report.revenueAnalysis.outstandingAmount)}`,
+      `Average Invoice Value: ${currency(report.revenueAnalysis.averageInvoiceValue)}`,
+      `Average Payment Value: ${currency(report.revenueAnalysis.averagePaymentValue)}`,
+      "",
+      "Monthly Trends:",
+      ...report.monthlyTrends.slice(-6).map(
+        (entry) =>
+          `${entry.label} | Invoiced ${currency(entry.invoicedAmount)} | Collected ${currency(entry.collectedAmount)} | Appts ${entry.appointments}`
+      ),
+      "",
+      "Revenue Streams:",
+      ...report.revenueStreams.slice(0, 5).map((entry) => `${entry.stream} | ${currency(entry.total)}`),
+      "",
+      "Disease Patterns:",
+      ...report.diseasePatterns.items.slice(0, 5).map(
+        (item) => `${item.diagnosis} | ${item.caseCount} cases | ${item.patientCount} patients | ${item.sharePercent}%`
+      ),
       "",
       "Top Doctors:",
       ...report.topDoctors.slice(0, 5).map(
-        (doctor) => `${doctor.name} | ${doctor.specialty} | Appts ${doctor.appointments} | Completed ${doctor.completed} | Revenue ${currency(doctor.revenue)}`
+        (doctor) =>
+          `${doctor.name} | ${doctor.specialty} | Appts ${doctor.appointments} | Completion ${doctor.completionRate}% | Revenue ${currency(doctor.revenue)}`
       ),
+      "",
+      "Doctor Highlights:",
+      `Highest Revenue: ${report.doctorHighlights.highestRevenueDoctor ? `${report.doctorHighlights.highestRevenueDoctor.name} | ${currency(report.doctorHighlights.highestRevenueDoctor.revenue)}` : "No data"}`,
+      `Busiest Doctor: ${report.doctorHighlights.busiestDoctor ? `${report.doctorHighlights.busiestDoctor.name} | ${report.doctorHighlights.busiestDoctor.appointments} appointments` : "No data"}`,
+      `Best Completion: ${report.doctorHighlights.bestCompletionDoctor ? `${report.doctorHighlights.bestCompletionDoctor.name} | ${percentage(report.doctorHighlights.bestCompletionDoctor.completionRate)}` : "No data"}`,
       "",
       "Outstanding Invoices:",
       ...report.outstandingInvoices.slice(0, 5).map(
@@ -647,8 +811,19 @@ export default function ReportsPage() {
     () => (report?.paymentMethods || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[(index + 2) % PIE_COLORS.length] })),
     [report]
   );
+  const revenueStreamData = useMemo(
+    () => (report?.revenueStreams || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[(index + 4) % PIE_COLORS.length] })),
+    [report]
+  );
+  const diseasePatternData = useMemo(
+    () => (report?.diseasePatterns.items || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[index % PIE_COLORS.length] })),
+    [report]
+  );
+  const monthlyTrendData = useMemo(() => report?.monthlyTrends || [], [report]);
   const doctorLeader = report?.topDoctors[0] || null;
   const outstandingTotal = report?.outstandingInvoices.reduce((sum, invoice) => sum + Number(invoice.balanceAmount || 0), 0) || 0;
+  const doctorHighlights = report?.doctorHighlights || null;
+  const leadingDiagnosis = diseasePatternData[0] || null;
 
   if (currentRole && !canAccessReports(currentRole)) {
     return <p className="text-red-600">You do not have access to reports.</p>;
@@ -1011,24 +1186,272 @@ export default function ReportsPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded-2xl border border-gray-200 bg-white p-6">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-gray-900">Monthly Trends</h2>
+                  <p className="mt-1 text-sm text-gray-500">12-month view of invoicing, collections, appointments, and new-patient acquisition.</p>
+                </div>
+                <TrendingUp className="h-5 w-5 text-emerald-600" />
+              </div>
+              <ResponsiveContainer width="100%" height={340}>
+                <LineChart data={monthlyTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="label" stroke="#6b7280" />
+                  <YAxis yAxisId="amount" stroke="#6b7280" />
+                  <YAxis yAxisId="volume" orientation="right" stroke="#6b7280" />
+                  <Tooltip
+                    formatter={(value, name) => {
+                      const normalized = Number(Array.isArray(value) ? value[0] : value);
+                      if (name === "invoicedAmount") {
+                        return [currency(normalized), "Invoiced"];
+                      }
+                      if (name === "collectedAmount") {
+                        return [currency(normalized), "Collected"];
+                      }
+                      if (name === "appointments") {
+                        return [normalized.toLocaleString(), "Appointments"];
+                      }
+                      return [normalized.toLocaleString(), "New Patients"];
+                    }}
+                  />
+                  <Legend />
+                  <Bar yAxisId="amount" dataKey="invoicedAmount" fill="#d1fae5" radius={[6, 6, 0, 0]} name="Invoiced" />
+                  <Bar yAxisId="amount" dataKey="collectedAmount" fill="#10b981" radius={[6, 6, 0, 0]} name="Collected" />
+                  <Line yAxisId="volume" type="monotone" dataKey="appointments" stroke="#047857" strokeWidth={3} name="Appointments" />
+                  <Line yAxisId="volume" type="monotone" dataKey="newPatients" stroke="#f59e0b" strokeWidth={2} dot={false} name="New Patients" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-gray-200 bg-white p-6">
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-gray-900">Revenue Analysis</h2>
+                    <p className="mt-1 text-sm text-gray-500">Cash collection, outstanding exposure, and revenue quality for {report.meta.label.toLowerCase()}.</p>
+                  </div>
+                  <IndianRupee className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-sm text-gray-500">Invoiced</p>
+                    <p className="mt-2 text-2xl text-gray-900">{currency(report.revenueAnalysis.invoicedAmount)}</p>
+                    <p className="mt-2 text-xs text-gray-500">Net bill value issued in this window.</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-sm text-gray-500">Collected</p>
+                    <p className="mt-2 text-2xl text-gray-900">{currency(report.revenueAnalysis.collectedAmount)}</p>
+                    <p className="mt-2 text-xs text-gray-500">{percentage(report.stats.collectionRate)} collection rate.</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-sm text-gray-500">Outstanding</p>
+                    <p className="mt-2 text-2xl text-gray-900">{currency(report.revenueAnalysis.outstandingAmount)}</p>
+                    <p className="mt-2 text-xs text-gray-500">{report.stats.pendingInvoices} invoices still open.</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-sm text-gray-500">Refunded</p>
+                    <p className="mt-2 text-2xl text-gray-900">{currency(report.revenueAnalysis.refundedAmount)}</p>
+                    <p className="mt-2 text-xs text-gray-500">Returned payments in the selected period.</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-sm text-gray-500">Average Invoice</p>
+                    <p className="mt-2 text-2xl text-gray-900">{currency(report.revenueAnalysis.averageInvoiceValue)}</p>
+                    <p className="mt-2 text-xs text-gray-500">Benchmark the average bill size.</p>
+                  </div>
+                  <div className={`rounded-xl border p-4 ${report.revenueAnalysis.monthOverMonthGrowth >= 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+                    <p className={`text-sm ${report.revenueAnalysis.monthOverMonthGrowth >= 0 ? "text-emerald-700" : "text-red-700"}`}>Revenue Momentum</p>
+                    <p className={`mt-2 text-2xl ${report.revenueAnalysis.monthOverMonthGrowth >= 0 ? "text-emerald-950" : "text-red-900"}`}>
+                      {report.revenueAnalysis.monthOverMonthGrowth >= 0 ? "+" : ""}
+                      {percentage(report.revenueAnalysis.monthOverMonthGrowth)}
+                    </p>
+                    <p className={`mt-2 text-xs ${report.revenueAnalysis.monthOverMonthGrowth >= 0 ? "text-emerald-800" : "text-red-700"}`}>
+                      Compared against the previous 30-day collection window.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-white p-6">
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-gray-900">Revenue Streams</h2>
+                    <p className="mt-1 text-sm text-gray-500">Where billed value is coming from across services.</p>
+                  </div>
+                  <Receipt className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie data={revenueStreamData} dataKey="total" nameKey="stream" outerRadius={84}>
+                        {revenueStreamData.map((entry) => (
+                          <Cell key={entry.stream} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value, name) => {
+                          const normalized = Number(Array.isArray(value) ? value[0] : value);
+                          return [currency(normalized), name];
+                        }}
+                      />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-3">
+                    {revenueStreamData.length === 0 && <p className="text-sm text-gray-500">No revenue stream data for this period.</p>}
+                    {revenueStreamData.map((entry) => (
+                      <div key={entry.stream} className="rounded-xl border border-gray-200 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <span className="h-3 w-3 rounded-full" style={{ backgroundColor: entry.color }} />
+                            <p className="text-sm text-gray-800">{entry.stream}</p>
+                          </div>
+                          <p className="text-sm text-gray-900">{currency(entry.total)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-gray-200 bg-white p-6">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-gray-900">Disease Patterns</h2>
+                  <p className="mt-1 text-sm text-gray-500">Diagnosis frequency and patient reach across the last 12 months.</p>
+                </div>
+                <Stethoscope className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">Diagnosed records</p>
+                  <p className="mt-2 text-2xl text-gray-900">{report.diseasePatterns.diagnosedRecords.toLocaleString()}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">Unique diagnoses</p>
+                  <p className="mt-2 text-2xl text-gray-900">{report.diseasePatterns.uniqueDiagnoses.toLocaleString()}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">Leading diagnosis</p>
+                  <p className="mt-2 text-lg text-gray-900">{leadingDiagnosis?.diagnosis || "No diagnosis data"}</p>
+                  <p className="mt-2 text-xs text-gray-500">
+                    {leadingDiagnosis
+                      ? `${leadingDiagnosis.caseCount} cases | ${leadingDiagnosis.patientCount} patients`
+                      : "Diagnoses will appear here once records are coded."}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={diseasePatternData} layout="vertical" margin={{ left: 24 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis type="number" stroke="#6b7280" />
+                    <YAxis type="category" dataKey="diagnosis" stroke="#6b7280" width={130} />
+                    <Tooltip
+                      formatter={(value, name) => {
+                        const normalized = Number(Array.isArray(value) ? value[0] : value);
+                        if (name === "caseCount") {
+                          return [normalized.toLocaleString(), "Cases"];
+                        }
+                        return [normalized.toLocaleString(), "Patients"];
+                      }}
+                    />
+                    <Legend />
+                    <Bar dataKey="caseCount" fill="#10b981" radius={[0, 6, 6, 0]} name="Cases" />
+                    <Bar dataKey="patientCount" fill="#047857" radius={[0, 6, 6, 0]} name="Patients" />
+                  </BarChart>
+                </ResponsiveContainer>
+                <div className="space-y-3">
+                  {diseasePatternData.length === 0 && <p className="text-sm text-gray-500">No diagnosis patterns yet.</p>}
+                  {diseasePatternData.map((entry) => (
+                    <div key={entry.diagnosis} className="rounded-xl border border-gray-200 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm text-gray-900">{entry.diagnosis}</p>
+                          <p className="mt-1 text-xs text-gray-500">Last seen {new Date(entry.lastSeenAt).toLocaleDateString()}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-gray-900">{percentage(entry.sharePercent)}</p>
+                          <p className="mt-1 text-xs text-gray-500">{entry.caseCount} cases</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-6">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-gray-900">Doctor Performance Intelligence</h2>
+                  <p className="mt-1 text-sm text-gray-500">Identify the doctors driving revenue, volume, and operational quality.</p>
+                </div>
+                <Users className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div className="space-y-4">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="text-sm text-emerald-700">Highest Revenue Doctor</p>
+                  <p className="mt-2 text-xl text-emerald-950">{doctorHighlights?.highestRevenueDoctor?.name || "No data"}</p>
+                  <p className="mt-2 text-sm text-emerald-800">
+                    {doctorHighlights?.highestRevenueDoctor
+                      ? `${doctorHighlights.highestRevenueDoctor.specialty} | ${currency(doctorHighlights.highestRevenueDoctor.revenue)} collected | ${doctorHighlights.highestRevenueDoctor.invoiceCount} invoices`
+                      : "Revenue intelligence will appear once invoices and payments are linked to doctors."}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                  <p className="text-sm text-sky-700">Busiest Doctor</p>
+                  <p className="mt-2 text-xl text-sky-950">{doctorHighlights?.busiestDoctor?.name || "No data"}</p>
+                  <p className="mt-2 text-sm text-sky-800">
+                    {doctorHighlights?.busiestDoctor
+                      ? `${doctorHighlights.busiestDoctor.appointments} appointments | ${doctorHighlights.busiestDoctor.uniquePatients} unique patients | ${doctorHighlights.busiestDoctor.noShows} no-shows`
+                      : "Appointment volume data will appear once bookings are available in the selected period."}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-sm text-amber-700">Best Completion Doctor</p>
+                  <p className="mt-2 text-xl text-amber-950">{doctorHighlights?.bestCompletionDoctor?.name || "No data"}</p>
+                  <p className="mt-2 text-sm text-amber-800">
+                    {doctorHighlights?.bestCompletionDoctor
+                      ? `${percentage(doctorHighlights.bestCompletionDoctor.completionRate)} completion | ${percentage(doctorHighlights.bestCompletionDoctor.noShowRate)} no-show | ${currency(doctorHighlights.bestCompletionDoctor.avgRevenuePerCompleted)} per completed visit`
+                      : "Completion quality will appear once appointments are completed in the selected period."}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-sm text-gray-500">What this helps with</p>
+                  <p className="mt-2 text-sm text-gray-700">
+                    Combine these highlights with the doctor table below to spot capacity imbalance, underperforming schedules, and billing opportunity by clinician.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
               <div className="border-b border-gray-200 px-6 py-4">
                 <h2 className="text-gray-900">Top Doctors</h2>
-                <p className="mt-1 text-sm text-gray-500">Booking volume, completion, no-shows, and revenue.</p>
+                <p className="mt-1 text-sm text-gray-500">Volume, care conversion, patient reach, and revenue per doctor.</p>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full min-w-[820px]">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-sm text-gray-600">Doctor</th>
                       <th className="px-6 py-3 text-left text-sm text-gray-600">Appointments</th>
                       <th className="px-6 py-3 text-left text-sm text-gray-600">Completed</th>
-                      <th className="px-6 py-3 text-left text-sm text-gray-600">No-shows</th>
+                      <th className="px-6 py-3 text-left text-sm text-gray-600">Unique Patients</th>
+                      <th className="px-6 py-3 text-left text-sm text-gray-600">Completion %</th>
+                      <th className="px-6 py-3 text-left text-sm text-gray-600">No-show %</th>
+                      <th className="px-6 py-3 text-left text-sm text-gray-600">Avg Rev / Completed</th>
                       <th className="px-6 py-3 text-left text-sm text-gray-600">Revenue</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {report.topDoctors.length === 0 && <tr><td colSpan={5} className="px-6 py-4 text-sm text-gray-500">No doctor performance data in this period.</td></tr>}
+                    {report.topDoctors.length === 0 && <tr><td colSpan={8} className="px-6 py-4 text-sm text-gray-500">No doctor performance data in this period.</td></tr>}
                     {report.topDoctors.map((doctor) => (
                       <tr key={doctor.id} className="border-t border-gray-100">
                         <td className="px-6 py-4 text-sm text-gray-800">
@@ -1037,7 +1460,10 @@ export default function ReportsPage() {
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-800">{doctor.appointments}</td>
                         <td className="px-6 py-4 text-sm text-gray-800">{doctor.completed}</td>
-                        <td className="px-6 py-4 text-sm text-gray-800">{doctor.noShows}</td>
+                        <td className="px-6 py-4 text-sm text-gray-800">{doctor.uniquePatients}</td>
+                        <td className="px-6 py-4 text-sm text-gray-800">{percentage(doctor.completionRate)}</td>
+                        <td className="px-6 py-4 text-sm text-gray-800">{percentage(doctor.noShowRate)}</td>
+                        <td className="px-6 py-4 text-sm text-gray-800">{currency(doctor.avgRevenuePerCompleted)}</td>
                         <td className="px-6 py-4 text-sm text-gray-800">{currency(doctor.revenue)}</td>
                       </tr>
                     ))}

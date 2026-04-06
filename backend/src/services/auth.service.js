@@ -13,6 +13,21 @@ const {
 
 const ALLOWED_ROLES = new Set(Object.values(USER_ROLES));
 
+const getDefaultBranch = async (organizationId) => {
+  const result = await pool.query(
+    `
+      SELECT id, name
+      FROM branches
+      WHERE organization_id = $1
+        AND is_default = true
+      LIMIT 1
+    `,
+    [organizationId]
+  );
+
+  return result.rows[0] || null;
+};
+
 const getOrCreateOrganization = async (name) => {
   const normalizedName = name.trim();
 
@@ -32,6 +47,29 @@ const getOrCreateOrganization = async (name) => {
   return created.rows[0].id;
 };
 
+const ensureDefaultBranch = async (organizationId) => {
+  const existing = await getDefaultBranch(organizationId);
+  if (existing) {
+    return existing;
+  }
+
+  const created = await pool.query(
+    `
+      INSERT INTO branches (organization_id, branch_code, name, is_default)
+      VALUES ($1, 'MAIN', 'Main Branch', true)
+      ON CONFLICT DO NOTHING
+      RETURNING id, name
+    `,
+    [organizationId]
+  );
+
+  if (created.rows[0]) {
+    return created.rows[0];
+  }
+
+  return getDefaultBranch(organizationId);
+};
+
 const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 const generateToken = () => crypto.randomBytes(32).toString("hex");
 
@@ -41,6 +79,7 @@ const buildAuthToken = (user) => {
       sub: user.id,
       role: user.role,
       organizationId: user.organization_id,
+      branchId: user.branch_id || null,
       emailVerified: Boolean(user.email_verified_at)
     },
     env.jwtSecret
@@ -75,10 +114,12 @@ const provisionSignupAccount = async (payload) => {
   }
 
   const organizationId = await getOrCreateOrganization(hospitalName);
+  const defaultBranch = await ensureDefaultBranch(organizationId);
   const passwordHash = await bcrypt.hash(password, 12);
 
   const user = await authModel.createUser({
     organizationId,
+    branchId: defaultBranch.id,
     fullName,
     email: normalizedEmail,
     phone,
@@ -150,6 +191,8 @@ const signin = async ({ email, password }) => {
     user: {
       id: user.id,
       organization_id: user.organization_id,
+      branch_id: user.branch_id || null,
+      branch_name: user.branch_name || null,
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
@@ -259,6 +302,7 @@ const createStaff = async (organizationId, payload) => {
     email,
     phone,
     role,
+    branchId,
     notifyDailyScheduleSms = false,
     notifyDailyScheduleEmail = true
   } = payload;
@@ -275,8 +319,10 @@ const createStaff = async (organizationId, payload) => {
 
   const temporaryPassword = generateToken();
   const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+  const defaultBranch = await ensureDefaultBranch(organizationId);
   const user = await authModel.createUser({
     organizationId,
+    branchId: branchId || defaultBranch.id,
     fullName,
     email: normalizedEmail,
     phone,

@@ -79,7 +79,7 @@ router.get(
 );
 router.delete(
   "/:id",
-  authorizeRoles("full_access", "billing_access"),
+  authorizeRoles("full_access"),
   validateRequest({ params: billingsSchemas.idParams }),
   controller.deleteInvoice
 );

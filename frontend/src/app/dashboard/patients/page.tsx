@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Edit2, Eye, Plus, Search, Trash2 } from "lucide-react";
 import { apiRequest, ApiRequestError } from "@/lib/api";
-import { canAccessPatients } from "@/lib/roles";
+import { canAccessPatients, canDeletePatients } from "@/lib/roles";
 import { isUuid } from "@/lib/uuid";
 import { Patient } from "@/types/api";
 
@@ -497,15 +497,17 @@ export default function PatientsPage() {
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePatient(patient)}
-                        disabled={deletingPatientId === patient.id}
-                        className="p-1.5 rounded hover:bg-red-50 text-red-600 disabled:opacity-60"
-                        title="Delete patient"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canDeletePatients(currentRole) && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePatient(patient)}
+                          disabled={deletingPatientId === patient.id}
+                          className="p-1.5 rounded hover:bg-red-50 text-red-600 disabled:opacity-60"
+                          title="Delete patient"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

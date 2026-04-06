@@ -5,6 +5,9 @@ const patientsModel = require("../models/patients.model");
 const authModel = require("../models/auth.model");
 const appointmentsModel = require("../models/appointments.model");
 const medicalRecordsModel = require("../models/medical-records.model");
+const { logAuditEventSafe } = require("./audit.service");
+const resolveBranchScopeId = (branchContext = null, fallback = null) =>
+  branchContext?.readBranchId || branchContext?.writeBranchId || fallback || null;
 
 const invalidateCrmRelatedCaches = async (organizationId) => {
   await Promise.all([
@@ -81,10 +84,11 @@ const listTasks = async (organizationId, query) => {
   return crmModel.listTasks(organizationId, query);
 };
 
-const createTask = async (organizationId, payload, actor = null) => {
+const createTask = async (organizationId, payload, actor = null, requestMeta = null, branchContext = null) => {
   const patient = await validateReferences(organizationId, payload);
   const normalizedPayload = {
     ...payload,
+    branchId: payload.branchId || resolveBranchScopeId(branchContext),
     title: payload.title?.trim() || buildTaskTitle(payload.taskType, patient.full_name),
     nextActionAt: normalizeDateTime(payload.nextActionAt, "nextActionAt"),
     completedAt:
@@ -94,13 +98,37 @@ const createTask = async (organizationId, payload, actor = null) => {
     createdByUserId: actor?.sub || null
   };
 
+  if (!normalizedPayload.branchId) {
+    throw new ApiError(400, "A branch must be selected before creating a CRM task");
+  }
+
   const created = await crmModel.createTask(organizationId, normalizedPayload);
   await invalidateCrmRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "crm",
+    action: "task_created",
+    summary: `CRM task created: ${created.title}`,
+    entityType: "crm_task",
+    entityId: created.id,
+    entityLabel: created.title,
+    metadata: {
+      taskType: created.task_type,
+      status: created.status,
+      patientId: created.patient_id
+    },
+    afterState: created
+  });
+
   return created;
 };
 
-const updateTask = async (organizationId, id, payload) => {
-  const current = await crmModel.getTaskById(organizationId, id);
+const updateTask = async (organizationId, id, payload, actor = null, requestMeta = null, branchContext = null) => {
+  const scopeBranchId = payload.branchId || resolveBranchScopeId(branchContext);
+  const current = await crmModel.getTaskById(organizationId, id, scopeBranchId);
   if (!current) {
     throw new ApiError(404, "CRM task not found");
   }
@@ -114,6 +142,7 @@ const updateTask = async (organizationId, id, payload) => {
 
   const normalizedPayload = {
     ...payload,
+    branchId: scopeBranchId || current.branch_id || null,
     nextActionAt: normalizeDateTime(payload.nextActionAt, "nextActionAt"),
     lastContactedAt:
       payload.lastContactedAt !== undefined
@@ -135,6 +164,25 @@ const updateTask = async (organizationId, id, payload) => {
   }
 
   await invalidateCrmRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "crm",
+    action: "task_updated",
+    summary: `CRM task updated: ${updated.title}`,
+    entityType: "crm_task",
+    entityId: updated.id,
+    entityLabel: updated.title,
+    metadata: {
+      taskType: updated.task_type,
+      status: updated.status
+    },
+    beforeState: current,
+    afterState: updated
+  });
+
   return updated;
 };
 

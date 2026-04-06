@@ -1,5 +1,6 @@
 const asyncHandler = require("../utils/async-handler");
 const patientsService = require("../services/patients.service");
+const { getRequestMeta } = require("../utils/logger");
 
 const listPatients = asyncHandler(async (req, res) => {
   const data = await patientsService.listPatients(req.user.organizationId, req.query);
@@ -7,7 +8,7 @@ const listPatients = asyncHandler(async (req, res) => {
 });
 
 const createPatient = asyncHandler(async (req, res) => {
-  const data = await patientsService.createPatient(req.user.organizationId, req.body);
+  const data = await patientsService.createPatient(req.user.organizationId, req.body, req.user, getRequestMeta(req));
   res.status(201).json({ success: true, message: "Patient created", data });
 });
 
@@ -22,12 +23,18 @@ const getPatientProfile = asyncHandler(async (req, res) => {
 });
 
 const updatePatient = asyncHandler(async (req, res) => {
-  const data = await patientsService.updatePatient(req.user.organizationId, req.params.id, req.body);
+  const data = await patientsService.updatePatient(
+    req.user.organizationId,
+    req.params.id,
+    req.body,
+    req.user,
+    getRequestMeta(req)
+  );
   res.json({ success: true, message: "Patient updated", data });
 });
 
 const deletePatient = asyncHandler(async (req, res) => {
-  await patientsService.deletePatient(req.user.organizationId, req.params.id);
+  await patientsService.deletePatient(req.user.organizationId, req.params.id, req.user, getRequestMeta(req));
   res.json({ success: true, message: "Patient deleted" });
 });
 

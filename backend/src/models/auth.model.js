@@ -2,6 +2,7 @@ const pool = require("../config/db");
 
 const createUser = async ({
   organizationId,
+  branchId,
   fullName,
   email,
   phone,
@@ -13,16 +14,17 @@ const createUser = async ({
 }) => {
   const query = `
     INSERT INTO users (
-      organization_id, full_name, email, phone, role, password_hash, email_verified_at,
+      organization_id, branch_id, full_name, email, phone, role, password_hash, email_verified_at,
       notify_daily_schedule_sms, notify_daily_schedule_email
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    RETURNING id, organization_id, full_name, email, phone, role, email_verified_at,
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    RETURNING id, organization_id, branch_id, full_name, email, phone, role, email_verified_at,
               notify_daily_schedule_sms, notify_daily_schedule_email, created_at
   `;
 
   const values = [
     organizationId,
+    branchId,
     fullName,
     email.toLowerCase(),
     phone,
@@ -38,12 +40,14 @@ const createUser = async ({
 
 const findUserByEmail = async (email) => {
   const query = `
-    SELECT u.id, u.organization_id, u.full_name, u.email, u.phone, u.role, u.password_hash,
+    SELECT u.id, u.organization_id, u.branch_id, u.full_name, u.email, u.phone, u.role, u.password_hash,
            o.name AS organization_name,
+           b.name AS branch_name,
            u.email_verified_at, u.failed_login_attempts, u.locked_until, u.created_at,
            u.notify_daily_schedule_sms, u.notify_daily_schedule_email
     FROM users u
     JOIN organizations o ON o.id = u.organization_id
+    LEFT JOIN branches b ON b.id = u.branch_id
     WHERE LOWER(u.email) = LOWER($1)
   `;
   const { rows } = await pool.query(query, [email]);
@@ -52,10 +56,12 @@ const findUserByEmail = async (email) => {
 
 const findUserById = async (id) => {
   const query = `
-    SELECT u.id, u.organization_id, u.full_name, u.email, u.phone, u.role, u.email_verified_at, u.created_at,
-           o.name AS organization_name, u.notify_daily_schedule_sms, u.notify_daily_schedule_email
+    SELECT u.id, u.organization_id, u.branch_id, u.full_name, u.email, u.phone, u.role, u.email_verified_at, u.created_at,
+           o.name AS organization_name, b.name AS branch_name,
+           u.notify_daily_schedule_sms, u.notify_daily_schedule_email
     FROM users u
     JOIN organizations o ON o.id = u.organization_id
+    LEFT JOIN branches b ON b.id = u.branch_id
     WHERE u.id = $1
   `;
   const { rows } = await pool.query(query, [id]);
@@ -64,10 +70,11 @@ const findUserById = async (id) => {
 
 const findUserByIdAndOrganization = async (organizationId, userId) => {
   const query = `
-    SELECT id, organization_id, full_name, email, phone, role, email_verified_at, created_at,
-           notify_daily_schedule_sms, notify_daily_schedule_email
-    FROM users
-    WHERE organization_id = $1 AND id = $2
+    SELECT u.id, u.organization_id, u.branch_id, u.full_name, u.email, u.phone, u.role, u.email_verified_at, u.created_at,
+           u.notify_daily_schedule_sms, u.notify_daily_schedule_email, b.name AS branch_name
+    FROM users u
+    LEFT JOIN branches b ON b.id = u.branch_id
+    WHERE u.organization_id = $1 AND u.id = $2
   `;
   const { rows } = await pool.query(query, [organizationId, userId]);
   return rows[0] || null;
@@ -83,12 +90,13 @@ const listUsersByOrganization = async (organizationId, role = null) => {
   }
 
   const query = `
-    SELECT id, organization_id, full_name, email, phone, role, email_verified_at, created_at,
-           notify_daily_schedule_sms, notify_daily_schedule_email
-    FROM users
-    WHERE organization_id = $1
+    SELECT u.id, u.organization_id, u.branch_id, u.full_name, u.email, u.phone, u.role, u.email_verified_at, u.created_at,
+           u.notify_daily_schedule_sms, u.notify_daily_schedule_email, b.name AS branch_name
+    FROM users u
+    LEFT JOIN branches b ON b.id = u.branch_id
+    WHERE u.organization_id = $1
       ${roleClause}
-    ORDER BY full_name ASC
+    ORDER BY u.full_name ASC
   `;
 
   const { rows } = await pool.query(query, values);
@@ -118,7 +126,7 @@ const verifyEmailWithToken = async ({ email, tokenHash }) => {
       AND email_verification_token_hash = $2
       AND email_verification_expires_at IS NOT NULL
       AND email_verification_expires_at > NOW()
-    RETURNING id, organization_id, full_name, email, phone, role, email_verified_at, created_at
+    RETURNING id, organization_id, branch_id, full_name, email, phone, role, email_verified_at, created_at
   `;
 
   const { rows } = await pool.query(query, [email, tokenHash]);
@@ -201,7 +209,7 @@ const updateStaffNotificationPreferences = async ({
         notify_daily_schedule_email = $4,
         updated_at = NOW()
     WHERE organization_id = $1 AND id = $2
-    RETURNING id, organization_id, full_name, email, phone, role, email_verified_at, created_at,
+    RETURNING id, organization_id, branch_id, full_name, email, phone, role, email_verified_at, created_at,
               notify_daily_schedule_sms, notify_daily_schedule_email
   `;
   const { rows } = await pool.query(query, [
@@ -228,15 +236,18 @@ const listDailyScheduleRecipients = async (organizationId = null) => {
     SELECT
       u.id,
       u.organization_id,
+      u.branch_id,
       u.full_name,
       u.email,
       u.phone,
       u.role,
       u.notify_daily_schedule_sms,
       u.notify_daily_schedule_email,
-      o.name AS organization_name
+      o.name AS organization_name,
+      b.name AS branch_name
     FROM users u
     JOIN organizations o ON o.id = u.organization_id
+    LEFT JOIN branches b ON b.id = u.branch_id
     WHERE ${conditions.join(" AND ")}
     ORDER BY o.name ASC, u.full_name ASC
   `;

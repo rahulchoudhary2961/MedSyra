@@ -18,7 +18,7 @@ import {
 import { apiRequest } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth";
 import { canAccessSettings, isFullAccessRole } from "@/lib/roles";
-import { AuthUser, NotificationLog, NotificationPreferencesData } from "@/types/api";
+import { AuditLogEntry, AuthUser, Branch, NotificationLog, NotificationPreferencesData, SecurityOverviewData } from "@/types/api";
 
 type MeResponse = {
   success: boolean;
@@ -85,13 +85,39 @@ type NotificationLogsResponse = {
   };
 };
 
+type SecurityOverviewResponse = {
+  success: boolean;
+  data: SecurityOverviewData;
+};
+
+type AuditLogsResponse = {
+  success: boolean;
+  data: {
+    items: AuditLogEntry[];
+    pagination?: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  };
+};
+
 type StaffForm = {
   fullName: string;
   phone: string;
   email: string;
   role: "admin" | "receptionist" | "nurse" | "billing" | "management";
+  branchId: string;
   smsDailySchedule: boolean;
   emailDailySchedule: boolean;
+};
+
+type BranchesResponse = {
+  success: boolean;
+  data: {
+    items: Branch[];
+  };
 };
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
@@ -115,6 +141,7 @@ const DEFAULT_STAFF_FORM: StaffForm = {
   phone: "",
   email: "",
   role: "admin",
+  branchId: "",
   smsDailySchedule: true,
   emailDailySchedule: true
 };
@@ -184,6 +211,7 @@ export default function SettingsPage() {
   );
   const [successMessage, setSuccessMessage] = useState("");
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [staffForm, setStaffForm] = useState<StaffForm>(DEFAULT_STAFF_FORM);
   const [staffError, setStaffError] = useState("");
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
@@ -196,6 +224,14 @@ export default function SettingsPage() {
   const [notificationError, setNotificationError] = useState("");
   const [isLoadingNotificationCenter, setIsLoadingNotificationCenter] = useState(false);
   const [isSavingNotificationCenter, setIsSavingNotificationCenter] = useState(false);
+  const [securityOverview, setSecurityOverview] = useState<SecurityOverviewData | null>(null);
+  const [securityLogs, setSecurityLogs] = useState<AuditLogEntry[]>([]);
+  const [securityError, setSecurityError] = useState("");
+  const [isLoadingSecurityOverview, setIsLoadingSecurityOverview] = useState(false);
+  const [isLoadingSecurityLogs, setIsLoadingSecurityLogs] = useState(false);
+  const [securityModuleFilter, setSecurityModuleFilter] = useState("all");
+  const [securityOutcomeFilter, setSecurityOutcomeFilter] = useState("all");
+  const [securityDestructiveOnly, setSecurityDestructiveOnly] = useState(false);
 
   useEffect(() => {
     apiRequest<MeResponse>("/auth/me", { authenticated: true })
@@ -216,9 +252,18 @@ export default function SettingsPage() {
     }
 
     setIsLoadingStaff(true);
-    apiRequest<StaffUsersResponse>("/auth/users", { authenticated: true })
-      .then((response) => {
-        setStaffUsers(response.data.items || []);
+    Promise.all([
+      apiRequest<StaffUsersResponse>("/auth/users", { authenticated: true }),
+      apiRequest<BranchesResponse>("/branches?activeOnly=true", { authenticated: true })
+    ])
+      .then(([staffResponse, branchesResponse]) => {
+        const branchItems = branchesResponse.data.items || [];
+        setStaffUsers(staffResponse.data.items || []);
+        setBranches(branchItems);
+        setStaffForm((current) => ({
+          ...current,
+          branchId: current.branchId || branchItems[0]?.id || ""
+        }));
       })
       .catch((error: Error) => {
         setStaffError(error.message || "Failed to load staff");
@@ -227,6 +272,57 @@ export default function SettingsPage() {
         setIsLoadingStaff(false);
       });
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser || !isFullAccessRole(currentUser.role)) {
+      return;
+    }
+
+    setIsLoadingSecurityOverview(true);
+    setSecurityError("");
+
+    apiRequest<SecurityOverviewResponse>("/security/overview?days=30", { authenticated: true })
+      .then((response) => {
+        setSecurityOverview(response.data);
+      })
+      .catch((error: Error) => {
+        setSecurityError(error.message || "Failed to load security overview");
+      })
+      .finally(() => {
+        setIsLoadingSecurityOverview(false);
+      });
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser || !isFullAccessRole(currentUser.role)) {
+      return;
+    }
+
+    const params = new URLSearchParams({ limit: "25" });
+    if (securityModuleFilter !== "all") {
+      params.set("module", securityModuleFilter);
+    }
+    if (securityOutcomeFilter !== "all") {
+      params.set("outcome", securityOutcomeFilter);
+    }
+    if (securityDestructiveOnly) {
+      params.set("isDestructive", "true");
+    }
+
+    setIsLoadingSecurityLogs(true);
+    setSecurityError("");
+
+    apiRequest<AuditLogsResponse>(`/security/audit-logs?${params.toString()}`, { authenticated: true })
+      .then((response) => {
+        setSecurityLogs(response.data.items || []);
+      })
+      .catch((error: Error) => {
+        setSecurityError(error.message || "Failed to load audit logs");
+      })
+      .finally(() => {
+        setIsLoadingSecurityLogs(false);
+      });
+  }, [currentUser, securityModuleFilter, securityOutcomeFilter, securityDestructiveOnly]);
 
   useEffect(() => {
     if (!currentUser || !isFullAccessRole(currentUser.role)) {
@@ -280,6 +376,12 @@ export default function SettingsPage() {
     () => staffUsers.filter((staff) => staff.role === "doctor").length,
     [staffUsers]
   );
+  const auditModules = useMemo(() => {
+    const modules = new Set<string>();
+    (securityOverview?.moduleBreakdown || []).forEach((item) => modules.add(item.module));
+    securityLogs.forEach((item) => modules.add(item.module));
+    return Array.from(modules).sort((a, b) => a.localeCompare(b));
+  }, [securityOverview, securityLogs]);
 
   const showSaved = (message: string) => {
     setSuccessMessage(message);
@@ -335,6 +437,7 @@ export default function SettingsPage() {
           phone: staffForm.phone.trim(),
           email: staffForm.email.trim(),
           role: staffForm.role,
+          branchId: staffForm.branchId,
           notifyDailyScheduleSms: staffForm.smsDailySchedule,
           notifyDailyScheduleEmail: staffForm.emailDailySchedule
         }
@@ -345,7 +448,10 @@ export default function SettingsPage() {
           a.full_name.localeCompare(b.full_name)
         )
       );
-      setStaffForm(DEFAULT_STAFF_FORM);
+      setStaffForm({
+        ...DEFAULT_STAFF_FORM,
+        branchId: branches[0]?.id || ""
+      });
       showSaved("Staff member added");
     } catch (error) {
       setStaffError(error instanceof Error ? error.message : "Failed to add staff");
@@ -361,6 +467,14 @@ export default function SettingsPage() {
     if (role === "billing") return "Billing";
     if (role === "management") return "Management";
     return role;
+  };
+
+  const formatAuditDate = (value?: string | null) => {
+    if (!value) {
+      return "Never";
+    }
+
+    return new Date(value).toLocaleString();
   };
 
   const handleResendSetup = async (staffId: string) => {
@@ -924,27 +1038,268 @@ export default function SettingsPage() {
           )}
 
           {activeTab === "security" && (
-            <div className="bg-white rounded-xl p-6 border border-gray-200 space-y-6">
-              <div>
-                <h3 className="text-gray-900">Session & Security</h3>
-                <p className="text-sm text-gray-600 mt-1">Manage your current browser session and local data.</p>
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl p-6 border border-gray-200 space-y-6">
+                <div>
+                  <h3 className="text-gray-900">Security & Audit</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Review privileged activity, permission denials, and protected destructive actions.
+                  </p>
+                </div>
+
+                {securityError && <p className="text-sm text-red-600">{securityError}</p>}
+                {(isLoadingSecurityOverview || isLoadingSecurityLogs) && (
+                  <p className="text-sm text-gray-500">Loading security activity...</p>
+                )}
+
+                {securityOverview && (
+                  <>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Audit Events</p>
+                        <p className="mt-2 text-2xl text-gray-900">{securityOverview.summary.totalEvents}</p>
+                        <p className="mt-1 text-xs text-gray-500">Last {securityOverview.summary.windowDays} days</p>
+                      </div>
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-amber-700">Destructive Actions</p>
+                        <p className="mt-2 text-2xl text-amber-900">{securityOverview.summary.destructiveActions}</p>
+                        <p className="mt-1 text-xs text-amber-700">Deletes, bulk cancellations, stock loss</p>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-rose-700">Permission Denials</p>
+                        <p className="mt-2 text-2xl text-rose-900">{securityOverview.summary.deniedActions}</p>
+                        <p className="mt-1 text-xs text-rose-700">Blocked access attempts logged centrally</p>
+                      </div>
+                      <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-violet-700">Critical Events</p>
+                        <p className="mt-2 text-2xl text-violet-900">{securityOverview.summary.criticalEvents}</p>
+                        <p className="mt-1 text-xs text-violet-700">Reserved for highest-severity actions</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Locked Accounts</p>
+                        <p className="mt-2 text-2xl text-slate-900">{securityOverview.summary.lockedAccounts}</p>
+                        <p className="mt-1 text-xs text-slate-500">Users currently locked after failed logins</p>
+                      </div>
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-emerald-700">Active Accounts</p>
+                        <p className="mt-2 text-2xl text-emerald-900">{securityOverview.summary.activeAccounts7d}</p>
+                        <p className="mt-1 text-xs text-emerald-700">Users signed in during the last 7 days</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                      <div className="rounded-xl border border-gray-200 p-4">
+                        <div className="mb-4">
+                          <h4 className="text-gray-900">Protected Actions</h4>
+                          <p className="mt-1 text-sm text-gray-600">High-risk operations now require full access.</p>
+                        </div>
+                        <div className="space-y-3">
+                          {securityOverview.protectedActions.map((item) => (
+                            <div key={item.action} className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                              <p className="text-sm text-gray-900">{item.action}</p>
+                              <p className="mt-1 text-xs text-gray-600">{item.description}</p>
+                              <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-gray-500">
+                                Allowed Roles: {item.roles.map((role) => formatStaffRole(role)).join(", ")}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-gray-200 p-4">
+                        <div className="mb-4">
+                          <h4 className="text-gray-900">Recent Destructive Activity</h4>
+                          <p className="mt-1 text-sm text-gray-600">Newest deletes and irreversible operational changes.</p>
+                        </div>
+                        <div className="space-y-3">
+                          {securityOverview.recentDestructive.length === 0 && (
+                            <p className="text-sm text-gray-500">No destructive actions logged yet.</p>
+                          )}
+                          {securityOverview.recentDestructive.map((item) => (
+                            <div key={item.id} className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-sm text-red-900">{item.summary}</p>
+                                <span className="rounded-full bg-white px-2 py-1 text-[11px] uppercase tracking-[0.14em] text-red-700">
+                                  {item.module}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-red-700">
+                                {item.actor_name || "System"}{item.actor_role ? ` • ${formatStaffRole(item.actor_role)}` : ""}
+                              </p>
+                              <p className="mt-1 text-xs text-red-700">{formatAuditDate(item.created_at)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 p-4">
+                      <div className="mb-4">
+                        <h4 className="text-gray-900">Role Access Snapshot</h4>
+                        <p className="mt-1 text-sm text-gray-600">User verification, recent sign-in, and lock status by role.</p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="border-b border-gray-200 text-left text-xs uppercase tracking-[0.14em] text-gray-500">
+                            <tr>
+                              <th className="px-2 py-3">Role</th>
+                              <th className="px-2 py-3">Users</th>
+                              <th className="px-2 py-3">Verified</th>
+                              <th className="px-2 py-3">Signed In</th>
+                              <th className="px-2 py-3">Locked</th>
+                              <th className="px-2 py-3">Latest Login</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {securityOverview.userAccess.map((item) => (
+                              <tr key={item.role} className="border-b border-gray-100 last:border-0">
+                                <td className="px-2 py-3 text-sm text-gray-900">{formatStaffRole(item.role)}</td>
+                                <td className="px-2 py-3 text-sm text-gray-700">{item.total}</td>
+                                <td className="px-2 py-3 text-sm text-gray-700">{item.verifiedTotal}</td>
+                                <td className="px-2 py-3 text-sm text-gray-700">{item.loggedInTotal}</td>
+                                <td className="px-2 py-3 text-sm text-gray-700">{item.lockedTotal}</td>
+                                <td className="px-2 py-3 text-sm text-gray-500">{formatAuditDate(item.latestLoginAt)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button
-                  onClick={clearLocalSettings}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Clear Local Settings
-                </button>
-                <button
-                  onClick={handleLogout}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Logout
-                </button>
+              <div className="bg-white rounded-xl p-6 border border-gray-200 space-y-4">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                  <div>
+                    <h4 className="text-gray-900">Audit Trail</h4>
+                    <p className="mt-1 text-sm text-gray-600">Cross-module write activity with actor, route, and outcome.</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Module</label>
+                      <select
+                        value={securityModuleFilter}
+                        onChange={(e) => setSecurityModuleFilter(e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      >
+                        <option value="all">All modules</option>
+                        {auditModules.map((module) => (
+                          <option key={module} value={module}>
+                            {module}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Outcome</label>
+                      <select
+                        value={securityOutcomeFilter}
+                        onChange={(e) => setSecurityOutcomeFilter(e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      >
+                        <option value="all">All outcomes</option>
+                        <option value="success">Success</option>
+                        <option value="denied">Denied</option>
+                        <option value="failed">Failed</option>
+                      </select>
+                    </div>
+                    <label className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={securityDestructiveOnly}
+                        onChange={(e) => setSecurityDestructiveOnly(e.target.checked)}
+                      />
+                      <span>Destructive only</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="border-b border-gray-200 text-left text-xs uppercase tracking-[0.14em] text-gray-500">
+                      <tr>
+                        <th className="px-2 py-3">When</th>
+                        <th className="px-2 py-3">Action</th>
+                        <th className="px-2 py-3">Module</th>
+                        <th className="px-2 py-3">Actor</th>
+                        <th className="px-2 py-3">Outcome</th>
+                        <th className="px-2 py-3">Route</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {!isLoadingSecurityLogs && securityLogs.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-2 py-4 text-sm text-gray-500">
+                            No audit events matched the current filters.
+                          </td>
+                        </tr>
+                      )}
+                      {securityLogs.map((item) => (
+                        <tr key={item.id} className="border-b border-gray-100 last:border-0 align-top">
+                          <td className="px-2 py-3 text-sm text-gray-500">{formatAuditDate(item.created_at)}</td>
+                          <td className="px-2 py-3">
+                            <p className="text-sm text-gray-900">{item.summary}</p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              {item.entity_label || item.entity_type}
+                              {item.is_destructive ? " • destructive" : ""}
+                            </p>
+                          </td>
+                          <td className="px-2 py-3 text-sm text-gray-700">{item.module}</td>
+                          <td className="px-2 py-3 text-sm text-gray-700">
+                            <p>{item.actor_name || "System"}</p>
+                            <p className="mt-1 text-xs text-gray-500">{item.actor_role ? formatStaffRole(item.actor_role) : "-"}</p>
+                          </td>
+                          <td className="px-2 py-3">
+                            <span
+                              className={`rounded-full px-2 py-1 text-[11px] uppercase tracking-[0.14em] ${
+                                item.outcome === "denied"
+                                  ? "bg-rose-50 text-rose-700"
+                                  : item.outcome === "failed"
+                                    ? "bg-amber-50 text-amber-700"
+                                    : item.severity === "critical"
+                                      ? "bg-violet-50 text-violet-700"
+                                      : item.is_destructive
+                                        ? "bg-orange-50 text-orange-700"
+                                        : "bg-emerald-50 text-emerald-700"
+                              }`}
+                            >
+                              {item.outcome}
+                            </span>
+                          </td>
+                          <td className="px-2 py-3 text-xs text-gray-500">
+                            <p>{item.method || "-"}</p>
+                            <p className="mt-1 break-all">{item.path || "-"}</p>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl p-6 border border-gray-200 space-y-6">
+                <div>
+                  <h4 className="text-gray-900">Session Controls</h4>
+                  <p className="text-sm text-gray-600 mt-1">Manage your current browser session and local settings cache.</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <button
+                    onClick={clearLocalSettings}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Clear Local Settings
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Logout
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -994,6 +1349,24 @@ export default function SettingsPage() {
                         placeholder="nishant@gmail.com"
                         required
                       />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm text-gray-700 mb-2">Assigned Branch *</label>
+                      <select
+                        value={staffForm.branchId}
+                        onChange={(e) => setStaffForm((prev) => ({ ...prev, branchId: e.target.value }))}
+                        className="w-full rounded-lg border border-gray-300 px-4 py-2"
+                        required
+                      >
+                        <option value="" disabled>
+                          Select branch
+                        </option>
+                        {branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 

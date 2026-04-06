@@ -3,52 +3,123 @@ const billingsService = require("../services/billings.service");
 const onlinePaymentsService = require("../services/online-payments.service");
 
 const listInvoices = asyncHandler(async (req, res) => {
-  const data = await billingsService.listInvoices(req.user.organizationId, req.query);
+  const data = await billingsService.listInvoices(req.user.organizationId, {
+    ...req.query,
+    branchId: req.branchContext?.readBranchId || null
+  });
   res.json({ success: true, data });
 });
 
 const createInvoice = asyncHandler(async (req, res) => {
-  const data = await billingsService.createInvoice(req.user.organizationId, req.body, req.user);
+  const data = await billingsService.createInvoice(
+    req.user.organizationId,
+    {
+      ...req.body,
+      branchId: req.body.branchId || req.branchContext?.writeBranchId || null
+    },
+    req.user,
+    req.branchContext
+  );
   res.status(201).json({ success: true, message: "Invoice created", data });
 });
 
 const getInvoice = asyncHandler(async (req, res) => {
-  const data = await billingsService.getInvoiceById(req.user.organizationId, req.params.id);
+  const data = await billingsService.getInvoiceById(
+    req.user.organizationId,
+    req.params.id,
+    req.branchContext
+  );
   res.json({ success: true, data });
 });
 
 const updateInvoice = asyncHandler(async (req, res) => {
-  const data = await billingsService.updateInvoice(req.user.organizationId, req.params.id, req.body, req.user);
+  const data = await billingsService.updateInvoice(
+    req.user.organizationId,
+    req.params.id,
+    {
+      ...req.body,
+      branchId: req.body.branchId || req.branchContext?.writeBranchId || null
+    },
+    req.user,
+    req.branchContext
+  );
   res.json({ success: true, message: "Invoice updated", data });
 });
 
 const issueInvoice = asyncHandler(async (req, res) => {
-  const data = await billingsService.issueInvoice(req.user.organizationId, req.params.id, req.body, req.user);
+  const data = await billingsService.issueInvoice(
+    req.user.organizationId,
+    req.params.id,
+    {
+      ...req.body,
+      branchId: req.body.branchId || req.branchContext?.writeBranchId || null
+    },
+    req.user,
+    req.branchContext
+  );
   res.json({ success: true, message: "Invoice issued", data });
 });
 
 const recordPayment = asyncHandler(async (req, res) => {
-  const data = await billingsService.recordPayment(req.user.organizationId, req.params.id, req.body, req.user);
+  const data = await billingsService.recordPayment(
+    req.user.organizationId,
+    req.params.id,
+    {
+      ...req.body,
+      branchId: req.body.branchId || req.branchContext?.writeBranchId || null
+    },
+    req.user,
+    req.branchContext
+  );
   res.status(201).json({ success: true, message: "Payment recorded", data });
 });
 
 const refundPayment = asyncHandler(async (req, res) => {
-  const data = await billingsService.refundPayment(req.user.organizationId, req.params.id, req.body, req.user);
+  const data = await billingsService.refundPayment(
+    req.user.organizationId,
+    req.params.id,
+    {
+      ...req.body,
+      branchId: req.body.branchId || req.branchContext?.writeBranchId || null
+    },
+    req.user,
+    req.branchContext
+  );
   res.json({ success: true, message: "Payment refunded", data });
 });
 
 const markInvoicePaid = asyncHandler(async (req, res) => {
-  const data = await billingsService.markInvoicePaid(req.user.organizationId, req.params.id, req.body, req.user);
+  const data = await billingsService.markInvoicePaid(
+    req.user.organizationId,
+    req.params.id,
+    {
+      ...req.body,
+      branchId: req.body.branchId || req.branchContext?.writeBranchId || null
+    },
+    req.user,
+    req.branchContext
+  );
   res.json({ success: true, message: "Invoice marked as paid", data });
 });
 
 const getReconciliationReport = asyncHandler(async (req, res) => {
-  const data = await billingsService.getReconciliationReport(req.user.organizationId);
+  const data = await billingsService.getReconciliationReport(
+    req.user.organizationId,
+    req.branchContext?.readBranchId || null
+  );
   res.json({ success: true, data });
 });
 
 const createPaymentLink = asyncHandler(async (req, res) => {
-  const data = await onlinePaymentsService.createInvoicePaymentLink(req.user.organizationId, req.params.id, req.body);
+  const data = await onlinePaymentsService.createInvoicePaymentLink(
+    req.user.organizationId,
+    req.params.id,
+    {
+      ...req.body,
+      branchId: req.body.branchId || req.branchContext?.writeBranchId || null
+    },
+    req.branchContext
+  );
   res.status(201).json({ success: true, message: "Payment link created", data });
 });
 
@@ -56,20 +127,30 @@ const refreshPaymentLink = asyncHandler(async (req, res) => {
   const data = await onlinePaymentsService.refreshInvoicePaymentLinkStatus(
     req.user.organizationId,
     req.params.id,
-    req.params.linkId
+    req.params.linkId,
+    req.branchContext
   );
   res.json({ success: true, message: "Payment link refreshed", data });
 });
 
 const downloadInvoicePdf = asyncHandler(async (req, res) => {
-  const pdf = await billingsService.generateInvoicePdf(req.user.organizationId, req.params.id);
+  const pdf = await billingsService.generateInvoicePdf(
+    req.user.organizationId,
+    req.params.id,
+    req.branchContext
+  );
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${pdf.filename}"`);
   res.send(pdf.buffer);
 });
 
 const deleteInvoice = asyncHandler(async (req, res) => {
-  await billingsService.deleteInvoice(req.user.organizationId, req.params.id, req.user);
+  await billingsService.deleteInvoice(
+    req.user.organizationId,
+    req.params.id,
+    req.user,
+    req.branchContext
+  );
   res.json({ success: true, message: "Invoice deleted" });
 });
 

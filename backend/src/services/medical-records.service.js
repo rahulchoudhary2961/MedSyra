@@ -8,8 +8,11 @@ const {
   loadMedicalRecordAttachment
 } = require("../utils/file-storage");
 const notificationsService = require("./notifications.service");
+const { logAuditEventSafe } = require("./audit.service");
 
 const listCachePrefix = (organizationId) => `medical-records:list:${organizationId}:`;
+const resolveBranchScopeId = (branchContext = null, fallback = null) =>
+  branchContext?.readBranchId || branchContext?.writeBranchId || fallback || null;
 const invalidateMedicalRecordCaches = async (organizationId) => {
   await Promise.all([
     cache.invalidateByPrefix(listCachePrefix(organizationId)),
@@ -99,7 +102,7 @@ const listMedicalRecords = async (organizationId, query, actor = null) => {
       : query;
   const cacheKey =
     `${listCachePrefix(organizationId)}` +
-    `page=${page}:limit=${limit}:q=${q.toLowerCase()}:status=${status.toLowerCase()}:patientId=${effectiveQuery.patientId || ""}:doctorId=${effectiveQuery.doctorId || ""}:appointmentId=${effectiveQuery.appointmentId || ""}`;
+    `page=${page}:limit=${limit}:q=${q.toLowerCase()}:status=${status.toLowerCase()}:patientId=${effectiveQuery.patientId || ""}:doctorId=${effectiveQuery.doctorId || ""}:appointmentId=${effectiveQuery.appointmentId || ""}:branchId=${effectiveQuery.branchId || ""}`;
 
   const cached = await cache.get(cacheKey);
   if (cached) {
@@ -130,7 +133,7 @@ async function ensureMedicalRecordAccess(organizationId, actor, doctorId = null)
   return doctor.id;
 }
 
-const createMedicalRecord = async (organizationId, payload, actor = null) => {
+const createMedicalRecord = async (organizationId, payload, actor = null, requestMeta = null, branchContext = null) => {
   const required = ["patientId", "doctorId", "recordType", "recordDate"];
   const missing = required.filter((field) => !payload[field]);
 
@@ -141,9 +144,13 @@ const createMedicalRecord = async (organizationId, payload, actor = null) => {
   const allowedDoctorId = await ensureMedicalRecordAccess(organizationId, actor, payload.doctorId);
   const normalizedPayload = {
     ...payload,
+    branchId: payload.branchId || resolveBranchScopeId(branchContext),
     doctorId: allowedDoctorId || payload.doctorId,
     followUpDate: deriveFollowUpDate(payload, payload.recordDate)
   };
+  if (!normalizedPayload.branchId) {
+    throw new ApiError(400, "A branch must be selected before creating a medical record");
+  }
   normalizedPayload.followUpReminderStatus = deriveFollowUpReminderStatus(
     payload,
     normalizedPayload.followUpDate,
@@ -165,11 +172,35 @@ const createMedicalRecord = async (organizationId, payload, actor = null) => {
 
   const created = await medicalRecordsRepository.createMedicalRecord(organizationId, normalizedPayload);
   await invalidateMedicalRecordCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "medical_records",
+    action: "medical_record_created",
+    summary: `Medical record created for ${created.patient_name}`,
+    entityType: "medical_record",
+    entityId: created.id,
+    entityLabel: `${created.record_type} - ${created.patient_name}`,
+    metadata: {
+      recordType: created.record_type,
+      status: created.status,
+      patientId: created.patient_id,
+      doctorId: created.doctor_id || null
+    },
+    afterState: created
+  });
+
   return created;
 };
 
-const getMedicalRecordById = async (organizationId, id, actor = null) => {
-  const record = await medicalRecordsRepository.getMedicalRecordById(organizationId, id);
+const getMedicalRecordById = async (organizationId, id, actor = null, branchContext = null) => {
+  const record = await medicalRecordsRepository.getMedicalRecordById(
+    organizationId,
+    id,
+    resolveBranchScopeId(branchContext)
+  );
   if (!record) {
     throw new ApiError(404, "Medical record not found");
   }
@@ -182,8 +213,12 @@ const getMedicalRecordById = async (organizationId, id, actor = null) => {
   return record;
 };
 
-const updateMedicalRecord = async (organizationId, id, payload, actor = null) => {
-  const current = await medicalRecordsRepository.getMedicalRecordById(organizationId, id);
+const updateMedicalRecord = async (organizationId, id, payload, actor = null, requestMeta = null, branchContext = null) => {
+  const current = await medicalRecordsRepository.getMedicalRecordById(
+    organizationId,
+    id,
+    resolveBranchScopeId(branchContext)
+  );
   if (!current) {
     throw new ApiError(404, "Medical record not found");
   }
@@ -241,27 +276,74 @@ const updateMedicalRecord = async (organizationId, id, payload, actor = null) =>
     }
   }
 
+  normalizedPayload.branchId = normalizedPayload.branchId || current.branch_id || resolveBranchScopeId(branchContext);
+
   const updated = await medicalRecordsRepository.updateMedicalRecord(organizationId, id, normalizedPayload);
 
   await invalidateMedicalRecordCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "medical_records",
+    action: "medical_record_updated",
+    summary: `Medical record updated for ${updated.patient_name}`,
+    entityType: "medical_record",
+    entityId: updated.id,
+    entityLabel: `${updated.record_type} - ${updated.patient_name}`,
+    metadata: {
+      recordType: updated.record_type,
+      status: updated.status
+    },
+    beforeState: current,
+    afterState: updated
+  });
+
   return updated;
 };
 
-const deleteMedicalRecord = async (organizationId, id) => {
-  const deleted = await medicalRecordsRepository.deleteMedicalRecord(organizationId, id);
+const deleteMedicalRecord = async (organizationId, id, actor = null, requestMeta = null, branchContext = null) => {
+  const scopeBranchId = resolveBranchScopeId(branchContext);
+  const current = await medicalRecordsRepository.getMedicalRecordById(organizationId, id, scopeBranchId);
+  if (!current) {
+    throw new ApiError(404, "Medical record not found");
+  }
+
+  const deleted = await medicalRecordsRepository.deleteMedicalRecord(organizationId, id, scopeBranchId);
   if (!deleted) {
     throw new ApiError(404, "Medical record not found");
   }
 
   await invalidateMedicalRecordCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "medical_records",
+    action: "medical_record_deleted",
+    summary: `Medical record deleted for ${current.patient_name}`,
+    entityType: "medical_record",
+    entityId: current.id,
+    entityLabel: `${current.record_type} - ${current.patient_name}`,
+    severity: "warning",
+    isDestructive: true,
+    metadata: {
+      recordType: current.record_type,
+      patientId: current.patient_id
+    },
+    beforeState: current,
+    afterState: null
+  });
 };
 
 const uploadMedicalRecordAttachment = async (_organizationId, payload) => {
   return saveMedicalRecordAttachment(payload);
 };
 
-const getMedicalRecordAttachmentDownload = async (organizationId, id, actor = null) => {
-  const record = await getMedicalRecordById(organizationId, id, actor);
+const getMedicalRecordAttachmentDownload = async (organizationId, id, actor = null, branchContext = null) => {
+  const record = await getMedicalRecordById(organizationId, id, actor, branchContext);
 
   if (!record.file_url) {
     throw new ApiError(404, "Medical record attachment not found");
@@ -279,7 +361,11 @@ const createAppointmentRecordIfMissing = async (organizationId, payload) => {
     return null;
   }
 
-  const existing = await medicalRecordsRepository.getMedicalRecordByAppointmentId(organizationId, payload.appointmentId);
+  const existing = await medicalRecordsRepository.getMedicalRecordByAppointmentId(
+    organizationId,
+    payload.appointmentId,
+    payload.branchId || null
+  );
   if (existing) {
     return existing;
   }
@@ -290,10 +376,15 @@ const createAppointmentRecordIfMissing = async (organizationId, payload) => {
 };
 
 const upsertAppointmentConsultationRecord = async (organizationId, payload) => {
-  const existing = await medicalRecordsRepository.getMedicalRecordByAppointmentId(organizationId, payload.appointmentId);
+  const existing = await medicalRecordsRepository.getMedicalRecordByAppointmentId(
+    organizationId,
+    payload.appointmentId,
+    payload.branchId || null
+  );
 
   if (existing) {
     const updated = await medicalRecordsRepository.updateMedicalRecord(organizationId, existing.id, {
+      branchId: payload.branchId || existing.branch_id || null,
       doctorId: payload.doctorId || existing.doctor_id,
       recordType: payload.recordType || existing.record_type,
       recordDate: payload.recordDate || existing.record_date,
@@ -320,6 +411,7 @@ const upsertAppointmentConsultationRecord = async (organizationId, payload) => {
 
   const normalizedPayload = {
     ...payload,
+    branchId: payload.branchId || null,
     followUpDate: deriveFollowUpDate(payload, payload.recordDate),
   };
   normalizedPayload.followUpReminderStatus = deriveFollowUpReminderStatus(
@@ -333,9 +425,14 @@ const upsertAppointmentConsultationRecord = async (organizationId, payload) => {
   return created;
 };
 
-const sendMedicalRecordFollowUpReminder = async (organizationId, id, actor = null) => {
-  const record = await getMedicalRecordById(organizationId, id, actor);
-  const reminderContext = await medicalRecordsRepository.getMedicalRecordReminderContext(organizationId, id);
+const sendMedicalRecordFollowUpReminder = async (organizationId, id, actor = null, branchContext = null) => {
+  const scopeBranchId = resolveBranchScopeId(branchContext);
+  const record = await getMedicalRecordById(organizationId, id, actor, branchContext);
+  const reminderContext = await medicalRecordsRepository.getMedicalRecordReminderContext(
+    organizationId,
+    id,
+    scopeBranchId
+  );
   if (!reminderContext) {
     throw new ApiError(404, "Medical record reminder context not found");
   }
@@ -379,6 +476,7 @@ const sendMedicalRecordFollowUpReminder = async (organizationId, id, actor = nul
   }
 
   const updated = await medicalRecordsRepository.updateMedicalRecord(organizationId, id, {
+    branchId: record.branch_id || scopeBranchId || null,
     followUpReminderStatus: "sent",
     followUpReminderSentAt: new Date().toISOString(),
     followUpReminderLastAttemptAt: new Date().toISOString(),

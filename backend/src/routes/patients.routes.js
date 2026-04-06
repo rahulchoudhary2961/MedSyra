@@ -16,6 +16,6 @@ router.patch(
   validateRequest({ params: patientsSchemas.idParams, body: patientsSchemas.updateBody }),
   controller.updatePatient
 );
-router.delete("/:id", authorizeRoles("full_access", "reception_access"), validateRequest({ params: patientsSchemas.idParams }), controller.deletePatient);
+router.delete("/:id", authorizeRoles("full_access"), validateRequest({ params: patientsSchemas.idParams }), controller.deletePatient);
 
 module.exports = router;

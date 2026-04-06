@@ -7,6 +7,11 @@ const listMedicalRecords = async (organizationId, query) => {
   const values = [organizationId];
   const conditions = ["mr.organization_id = $1"];
 
+  if (query.branchId) {
+    values.push(query.branchId);
+    conditions.push(`mr.branch_id = $${values.length}`);
+  }
+
   if (query.q) {
     values.push(`%${query.q}%`);
     const idx = values.length;
@@ -39,6 +44,7 @@ const listMedicalRecords = async (organizationId, query) => {
   const querySql = `
     SELECT
       mr.id,
+      mr.branch_id,
       mr.appointment_id,
       mr.patient_id,
       p.full_name AS patient_name,
@@ -93,12 +99,12 @@ const listMedicalRecords = async (organizationId, query) => {
 const createMedicalRecord = async (organizationId, payload) => {
   const query = `
     INSERT INTO medical_records (
-      organization_id, patient_id, doctor_id, record_type,
+      organization_id, branch_id, patient_id, doctor_id, record_type,
       appointment_id, status, record_date, symptoms, diagnosis, prescription,
       follow_up_date, follow_up_reminder_status, follow_up_reminder_sent_at,
       follow_up_reminder_error, follow_up_reminder_last_attempt_at, notes, file_url
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-    RETURNING id, appointment_id, patient_id, doctor_id, record_type, status,
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+    RETURNING id, branch_id, appointment_id, patient_id, doctor_id, record_type, status,
               record_date, symptoms, diagnosis, prescription, follow_up_date,
               follow_up_reminder_status, follow_up_reminder_sent_at, follow_up_reminder_error,
               follow_up_reminder_last_attempt_at, notes, file_url, created_at, updated_at
@@ -106,6 +112,7 @@ const createMedicalRecord = async (organizationId, payload) => {
 
   const values = [
     organizationId,
+    payload.branchId,
     payload.patientId,
     payload.doctorId,
     payload.recordType,
@@ -125,13 +132,20 @@ const createMedicalRecord = async (organizationId, payload) => {
   ];
 
   const { rows } = await pool.query(query, values);
-  return getMedicalRecordById(organizationId, rows[0].id);
+  return getMedicalRecordById(organizationId, rows[0].id, payload.branchId || null);
 };
 
-const getMedicalRecordById = async (organizationId, id) => {
+const getMedicalRecordById = async (organizationId, id, branchId = null) => {
+  const values = [organizationId, id];
+  const branchClause = branchId ? ` AND mr.branch_id = $3` : "";
+  if (branchId) {
+    values.push(branchId);
+  }
+
   const query = `
     SELECT
       mr.id,
+      mr.branch_id,
       mr.appointment_id,
       mr.patient_id,
       p.full_name AS patient_name,
@@ -155,30 +169,37 @@ const getMedicalRecordById = async (organizationId, id) => {
     FROM medical_records mr
     LEFT JOIN patients p ON p.id = mr.patient_id AND p.organization_id = mr.organization_id
     LEFT JOIN doctors d ON d.id = mr.doctor_id AND d.organization_id = mr.organization_id
-    WHERE mr.organization_id = $1 AND mr.id = $2
+    WHERE mr.organization_id = $1 AND mr.id = $2${branchClause}
   `;
 
-  const { rows } = await pool.query(query, [organizationId, id]);
+  const { rows } = await pool.query(query, values);
   return rows[0] || null;
 };
 
-const getMedicalRecordByAppointmentId = async (organizationId, appointmentId) => {
+const getMedicalRecordByAppointmentId = async (organizationId, appointmentId, branchId = null) => {
+  const values = [organizationId, appointmentId];
+  const branchClause = branchId ? ` AND branch_id = $3` : "";
+  if (branchId) {
+    values.push(branchId);
+  }
+
   const query = `
     SELECT id
     FROM medical_records
-    WHERE organization_id = $1 AND appointment_id = $2
+    WHERE organization_id = $1 AND appointment_id = $2${branchClause}
     LIMIT 1
   `;
-  const { rows } = await pool.query(query, [organizationId, appointmentId]);
+  const { rows } = await pool.query(query, values);
   if (!rows[0]) {
     return null;
   }
 
-  return getMedicalRecordById(organizationId, rows[0].id);
+  return getMedicalRecordById(organizationId, rows[0].id, branchId);
 };
 
 const updateMedicalRecord = async (organizationId, id, payload) => {
   const columnMap = {
+    branchId: "branch_id",
     patientId: "patient_id",
     doctorId: "doctor_id",
     recordType: "record_type",
@@ -217,7 +238,7 @@ const updateMedicalRecord = async (organizationId, id, payload) => {
     UPDATE medical_records
     SET ${setClauses.join(", ")}, updated_at = NOW()
     WHERE organization_id = $1 AND id = $2
-    RETURNING id, appointment_id, patient_id, doctor_id, record_type, status, record_date,
+    RETURNING id, branch_id, appointment_id, patient_id, doctor_id, record_type, status, record_date,
               symptoms, diagnosis, prescription, follow_up_date, follow_up_reminder_status,
               follow_up_reminder_sent_at, follow_up_reminder_error, follow_up_reminder_last_attempt_at,
               notes, file_url, created_at, updated_at
@@ -228,29 +249,43 @@ const updateMedicalRecord = async (organizationId, id, payload) => {
     return null;
   }
 
-  return getMedicalRecordById(organizationId, rows[0].id);
+  return getMedicalRecordById(organizationId, rows[0].id, payload.branchId || null);
 };
 
-const deleteMedicalRecord = async (organizationId, id) => {
+const deleteMedicalRecord = async (organizationId, id, branchId = null) => {
+  const values = [organizationId, id];
+  const branchClause = branchId ? ` AND branch_id = $3` : "";
+  if (branchId) {
+    values.push(branchId);
+  }
+
   const query = `
     DELETE FROM medical_records
-    WHERE organization_id = $1 AND id = $2
+    WHERE organization_id = $1 AND id = $2${branchClause}
     RETURNING id
   `;
-  const { rows } = await pool.query(query, [organizationId, id]);
+  const { rows } = await pool.query(query, values);
   return rows[0] || null;
 };
 
-const getMedicalRecordReminderContext = async (organizationId, id) => {
+const getMedicalRecordReminderContext = async (organizationId, id, branchId = null) => {
+  const values = [organizationId, id];
+  const branchClause = branchId ? ` AND mr.branch_id = $3` : "";
+  if (branchId) {
+    values.push(branchId);
+  }
+
   const query = `
     SELECT
       mr.id,
       mr.organization_id,
+      mr.branch_id,
       mr.follow_up_date,
       p.full_name AS patient_name,
       p.phone AS patient_phone,
       d.full_name AS doctor_name,
-      o.name AS clinic_name
+      o.name AS clinic_name,
+      b.name AS branch_name
     FROM medical_records mr
     JOIN patients p
       ON p.id = mr.patient_id
@@ -260,10 +295,12 @@ const getMedicalRecordReminderContext = async (organizationId, id) => {
      AND d.organization_id = mr.organization_id
     JOIN organizations o
       ON o.id = mr.organization_id
-    WHERE mr.organization_id = $1 AND mr.id = $2
+    LEFT JOIN branches b
+      ON b.id = mr.branch_id
+    WHERE mr.organization_id = $1 AND mr.id = $2${branchClause}
   `;
 
-  const { rows } = await pool.query(query, [organizationId, id]);
+  const { rows } = await pool.query(query, values);
   return rows[0] || null;
 };
 

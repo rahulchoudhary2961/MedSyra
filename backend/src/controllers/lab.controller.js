@@ -8,12 +8,18 @@ const listLabTests = asyncHandler(async (req, res) => {
 });
 
 const createLabTest = asyncHandler(async (req, res) => {
-  const data = await labService.createLabTest(req.user.organizationId, req.body);
+  const data = await labService.createLabTest(req.user.organizationId, req.body, req.user, getRequestMeta(req));
   res.status(201).json({ success: true, message: "Lab test created", data });
 });
 
 const updateLabTest = asyncHandler(async (req, res) => {
-  const data = await labService.updateLabTest(req.user.organizationId, req.params.id, req.body);
+  const data = await labService.updateLabTest(
+    req.user.organizationId,
+    req.params.id,
+    req.body,
+    req.user,
+    getRequestMeta(req)
+  );
   res.json({ success: true, message: "Lab test updated", data });
 });
 
@@ -23,7 +29,7 @@ const listLabOrders = asyncHandler(async (req, res) => {
 });
 
 const createLabOrder = asyncHandler(async (req, res) => {
-  const data = await labService.createLabOrder(req.user.organizationId, req.body, req.user);
+  const data = await labService.createLabOrder(req.user.organizationId, req.body, req.user, getRequestMeta(req));
   res.status(201).json({ success: true, message: "Lab order created", data });
 });
 
@@ -33,12 +39,24 @@ const getLabOrder = asyncHandler(async (req, res) => {
 });
 
 const updateLabOrder = asyncHandler(async (req, res) => {
-  const data = await labService.updateLabOrder(req.user.organizationId, req.params.id, req.body, req.user);
+  const data = await labService.updateLabOrder(
+    req.user.organizationId,
+    req.params.id,
+    req.body,
+    req.user,
+    getRequestMeta(req)
+  );
   res.json({ success: true, message: "Lab order updated", data });
 });
 
 const uploadLabOrderReport = asyncHandler(async (req, res) => {
-  const data = await labService.uploadLabOrderReport(req.user.organizationId, req.params.id, req.body, req.user);
+  const data = await labService.uploadLabOrderReport(
+    req.user.organizationId,
+    req.params.id,
+    req.body,
+    req.user,
+    getRequestMeta(req)
+  );
   res.status(201).json({ success: true, message: "Lab report uploaded", data });
 });
 

@@ -7,9 +7,34 @@ CREATE TABLE IF NOT EXISTS organizations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS branches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_code TEXT,
+  name TEXT NOT NULL,
+  address TEXT,
+  phone TEXT,
+  email TEXT,
+  timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  is_default BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_branches_org_code
+  ON branches (organization_id, branch_code)
+  WHERE branch_code IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_branches_org_default
+  ON branches (organization_id)
+  WHERE is_default = true;
+CREATE INDEX IF NOT EXISTS idx_branches_org_active_name
+  ON branches (organization_id, is_active, name);
+
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id),
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   full_name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   phone TEXT NOT NULL,
@@ -20,6 +45,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_org_branch_role
+  ON users (organization_id, branch_id, role);
 
 CREATE TABLE IF NOT EXISTS patients (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -78,6 +106,7 @@ WHERE user_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS appointments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   title TEXT NOT NULL,
   patient_id UUID REFERENCES patients(id) ON DELETE RESTRICT,
   patient_name TEXT,
@@ -102,10 +131,13 @@ CREATE TABLE IF NOT EXISTS appointments (
 
 CREATE INDEX IF NOT EXISTS idx_appointments_org_date_time
 ON appointments (organization_id, appointment_date, appointment_time);
+CREATE INDEX IF NOT EXISTS idx_appointments_org_branch_date_time
+ON appointments (organization_id, branch_id, appointment_date, appointment_time);
 
 CREATE TABLE IF NOT EXISTS medical_records (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id),
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   patient_id UUID NOT NULL REFERENCES patients(id),
   doctor_id UUID NOT NULL REFERENCES doctors(id),
   appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
@@ -129,10 +161,13 @@ CREATE TABLE IF NOT EXISTS medical_records (
 
 CREATE INDEX IF NOT EXISTS idx_medical_records_org_date ON medical_records (organization_id, record_date);
 CREATE INDEX IF NOT EXISTS idx_medical_records_org_follow_up_date ON medical_records (organization_id, follow_up_date) WHERE follow_up_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_medical_records_org_branch_date
+  ON medical_records (organization_id, branch_id, record_date DESC);
 
 CREATE TABLE IF NOT EXISTS crm_tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
   source_record_id UUID REFERENCES medical_records(id) ON DELETE SET NULL,
   source_appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
@@ -160,6 +195,8 @@ CREATE INDEX IF NOT EXISTS idx_crm_tasks_org_patient_created
   ON crm_tasks (organization_id, patient_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_crm_tasks_org_type_due
   ON crm_tasks (organization_id, task_type, due_date);
+CREATE INDEX IF NOT EXISTS idx_crm_tasks_org_branch_status_due
+  ON crm_tasks (organization_id, branch_id, status, due_date);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_crm_tasks_follow_up_source
   ON crm_tasks (organization_id, task_type, source_record_id)
   WHERE source_record_id IS NOT NULL;
@@ -187,6 +224,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_lab_tests_org_code
 CREATE TABLE IF NOT EXISTS lab_orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   order_number TEXT NOT NULL,
   patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
   doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
@@ -214,6 +252,8 @@ CREATE INDEX IF NOT EXISTS idx_lab_orders_org_status_date
   ON lab_orders (organization_id, status, ordered_date DESC);
 CREATE INDEX IF NOT EXISTS idx_lab_orders_org_patient
   ON lab_orders (organization_id, patient_id, ordered_date DESC);
+CREATE INDEX IF NOT EXISTS idx_lab_orders_org_branch_status_date
+  ON lab_orders (organization_id, branch_id, status, ordered_date DESC);
 
 CREATE TABLE IF NOT EXISTS lab_order_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -348,6 +388,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_inventory_items_org_code
 CREATE TABLE IF NOT EXISTS inventory_movements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   item_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
   movement_type TEXT NOT NULL,
   quantity NUMERIC(12,2) NOT NULL,
@@ -369,10 +410,102 @@ CREATE INDEX IF NOT EXISTS idx_inventory_movements_org_item_date
   ON inventory_movements (organization_id, item_id, movement_date DESC, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_inventory_movements_org_type_date
   ON inventory_movements (organization_id, movement_type, movement_date DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inventory_movements_org_branch_type_date
+  ON inventory_movements (organization_id, branch_id, movement_type, movement_date DESC, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS insurance_providers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  payer_code TEXT,
+  name TEXT NOT NULL,
+  contact_email TEXT,
+  contact_phone TEXT,
+  portal_url TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_insurance_providers_org_active_name
+  ON insurance_providers (organization_id, is_active, name);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_insurance_providers_org_payer_code
+  ON insurance_providers (organization_id, payer_code)
+  WHERE payer_code IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS insurance_claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
+  claim_number TEXT NOT NULL,
+  provider_id UUID NOT NULL REFERENCES insurance_providers(id) ON DELETE RESTRICT,
+  patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
+  appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+  medical_record_id UUID REFERENCES medical_records(id) ON DELETE SET NULL,
+  invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL,
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  policy_number TEXT,
+  member_id TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  claimed_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  approved_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  paid_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  diagnosis_summary TEXT,
+  treatment_summary TEXT,
+  submitted_date DATE,
+  response_due_date DATE,
+  approved_date DATE,
+  settled_date DATE,
+  rejection_reason TEXT,
+  notes TEXT,
+  last_status_changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT insurance_claims_status_check CHECK (
+    status IN ('draft', 'submitted', 'under_review', 'approved', 'partially_approved', 'rejected', 'settled', 'cancelled')
+  ),
+  CONSTRAINT insurance_claims_amounts_check CHECK (
+    claimed_amount >= 0 AND approved_amount >= 0 AND paid_amount >= 0
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_insurance_claims_org_number
+  ON insurance_claims (organization_id, claim_number);
+CREATE INDEX IF NOT EXISTS idx_insurance_claims_org_status_due
+  ON insurance_claims (organization_id, status, response_due_date ASC, submitted_date DESC);
+CREATE INDEX IF NOT EXISTS idx_insurance_claims_org_patient_created
+  ON insurance_claims (organization_id, patient_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_insurance_claims_org_provider_status
+  ON insurance_claims (organization_id, provider_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_insurance_claims_org_invoice
+  ON insurance_claims (organization_id, invoice_id)
+  WHERE invoice_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_insurance_claims_org_branch_status_due
+  ON insurance_claims (organization_id, branch_id, status, response_due_date ASC, submitted_date DESC);
+
+CREATE TABLE IF NOT EXISTS insurance_claim_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  claim_id UUID NOT NULL REFERENCES insurance_claims(id) ON DELETE CASCADE,
+  actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL,
+  previous_status TEXT,
+  next_status TEXT,
+  note TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT insurance_claim_events_type_check CHECK (
+    event_type IN ('claim_created', 'claim_submitted', 'status_changed', 'claim_updated', 'approval_recorded', 'payment_recorded', 'note_added')
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_insurance_claim_events_claim_time
+  ON insurance_claim_events (claim_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS activity_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id),
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   event_type TEXT NOT NULL,
   title TEXT NOT NULL,
   entity_name TEXT,
@@ -380,6 +513,49 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_activity_logs_org_time ON activity_logs (organization_id, event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_org_branch_time
+  ON activity_logs (organization_id, branch_id, event_time DESC);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
+  actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  actor_role TEXT,
+  module TEXT NOT NULL,
+  action TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id UUID,
+  entity_label TEXT,
+  severity TEXT NOT NULL DEFAULT 'info',
+  outcome TEXT NOT NULL DEFAULT 'success',
+  is_destructive BOOLEAN NOT NULL DEFAULT false,
+  ip_address TEXT,
+  user_agent TEXT,
+  path TEXT,
+  method TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  before_state JSONB,
+  after_state JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT audit_logs_severity_check CHECK (severity IN ('info', 'warning', 'critical')),
+  CONSTRAINT audit_logs_outcome_check CHECK (outcome IN ('success', 'denied', 'failed'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_org_time
+  ON audit_logs (organization_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_org_module_time
+  ON audit_logs (organization_id, module, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_org_outcome_time
+  ON audit_logs (organization_id, outcome, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_org_destructive_time
+  ON audit_logs (organization_id, is_destructive, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_org_branch_time
+  ON audit_logs (organization_id, branch_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS notification_preferences (
   organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
@@ -396,6 +572,7 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
 CREATE TABLE IF NOT EXISTS notification_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   notification_type TEXT NOT NULL,
   channel TEXT NOT NULL,
@@ -422,6 +599,8 @@ CREATE INDEX IF NOT EXISTS idx_notification_logs_org_time
 
 CREATE INDEX IF NOT EXISTS idx_notification_logs_org_type_status
   ON notification_logs (organization_id, notification_type, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_logs_org_branch_time
+  ON notification_logs (organization_id, branch_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS sales_leads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -502,6 +681,7 @@ WHERE is_active = true AND email IS NOT NULL;
 CREATE TABLE IF NOT EXISTS invoices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id),
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   invoice_number TEXT NOT NULL,
   patient_id UUID NOT NULL REFERENCES patients(id),
   doctor_id UUID REFERENCES doctors(id),
@@ -522,6 +702,8 @@ CREATE TABLE IF NOT EXISTS invoices (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_org_number ON invoices (organization_id, invoice_number);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_org_appointment ON invoices (organization_id, appointment_id) WHERE appointment_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_invoices_org_status_date ON invoices (organization_id, status, issue_date DESC);
+CREATE INDEX IF NOT EXISTS idx_invoices_org_branch_status_date
+  ON invoices (organization_id, branch_id, status, issue_date DESC);
 
 ALTER TABLE pharmacy_dispenses
   DROP CONSTRAINT IF EXISTS pharmacy_dispenses_invoice_id_fkey;
@@ -546,6 +728,7 @@ CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items (invoice_i
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id),
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
   amount NUMERIC(12,2) NOT NULL,
   method TEXT NOT NULL,
@@ -560,10 +743,13 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payments_org_invoice ON payments (organization_id, invoice_id, paid_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payments_org_branch_invoice
+  ON payments (organization_id, branch_id, invoice_id, paid_at DESC);
 
 CREATE TABLE IF NOT EXISTS invoice_payment_links (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
   provider TEXT NOT NULL,
   provider_link_id TEXT NOT NULL,
@@ -587,6 +773,8 @@ CREATE TABLE IF NOT EXISTS invoice_payment_links (
 
 CREATE INDEX IF NOT EXISTS idx_invoice_payment_links_org_invoice_time
   ON invoice_payment_links (organization_id, invoice_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_invoice_payment_links_org_branch_invoice_time
+  ON invoice_payment_links (organization_id, branch_id, invoice_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_invoice_payment_links_provider_status
   ON invoice_payment_links (provider, status, updated_at DESC);
@@ -594,6 +782,7 @@ CREATE INDEX IF NOT EXISTS idx_invoice_payment_links_provider_status
 CREATE TABLE IF NOT EXISTS billing_audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
   invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL,
   payment_id UUID REFERENCES payments(id) ON DELETE SET NULL,
   actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -617,6 +806,8 @@ CREATE TABLE IF NOT EXISTS billing_audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_billing_audit_logs_org_time
   ON billing_audit_logs (organization_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_audit_logs_org_branch_time
+  ON billing_audit_logs (organization_id, branch_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_billing_audit_logs_invoice_time
   ON billing_audit_logs (invoice_id, created_at DESC);

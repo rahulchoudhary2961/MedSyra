@@ -36,12 +36,23 @@ const reportPeriods = ["7d", "30d", "90d", "12m"];
 const notificationTypes = ["appointment_reminder", "follow_up_reminder", "staff_daily_schedule", "appointment_no_show"];
 const notificationChannels = ["whatsapp", "sms", "email"];
 const notificationLogStatuses = ["sent", "failed", "fallback", "opened", "skipped"];
+const auditOutcomes = ["success", "denied", "failed"];
 const crmTaskTypes = ["follow_up", "recall", "retention"];
 const crmTaskPriorities = ["high", "medium", "low"];
 const crmTaskStatuses = ["open", "contacted", "scheduled", "not_reachable", "closed", "dismissed"];
 const labOrderStatuses = ["ordered", "sample_collected", "processing", "report_ready", "completed", "cancelled"];
 const pharmacyDispenseStatuses = ["dispensed", "cancelled"];
 const inventoryMovementTypes = ["stock_in", "usage", "wastage", "adjustment_in", "adjustment_out"];
+const insuranceClaimStatuses = [
+  "draft",
+  "submitted",
+  "under_review",
+  "approved",
+  "partially_approved",
+  "rejected",
+  "settled",
+  "cancelled"
+];
 const invoiceItemsRule = (value, fieldName) => {
   if (!Array.isArray(value) || value.length === 0) {
     throw new ApiError(400, `${fieldName} must be a non-empty array`);
@@ -184,6 +195,7 @@ const authSchemas = {
       email: emailRule(),
       phone: phoneRule(),
       role: stringRule({ enumValues: staffRoles, maxLength: 50 }),
+      branchId: optional(uuidRule()),
       notifyDailyScheduleSms: optional(booleanRule()),
       notifyDailyScheduleEmail: optional(booleanRule())
     }
@@ -207,6 +219,58 @@ const authSchemas = {
 const paginationQuerySchema = {
   page: optional(integerRule({ min: 1, max: 100000, coerceString: true })),
   limit: optional(integerRule({ min: 1, max: 100, coerceString: true }))
+};
+
+const securitySchemas = {
+  overviewQuery: {
+    fields: {
+      days: optional(integerRule({ min: 1, max: 90, coerceString: true }))
+    }
+  },
+  logsQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      module: optional(stringRule({ minLength: 2, maxLength: 50 })),
+      outcome: optional(stringRule({ enumValues: auditOutcomes, maxLength: 20 })),
+      actorUserId: optional(uuidRule()),
+      entityType: optional(stringRule({ minLength: 2, maxLength: 50 })),
+      isDestructive: optional(stringRule({ enumValues: ["true", "false"], maxLength: 5, safe: false }))
+    }
+  }
+};
+
+const branchesSchemas = {
+  listQuery: {
+    fields: {
+      activeOnly: optional(stringRule({ enumValues: ["true", "false"], maxLength: 5, safe: false }))
+    }
+  },
+  createBody: {
+    fields: {
+      branchCode: optional(stringRule({ minLength: 2, maxLength: 20, safe: false })),
+      name: stringRule({ minLength: 2, maxLength: 120 }),
+      address: optional(stringRule({ maxLength: 300 })),
+      phone: optional(phoneRule()),
+      email: optional(emailRule()),
+      timezone: optional(stringRule({ minLength: 2, maxLength: 80, safe: false })),
+      isActive: optional(booleanRule()),
+      isDefault: optional(booleanRule())
+    }
+  },
+  updateBody: {
+    fields: {
+      branchCode: optional(stringRule({ minLength: 2, maxLength: 20, safe: false })),
+      name: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      address: optional(stringRule({ maxLength: 300 })),
+      phone: optional(phoneRule()),
+      email: optional(emailRule()),
+      timezone: optional(stringRule({ minLength: 2, maxLength: 80, safe: false })),
+      isActive: optional(booleanRule()),
+      isDefault: optional(booleanRule())
+    },
+    requireAtLeastOne: true
+  },
+  idParams: idParamsSchema
 };
 
 const patientsSchemas = {
@@ -766,6 +830,115 @@ const inventorySchemas = {
   idParams: idParamsSchema
 };
 
+const insuranceSchemas = {
+  referenceDataQuery: {
+    fields: {
+      patientId: optional(uuidRule())
+    }
+  },
+  providersListQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      active: optional(stringRule({ enumValues: ["true", "false"], maxLength: 5, safe: false }))
+    }
+  },
+  providerCreateBody: {
+    fields: {
+      payerCode: optional(stringRule({ minLength: 2, maxLength: 40, safe: false })),
+      name: stringRule({ minLength: 2, maxLength: 120 }),
+      contactEmail: optional(emailRule()),
+      contactPhone: optional(phoneRule()),
+      portalUrl: optional(urlRule()),
+      isActive: optional(booleanRule())
+    }
+  },
+  providerUpdateBody: {
+    fields: {
+      payerCode: optional(stringRule({ minLength: 2, maxLength: 40, safe: false })),
+      name: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      contactEmail: optional(emailRule()),
+      contactPhone: optional(phoneRule()),
+      portalUrl: optional(urlRule()),
+      isActive: optional(booleanRule())
+    },
+    requireAtLeastOne: true
+  },
+  claimsListQuery: {
+    fields: {
+      ...paginationQuerySchema,
+      limit: optional(integerRule({ min: 1, max: 200, coerceString: true })),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      status: optional(stringRule({ enumValues: insuranceClaimStatuses, maxLength: 30 })),
+      patientId: optional(uuidRule()),
+      providerId: optional(uuidRule()),
+      invoiceId: optional(uuidRule())
+    }
+  },
+  claimCreateBody: {
+    fields: {
+      providerId: uuidRule(),
+      patientId: uuidRule(),
+      doctorId: optional(uuidRule()),
+      appointmentId: optional(uuidRule()),
+      medicalRecordId: optional(uuidRule()),
+      invoiceId: optional(uuidRule()),
+      policyNumber: optional(stringRule({ minLength: 2, maxLength: 80, safe: false })),
+      memberId: optional(stringRule({ minLength: 2, maxLength: 80, safe: false })),
+      status: optional(stringRule({ enumValues: insuranceClaimStatuses, maxLength: 30 })),
+      claimedAmount: optional(numberRule({ min: 0.01, max: 100000000 })),
+      approvedAmount: optional(numberRule({ min: 0, max: 100000000 })),
+      paidAmount: optional(numberRule({ min: 0, max: 100000000 })),
+      diagnosisSummary: optional(stringRule({ maxLength: 2000 })),
+      treatmentSummary: optional(stringRule({ maxLength: 2000 })),
+      submittedDate: optional(dateRule()),
+      responseDueDate: optional(dateRule()),
+      approvedDate: optional(dateRule()),
+      settledDate: optional(dateRule()),
+      rejectionReason: optional(stringRule({ maxLength: 2000 })),
+      notes: optional(stringRule({ maxLength: 2000 }))
+    }
+  },
+  claimUpdateBody: {
+    fields: {
+      providerId: optional(uuidRule()),
+      patientId: optional(uuidRule()),
+      doctorId: optional(uuidRule()),
+      appointmentId: optional(uuidRule()),
+      medicalRecordId: optional(uuidRule()),
+      invoiceId: optional(uuidRule()),
+      policyNumber: optional(stringRule({ minLength: 2, maxLength: 80, safe: false })),
+      memberId: optional(stringRule({ minLength: 2, maxLength: 80, safe: false })),
+      status: optional(stringRule({ enumValues: insuranceClaimStatuses, maxLength: 30 })),
+      claimedAmount: optional(numberRule({ min: 0.01, max: 100000000 })),
+      approvedAmount: optional(numberRule({ min: 0, max: 100000000 })),
+      paidAmount: optional(numberRule({ min: 0, max: 100000000 })),
+      diagnosisSummary: optional(stringRule({ maxLength: 2000 })),
+      treatmentSummary: optional(stringRule({ maxLength: 2000 })),
+      submittedDate: optional(dateRule()),
+      responseDueDate: optional(dateRule()),
+      approvedDate: optional(dateRule()),
+      settledDate: optional(dateRule()),
+      rejectionReason: optional(stringRule({ maxLength: 2000 })),
+      notes: optional(stringRule({ maxLength: 2000 }))
+    },
+    requireAtLeastOne: true
+  },
+  claimEventBody: {
+    fields: {
+      note: optional(stringRule({ maxLength: 2000 })),
+      nextStatus: optional(stringRule({ enumValues: insuranceClaimStatuses, maxLength: 30 })),
+      approvedAmount: optional(numberRule({ min: 0, max: 100000000 })),
+      paidAmount: optional(numberRule({ min: 0, max: 100000000 })),
+      rejectionReason: optional(stringRule({ maxLength: 2000 })),
+      responseDueDate: optional(dateRule())
+    },
+    requireAtLeastOne: true
+  },
+  idParams: idParamsSchema
+};
+
 const notificationsSchemas = {
   updatePreferencesBody: {
     fields: {
@@ -852,6 +1025,8 @@ const publicSchemas = {
 
 module.exports = {
   authSchemas,
+  securitySchemas,
+  branchesSchemas,
   patientsSchemas,
   doctorsSchemas,
   appointmentsSchemas,
@@ -862,6 +1037,7 @@ module.exports = {
   labSchemas,
   pharmacySchemas,
   inventorySchemas,
+  insuranceSchemas,
   notificationsSchemas,
   commercialSchemas,
   aiSchemas,

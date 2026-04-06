@@ -35,11 +35,18 @@ const mapInvoiceRow = (row) => {
   };
 };
 
-const getInvoiceByIdWithDb = async (db, organizationId, id) => {
+const getInvoiceByIdWithDb = async (db, organizationId, id, branchId = null) => {
+  const invoiceValues = [organizationId, id];
+  const invoiceBranchClause = branchId ? ` AND i.branch_id = $3` : "";
+  if (branchId) {
+    invoiceValues.push(branchId);
+  }
+
   const invoiceQuery = `
     SELECT
       i.id,
       i.organization_id,
+      i.branch_id,
       i.invoice_number,
       o.name AS organization_name,
       i.patient_id,
@@ -61,7 +68,7 @@ const getInvoiceByIdWithDb = async (db, organizationId, id) => {
     JOIN organizations o ON o.id = i.organization_id
     LEFT JOIN patients p ON p.id = i.patient_id AND p.organization_id = i.organization_id
     LEFT JOIN doctors d ON d.id = i.doctor_id AND d.organization_id = i.organization_id
-    WHERE i.organization_id = $1 AND i.id = $2
+    WHERE i.organization_id = $1 AND i.id = $2${invoiceBranchClause}
   `;
   const itemQuery = `
     SELECT id, description, quantity, unit_price, total_amount, created_at, updated_at
@@ -76,7 +83,7 @@ const getInvoiceByIdWithDb = async (db, organizationId, id) => {
     ORDER BY paid_at DESC
   `;
 
-  const invoiceResult = await db.query(invoiceQuery, [organizationId, id]);
+  const invoiceResult = await db.query(invoiceQuery, invoiceValues);
   const invoice = mapInvoiceRow(invoiceResult.rows[0]);
   if (!invoice) {
     return null;
@@ -115,6 +122,11 @@ const listInvoices = async (organizationId, query) => {
   const values = [organizationId];
   const conditions = ["i.organization_id = $1"];
 
+  if (query.branchId) {
+    values.push(query.branchId);
+    conditions.push(`i.branch_id = $${values.length}`);
+  }
+
   if (query.status) {
     values.push(query.status);
     conditions.push(`i.status = $${values.length}`);
@@ -137,6 +149,7 @@ const listInvoices = async (organizationId, query) => {
   const querySql = `
     SELECT
       i.id,
+      i.branch_id,
       i.invoice_number,
       o.name AS organization_name,
       i.patient_id,
@@ -190,6 +203,19 @@ const listInvoices = async (organizationId, query) => {
     WHERE ${where}
   `;
 
+  const statsValues = query.patientId ? [organizationId, query.patientId] : [organizationId];
+  let statsInvoiceBranchClause = "";
+  let statsPaymentBranchClause = "";
+
+  if (query.branchId) {
+    statsValues.push(query.branchId);
+    const idx = statsValues.length;
+    statsInvoiceBranchClause = ` AND i.branch_id = $${idx}`;
+    statsPaymentBranchClause = query.patientId
+      ? ` AND inv.branch_id = $${idx}`
+      : ` AND branch_id = $${idx}`;
+  }
+
   const statsSql = query.patientId
     ? `
         SELECT
@@ -201,22 +227,22 @@ const listInvoices = async (organizationId, query) => {
             SELECT COALESCE(SUM(pay.amount), 0)::numeric(12,2)
             FROM payments pay
             INNER JOIN invoices inv ON inv.id = pay.invoice_id AND inv.organization_id = pay.organization_id
-            WHERE pay.organization_id = $1 AND inv.patient_id = $2 AND pay.status = 'completed' AND pay.method = 'cash'
+            WHERE pay.organization_id = $1 AND inv.patient_id = $2 AND pay.status = 'completed' AND pay.method = 'cash'${statsPaymentBranchClause}
           ) AS cash_total,
           (
             SELECT COALESCE(SUM(pay.amount), 0)::numeric(12,2)
             FROM payments pay
             INNER JOIN invoices inv ON inv.id = pay.invoice_id AND inv.organization_id = pay.organization_id
-            WHERE pay.organization_id = $1 AND inv.patient_id = $2 AND pay.status = 'completed' AND pay.method = 'upi'
+            WHERE pay.organization_id = $1 AND inv.patient_id = $2 AND pay.status = 'completed' AND pay.method = 'upi'${statsPaymentBranchClause}
           ) AS upi_total,
           (
             SELECT COALESCE(SUM(pay.amount), 0)::numeric(12,2)
             FROM payments pay
             INNER JOIN invoices inv ON inv.id = pay.invoice_id AND inv.organization_id = pay.organization_id
-            WHERE pay.organization_id = $1 AND inv.patient_id = $2 AND pay.status = 'completed' AND pay.method = 'card'
+            WHERE pay.organization_id = $1 AND inv.patient_id = $2 AND pay.status = 'completed' AND pay.method = 'card'${statsPaymentBranchClause}
           ) AS card_total
         FROM invoices i
-        WHERE i.organization_id = $1 AND i.patient_id = $2
+        WHERE i.organization_id = $1 AND i.patient_id = $2${statsInvoiceBranchClause}
       `
     : `
         SELECT
@@ -227,23 +253,21 @@ const listInvoices = async (organizationId, query) => {
           (
             SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
             FROM payments
-            WHERE organization_id = $1 AND status = 'completed' AND method = 'cash'
+            WHERE organization_id = $1 AND status = 'completed' AND method = 'cash'${statsPaymentBranchClause}
           ) AS cash_total,
           (
             SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
             FROM payments
-            WHERE organization_id = $1 AND status = 'completed' AND method = 'upi'
+            WHERE organization_id = $1 AND status = 'completed' AND method = 'upi'${statsPaymentBranchClause}
           ) AS upi_total,
           (
             SELECT COALESCE(SUM(amount), 0)::numeric(12,2)
             FROM payments
-            WHERE organization_id = $1 AND status = 'completed' AND method = 'card'
+            WHERE organization_id = $1 AND status = 'completed' AND method = 'card'${statsPaymentBranchClause}
           ) AS card_total
         FROM invoices
-        WHERE organization_id = $1
+        WHERE organization_id = $1${statsInvoiceBranchClause.replace(/i\./g, "")}
       `;
-
-  const statsValues = query.patientId ? [organizationId, query.patientId] : [organizationId];
 
   const [rowsRes, countRes, statsRes] = await Promise.all([
     pool.query(querySql, values),
@@ -313,8 +337,8 @@ const getPaymentByReference = async (organizationId, invoiceId, reference, db = 
   return rows[0] || null;
 };
 
-const getInvoiceById = async (organizationId, id) => {
-  return getInvoiceByIdWithDb(pool, organizationId, id);
+const getInvoiceById = async (organizationId, id, branchId = null) => {
+  return getInvoiceByIdWithDb(pool, organizationId, id, branchId);
 };
 
 const createInvoiceWithDb = async (
@@ -332,15 +356,16 @@ const createInvoiceWithDb = async (
 
   const invoiceQuery = `
     INSERT INTO invoices (
-      organization_id, invoice_number, patient_id, doctor_id,
+      organization_id, branch_id, invoice_number, patient_id, doctor_id,
       appointment_id, issue_date, due_date, status, total_amount, paid_amount, balance_amount, currency, notes
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$9,$10,$11)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$10,$11,$12)
     RETURNING *
   `;
 
   const invoiceValues = [
     organizationId,
+    payload.branchId,
     invoiceNumber,
     payload.patientId,
     payload.doctorId || null,
@@ -381,6 +406,7 @@ const createInvoiceWithDb = async (
 
   await billingAuditModel.createBillingAuditLog(db, {
     organizationId,
+    branchId: payload.branchId || null,
     invoiceId: invoice.id,
     actorUserId: actor?.sub || actor?.id || null,
     action: "invoice_created",
@@ -388,11 +414,12 @@ const createInvoiceWithDb = async (
     afterState: createdInvoice,
     metadata: {
       appointmentId: payload.appointmentId || null,
+      branchId: payload.branchId || null,
       ...extraAuditMetadata
     }
   });
 
-  return getInvoiceByIdWithDb(db, organizationId, invoice.id);
+  return getInvoiceByIdWithDb(db, organizationId, invoice.id, payload.branchId || null);
 };
 
 const createInvoice = async (organizationId, payload, actor = null) => {
@@ -414,8 +441,15 @@ const updateInvoice = async (organizationId, id, payload, actor = null) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT id FROM invoices WHERE organization_id = $1 AND id = $2 FOR UPDATE", [organizationId, id]);
-    const current = await getInvoiceByIdWithDb(client, organizationId, id);
+    const scopeBranchId = payload.branchId || null;
+    const lockValues = [organizationId, id];
+    const lockBranchClause = scopeBranchId ? ` AND branch_id = $3` : "";
+    if (scopeBranchId) {
+      lockValues.push(scopeBranchId);
+    }
+
+    await client.query(`SELECT id FROM invoices WHERE organization_id = $1 AND id = $2${lockBranchClause} FOR UPDATE`, lockValues);
+    const current = await getInvoiceByIdWithDb(client, organizationId, id, scopeBranchId);
     if (!current) {
       await client.query("ROLLBACK");
       return null;
@@ -485,9 +519,10 @@ const updateInvoice = async (organizationId, id, payload, actor = null) => {
       );
     }
 
-    const updatedInvoice = await getInvoiceByIdWithDb(client, organizationId, id);
+    const updatedInvoice = await getInvoiceByIdWithDb(client, organizationId, id, scopeBranchId);
     await billingAuditModel.createBillingAuditLog(client, {
       organizationId,
+      branchId: scopeBranchId || current.branch_id || null,
       invoiceId: id,
       actorUserId: actor?.sub || actor?.id || null,
       action: "invoice_updated",
@@ -497,7 +532,7 @@ const updateInvoice = async (organizationId, id, payload, actor = null) => {
     });
 
     await client.query("COMMIT");
-    return invoiceRes.rows[0];
+    return updatedInvoice;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -510,8 +545,16 @@ const issueInvoice = async (organizationId, id, dueDate = null, actor = null) =>
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT id FROM invoices WHERE organization_id = $1 AND id = $2 FOR UPDATE", [organizationId, id]);
-    const beforeState = await getInvoiceByIdWithDb(client, organizationId, id);
+    const scopeBranchId = typeof dueDate === "object" && dueDate !== null ? dueDate.branchId || null : null;
+    const resolvedDueDate = typeof dueDate === "object" && dueDate !== null ? dueDate.value || null : dueDate;
+    const lockValues = [organizationId, id];
+    const lockBranchClause = scopeBranchId ? ` AND branch_id = $3` : "";
+    if (scopeBranchId) {
+      lockValues.push(scopeBranchId);
+    }
+
+    await client.query(`SELECT id FROM invoices WHERE organization_id = $1 AND id = $2${lockBranchClause} FOR UPDATE`, lockValues);
+    const beforeState = await getInvoiceByIdWithDb(client, organizationId, id, scopeBranchId);
     if (!beforeState) {
       await client.query("ROLLBACK");
       return null;
@@ -530,18 +573,19 @@ const issueInvoice = async (organizationId, id, dueDate = null, actor = null) =>
       WHERE organization_id = $1 AND id = $2
       RETURNING *
     `;
-    const result = await client.query(query, [organizationId, id, dueDate]);
-    const afterState = await getInvoiceByIdWithDb(client, organizationId, id);
+    const result = await client.query(query, [organizationId, id, resolvedDueDate]);
+    const afterState = await getInvoiceByIdWithDb(client, organizationId, id, scopeBranchId);
 
     await billingAuditModel.createBillingAuditLog(client, {
       organizationId,
+      branchId: scopeBranchId || beforeState.branch_id || null,
       invoiceId: id,
       actorUserId: actor?.sub || actor?.id || null,
       action: "invoice_issued",
       beforeState,
       afterState,
       metadata: {
-        dueDate: dueDate || null
+        dueDate: resolvedDueDate || null
       }
     });
 
@@ -559,8 +603,15 @@ const addPayment = async (organizationId, invoiceId, payload, actor = null) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT id FROM invoices WHERE organization_id = $1 AND id = $2 FOR UPDATE", [organizationId, invoiceId]);
-    const beforeState = await getInvoiceByIdWithDb(client, organizationId, invoiceId);
+    const scopeBranchId = payload.branchId || null;
+    const lockValues = [organizationId, invoiceId];
+    const lockBranchClause = scopeBranchId ? ` AND branch_id = $3` : "";
+    if (scopeBranchId) {
+      lockValues.push(scopeBranchId);
+    }
+
+    await client.query(`SELECT id FROM invoices WHERE organization_id = $1 AND id = $2${lockBranchClause} FOR UPDATE`, lockValues);
+    const beforeState = await getInvoiceByIdWithDb(client, organizationId, invoiceId, scopeBranchId);
     const invoice = beforeState;
     if (!invoice) {
       await client.query("ROLLBACK");
@@ -579,12 +630,13 @@ const addPayment = async (organizationId, invoiceId, payload, actor = null) => {
       : invoice.status;
 
     const paymentQuery = `
-      INSERT INTO payments (organization_id, invoice_id, amount, method, reference, status, paid_at)
-      VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7, NOW()))
+      INSERT INTO payments (organization_id, branch_id, invoice_id, amount, method, reference, status, paid_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8, NOW()))
       RETURNING *
     `;
     const paymentRes = await client.query(paymentQuery, [
       organizationId,
+      invoice.branch_id,
       invoiceId,
       paymentAmount,
       payload.method,
@@ -607,9 +659,10 @@ const addPayment = async (organizationId, invoiceId, payload, actor = null) => {
       );
     }
 
-    const afterState = await getInvoiceByIdWithDb(client, organizationId, invoiceId);
+    const afterState = await getInvoiceByIdWithDb(client, organizationId, invoiceId, scopeBranchId);
     await billingAuditModel.createBillingAuditLog(client, {
       organizationId,
+      branchId: invoice.branch_id || scopeBranchId || null,
       invoiceId,
       paymentId: paymentRes.rows[0].id,
       actorUserId: actor?.sub || actor?.id || null,
@@ -636,8 +689,15 @@ const markInvoicePaid = async (organizationId, invoiceId, payload, actor = null)
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT id FROM invoices WHERE organization_id = $1 AND id = $2 FOR UPDATE", [organizationId, invoiceId]);
-    const beforeState = await getInvoiceByIdWithDb(client, organizationId, invoiceId);
+    const scopeBranchId = payload.branchId || null;
+    const lockValues = [organizationId, invoiceId];
+    const lockBranchClause = scopeBranchId ? ` AND branch_id = $3` : "";
+    if (scopeBranchId) {
+      lockValues.push(scopeBranchId);
+    }
+
+    await client.query(`SELECT id FROM invoices WHERE organization_id = $1 AND id = $2${lockBranchClause} FOR UPDATE`, lockValues);
+    const beforeState = await getInvoiceByIdWithDb(client, organizationId, invoiceId, scopeBranchId);
     const invoice = beforeState;
     if (!invoice) {
       await client.query("ROLLBACK");
@@ -654,13 +714,14 @@ const markInvoicePaid = async (organizationId, invoiceId, payload, actor = null)
     }
 
     const paymentQuery = `
-      INSERT INTO payments (organization_id, invoice_id, amount, method, reference, status, paid_at)
-      VALUES ($1,$2,$3,$4,$5,'completed',NOW())
+      INSERT INTO payments (organization_id, branch_id, invoice_id, amount, method, reference, status, paid_at)
+      VALUES ($1,$2,$3,$4,$5,$6,'completed',NOW())
       RETURNING *
     `;
 
     const paymentRes = await client.query(paymentQuery, [
       organizationId,
+      invoice.branch_id,
       invoiceId,
       remaining,
       payload.method || "cash",
@@ -680,9 +741,10 @@ const markInvoicePaid = async (organizationId, invoiceId, payload, actor = null)
       [organizationId, invoiceId]
     );
 
-    const afterState = await getInvoiceByIdWithDb(client, organizationId, invoiceId);
+    const afterState = await getInvoiceByIdWithDb(client, organizationId, invoiceId, scopeBranchId);
     await billingAuditModel.createBillingAuditLog(client, {
       organizationId,
+      branchId: invoice.branch_id || scopeBranchId || null,
       invoiceId,
       paymentId: paymentRes.rows[0].id,
       actorUserId: actor?.sub || actor?.id || null,
@@ -711,8 +773,15 @@ const deleteInvoice = async (organizationId, id, actor = null) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT id FROM invoices WHERE organization_id = $1 AND id = $2 FOR UPDATE", [organizationId, id]);
-    const beforeState = await getInvoiceByIdWithDb(client, organizationId, id);
+    const scopeBranchId = actor?.branchId || null;
+    const lockValues = [organizationId, id];
+    const lockBranchClause = scopeBranchId ? ` AND branch_id = $3` : "";
+    if (scopeBranchId) {
+      lockValues.push(scopeBranchId);
+    }
+
+    await client.query(`SELECT id FROM invoices WHERE organization_id = $1 AND id = $2${lockBranchClause} FOR UPDATE`, lockValues);
+    const beforeState = await getInvoiceByIdWithDb(client, organizationId, id, scopeBranchId);
     if (!beforeState) {
       await client.query("ROLLBACK");
       return null;
@@ -731,6 +800,7 @@ const deleteInvoice = async (organizationId, id, actor = null) => {
 
     await billingAuditModel.createBillingAuditLog(client, {
       organizationId,
+      branchId: beforeState.branch_id || scopeBranchId || null,
       invoiceId: id,
       actorUserId: actor?.sub || actor?.id || null,
       action: "invoice_deleted",
@@ -774,8 +844,15 @@ const refundPayment = async (organizationId, invoiceId, paymentId, payload = {},
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT id FROM invoices WHERE organization_id = $1 AND id = $2 FOR UPDATE", [organizationId, invoiceId]);
-    const beforeState = await getInvoiceByIdWithDb(client, organizationId, invoiceId);
+    const scopeBranchId = payload.branchId || null;
+    const lockValues = [organizationId, invoiceId];
+    const lockBranchClause = scopeBranchId ? ` AND branch_id = $3` : "";
+    if (scopeBranchId) {
+      lockValues.push(scopeBranchId);
+    }
+
+    await client.query(`SELECT id FROM invoices WHERE organization_id = $1 AND id = $2${lockBranchClause} FOR UPDATE`, lockValues);
+    const beforeState = await getInvoiceByIdWithDb(client, organizationId, invoiceId, scopeBranchId);
     if (!beforeState) {
       await client.query("ROLLBACK");
       return null;
@@ -828,9 +905,10 @@ const refundPayment = async (organizationId, invoiceId, paymentId, payload = {},
       [organizationId, invoiceId, nextPaidAmount, nextBalanceAmount, nextStatus]
     );
 
-    const afterState = await getInvoiceByIdWithDb(client, organizationId, invoiceId);
+    const afterState = await getInvoiceByIdWithDb(client, organizationId, invoiceId, scopeBranchId);
     await billingAuditModel.createBillingAuditLog(client, {
       organizationId,
+      branchId: beforeState.branch_id || scopeBranchId || null,
       invoiceId,
       paymentId,
       actorUserId: actor?.sub || actor?.id || null,
@@ -858,7 +936,7 @@ const refundPayment = async (organizationId, invoiceId, paymentId, payload = {},
   }
 };
 
-const getReconciliationReport = async (organizationId) => {
+const getReconciliationReport = async (organizationId, branchId = null) => {
   const summaryQuery = `
     WITH payment_totals AS (
       SELECT
@@ -868,6 +946,7 @@ const getReconciliationReport = async (organizationId) => {
         COALESCE(SUM(amount) FILTER (WHERE status = 'refunded'), 0)::numeric(12,2) AS refunded_amount
       FROM payments
       WHERE organization_id = $1
+        ${branchId ? "AND branch_id = $2" : ""}
       GROUP BY invoice_id
     )
     SELECT
@@ -882,6 +961,7 @@ const getReconciliationReport = async (organizationId) => {
     FROM invoices i
     LEFT JOIN payment_totals pt ON pt.invoice_id = i.id
     WHERE i.organization_id = $1
+      ${branchId ? "AND i.branch_id = $2" : ""}
   `;
 
   const itemsQuery = `
@@ -891,6 +971,7 @@ const getReconciliationReport = async (organizationId) => {
         COALESCE(SUM(amount) FILTER (WHERE status = 'completed'), 0)::numeric(12,2) AS completed_paid_amount
       FROM payments
       WHERE organization_id = $1
+        ${branchId ? "AND branch_id = $2" : ""}
       GROUP BY invoice_id
     )
     SELECT
@@ -905,6 +986,7 @@ const getReconciliationReport = async (organizationId) => {
     FROM invoices i
     LEFT JOIN payment_totals pt ON pt.invoice_id = i.id
     WHERE i.organization_id = $1
+      ${branchId ? "AND i.branch_id = $2" : ""}
       AND (
         i.paid_amount <> COALESCE(pt.completed_paid_amount, 0)
         OR i.balance_amount <> GREATEST(i.total_amount - COALESCE(pt.completed_paid_amount, 0), 0)
@@ -913,9 +995,11 @@ const getReconciliationReport = async (organizationId) => {
     LIMIT 50
   `;
 
+  const values = branchId ? [organizationId, branchId] : [organizationId];
+
   const [summaryResult, itemsResult] = await Promise.all([
-    pool.query(summaryQuery, [organizationId]),
-    pool.query(itemsQuery, [organizationId])
+    pool.query(summaryQuery, values),
+    pool.query(itemsQuery, values)
   ]);
 
   return {

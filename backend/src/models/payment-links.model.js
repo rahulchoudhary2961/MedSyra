@@ -16,6 +16,7 @@ const listPaymentLinksByInvoiceId = async (organizationId, invoiceId, db = pool)
     SELECT
       id,
       organization_id,
+      branch_id,
       invoice_id,
       provider,
       provider_link_id,
@@ -44,6 +45,7 @@ const getPaymentLinkById = async (organizationId, invoiceId, id, db = pool) => {
     SELECT
       id,
       organization_id,
+      branch_id,
       invoice_id,
       provider,
       provider_link_id,
@@ -72,6 +74,7 @@ const getPaymentLinkByProviderLinkId = async (provider, providerLinkId, db = poo
     SELECT
       id,
       organization_id,
+      branch_id,
       invoice_id,
       provider,
       provider_link_id,
@@ -100,6 +103,7 @@ const getReusablePaymentLink = async (organizationId, invoiceId, amount, currenc
     SELECT
       id,
       organization_id,
+      branch_id,
       invoice_id,
       provider,
       provider_link_id,
@@ -133,6 +137,7 @@ const createPaymentLink = async (organizationId, invoiceId, payload, db = pool) 
   const query = `
     INSERT INTO invoice_payment_links (
       organization_id,
+      branch_id,
       invoice_id,
       provider,
       provider_link_id,
@@ -146,10 +151,11 @@ const createPaymentLink = async (organizationId, invoiceId, payload, db = pool) 
       provider_payment_id,
       provider_payload
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
     RETURNING
       id,
       organization_id,
+      branch_id,
       invoice_id,
       provider,
       provider_link_id,
@@ -168,6 +174,7 @@ const createPaymentLink = async (organizationId, invoiceId, payload, db = pool) 
 
   const values = [
     organizationId,
+    payload.branchId,
     invoiceId,
     payload.provider,
     payload.providerLinkId,
@@ -220,6 +227,7 @@ const updatePaymentLinkById = async (organizationId, invoiceId, id, payload, db 
     RETURNING
       id,
       organization_id,
+      branch_id,
       invoice_id,
       provider,
       provider_link_id,

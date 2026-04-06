@@ -2,6 +2,7 @@ const ApiError = require("../utils/api-error");
 const parsePagination = require("../utils/pagination");
 const patientsRepository = require("../models/patients.model");
 const cache = require("../utils/cache");
+const { logAuditEventSafe } = require("./audit.service");
 
 const invalidatePatientAndDashboardCaches = async (organizationId) => {
   await Promise.all([
@@ -333,7 +334,7 @@ const listPatients = async (organizationId, query) => {
   return payload;
 };
 
-const createPatient = async (organizationId, payload) => {
+const createPatient = async (organizationId, payload, actor = null, requestMeta = null) => {
   if (!payload.fullName || !payload.phone || !payload.gender) {
     throw new ApiError(400, "fullName, phone and gender are required");
   }
@@ -353,6 +354,24 @@ const createPatient = async (organizationId, payload) => {
 
   const created = await patientsRepository.createPatient(organizationId, normalizedPayload);
   await invalidatePatientAndDashboardCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "patients",
+    action: "patient_created",
+    summary: `Patient created: ${created.full_name}`,
+    entityType: "patient",
+    entityId: created.id,
+    entityLabel: created.patient_code || created.full_name,
+    metadata: {
+      patientCode: created.patient_code || null,
+      status: created.status || null
+    },
+    afterState: created
+  });
+
   return created;
 };
 
@@ -403,18 +422,17 @@ const getPatientProfile = async (organizationId, id) => {
   return payload;
 };
 
-const updatePatient = async (organizationId, id, payload) => {
+const updatePatient = async (organizationId, id, payload, actor = null, requestMeta = null) => {
   const normalizedPayload = normalizePatientPayload(payload);
+  const beforeState = await patientsRepository.getPatientById(organizationId, id);
+  if (!beforeState) {
+    throw new ApiError(404, "Patient not found");
+  }
 
   if (normalizedPayload.phone || normalizedPayload.email) {
-    const existing = await patientsRepository.getPatientById(organizationId, id);
-    if (!existing) {
-      throw new ApiError(404, "Patient not found");
-    }
-
     const duplicate = await patientsRepository.findDuplicatePatient(organizationId, {
-      phone: normalizedPayload.phone || existing.phone,
-      email: normalizedPayload.email || existing.email || null,
+      phone: normalizedPayload.phone || beforeState.phone,
+      email: normalizedPayload.email || beforeState.email || null,
       excludeId: id
     });
 
@@ -426,21 +444,63 @@ const updatePatient = async (organizationId, id, payload) => {
   }
 
   const patient = await patientsRepository.updatePatient(organizationId, id, normalizedPayload);
-  if (!patient) {
-    throw new ApiError(404, "Patient not found");
-  }
-
   await invalidatePatientAndDashboardCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "patients",
+    action: "patient_updated",
+    summary: `Patient updated: ${patient.full_name}`,
+    entityType: "patient",
+    entityId: patient.id,
+    entityLabel: patient.patient_code || patient.full_name,
+    metadata: {
+      patientCode: patient.patient_code || null
+    },
+    beforeState,
+    afterState: patient
+  });
+
   return patient;
 };
 
-const deletePatient = async (organizationId, id) => {
+const deletePatient = async (organizationId, id, actor = null, requestMeta = null) => {
+  const beforeState = await patientsRepository.getPatientById(organizationId, id);
+  if (!beforeState) {
+    throw new ApiError(404, "Patient not found");
+  }
+
   const deleted = await patientsRepository.softDeletePatient(organizationId, id);
   if (!deleted) {
     throw new ApiError(404, "Patient not found");
   }
 
   await invalidatePatientAndDashboardCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "patients",
+    action: "patient_deleted",
+    summary: `Patient archived: ${beforeState.full_name}`,
+    entityType: "patient",
+    entityId: beforeState.id,
+    entityLabel: beforeState.patient_code || beforeState.full_name,
+    severity: "warning",
+    isDestructive: true,
+    metadata: {
+      patientCode: beforeState.patient_code || null,
+      deletionMode: "soft_delete"
+    },
+    beforeState,
+    afterState: {
+      ...beforeState,
+      is_active: false
+    }
+  });
 };
 
 module.exports = {

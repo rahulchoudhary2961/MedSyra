@@ -15,18 +15,26 @@ export const isReceptionRole = (role?: string | null) => isReceptionistRole(role
 export const canManageAppointments = (role?: string | null) =>
   isFullAccessRole(role) || isReceptionRole(role);
 
+export const canDeleteAppointments = (role?: string | null) => isFullAccessRole(role);
+
 export const canAccessAssistant = (role?: string | null) =>
   isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
 
 export const canAccessPatients = (role?: string | null) =>
   isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
 
+export const canDeletePatients = (role?: string | null) => isFullAccessRole(role);
+
 export const canAccessBilling = (role?: string | null) =>
   isFullAccessRole(role) || isBillingRole(role);
+
+export const canDeleteInvoices = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessReports = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessSettings = (role?: string | null) => isFullAccessRole(role);
+
+export const canAccessBranches = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessDoctors = (role?: string | null) =>
   isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
@@ -55,3 +63,9 @@ export const canAccessInventory = (role?: string | null) =>
   isFullAccessRole(role) || isReceptionRole(role) || isBillingRole(role);
 
 export const canManageInventory = (role?: string | null) => isFullAccessRole(role);
+
+export const canAccessInsurance = (role?: string | null) =>
+  isFullAccessRole(role) || isBillingRole(role);
+
+export const canManageInsuranceCatalog = (role?: string | null) =>
+  isFullAccessRole(role) || isBillingRole(role);

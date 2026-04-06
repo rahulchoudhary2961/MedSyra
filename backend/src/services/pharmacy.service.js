@@ -5,6 +5,7 @@ const patientsModel = require("../models/patients.model");
 const doctorsModel = require("../models/doctors.model");
 const appointmentsModel = require("../models/appointments.model");
 const medicalRecordsModel = require("../models/medical-records.model");
+const { logAuditEventSafe } = require("./audit.service");
 
 const patientProfileCachePrefix = (organizationId) => `patients:profile:${organizationId}`;
 const dashboardSummaryCachePrefix = (organizationId) => `dashboard:summary:${organizationId}`;
@@ -159,13 +160,30 @@ const validateDispenseItems = async (organizationId, items) => {
 
 const listMedicines = async (organizationId, query) => pharmacyModel.listMedicines(organizationId, query);
 
-const createMedicine = async (organizationId, payload) => {
+const createMedicine = async (organizationId, payload, actor = null, requestMeta = null) => {
   const created = await pharmacyModel.createMedicine(organizationId, payload);
   await invalidatePharmacyRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "pharmacy",
+    action: "medicine_created",
+    summary: `Medicine created: ${created.name}`,
+    entityType: "medicine",
+    entityId: created.id,
+    entityLabel: created.name,
+    metadata: {
+      code: created.code || null
+    },
+    afterState: created
+  });
+
   return created;
 };
 
-const updateMedicine = async (organizationId, id, payload) => {
+const updateMedicine = async (organizationId, id, payload, actor = null, requestMeta = null) => {
   const current = await pharmacyModel.getMedicineById(organizationId, id);
   if (!current) {
     throw new ApiError(404, "Medicine not found");
@@ -173,19 +191,55 @@ const updateMedicine = async (organizationId, id, payload) => {
 
   const updated = await pharmacyModel.updateMedicine(organizationId, id, payload);
   await invalidatePharmacyRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "pharmacy",
+    action: "medicine_updated",
+    summary: `Medicine updated: ${updated.name}`,
+    entityType: "medicine",
+    entityId: updated.id,
+    entityLabel: updated.name,
+    metadata: {
+      code: updated.code || null
+    },
+    beforeState: current,
+    afterState: updated
+  });
+
   return updated;
 };
 
 const listMedicineBatches = async (organizationId, query) => pharmacyModel.listMedicineBatches(organizationId, query);
 
-const createMedicineBatch = async (organizationId, payload) => {
+const createMedicineBatch = async (organizationId, payload, actor = null, requestMeta = null) => {
   await validateBatchPayload(organizationId, payload);
   const created = await pharmacyModel.createMedicineBatch(organizationId, payload);
   await invalidatePharmacyRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "pharmacy",
+    action: "medicine_batch_created",
+    summary: `Medicine batch created: ${created.batch_number}`,
+    entityType: "medicine_batch",
+    entityId: created.id,
+    entityLabel: `${created.medicine_name} ${created.batch_number}`,
+    metadata: {
+      medicineId: created.medicine_id,
+      expiryDate: created.expiry_date || null
+    },
+    afterState: created
+  });
+
   return created;
 };
 
-const updateMedicineBatch = async (organizationId, id, payload) => {
+const updateMedicineBatch = async (organizationId, id, payload, actor = null, requestMeta = null) => {
   const current = await pharmacyModel.getMedicineBatchById(organizationId, id);
   if (!current) {
     throw new ApiError(404, "Medicine batch not found");
@@ -194,6 +248,25 @@ const updateMedicineBatch = async (organizationId, id, payload) => {
   await validateBatchPayload(organizationId, payload, current);
   const updated = await pharmacyModel.updateMedicineBatch(organizationId, id, payload);
   await invalidatePharmacyRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "pharmacy",
+    action: "medicine_batch_updated",
+    summary: `Medicine batch updated: ${updated.batch_number}`,
+    entityType: "medicine_batch",
+    entityId: updated.id,
+    entityLabel: `${updated.medicine_name} ${updated.batch_number}`,
+    metadata: {
+      medicineId: updated.medicine_id,
+      expiryDate: updated.expiry_date || null
+    },
+    beforeState: current,
+    afterState: updated
+  });
+
   return updated;
 };
 
@@ -217,7 +290,7 @@ const getPharmacyDispenseById = async (organizationId, id, actor = null) => {
   return dispense;
 };
 
-const createPharmacyDispense = async (organizationId, payload, actor = null) => {
+const createPharmacyDispense = async (organizationId, payload, actor = null, requestMeta = null) => {
   const scopedDoctorId = await ensurePharmacyDoctorAccess(organizationId, actor, payload.doctorId || null);
   const normalizedPayload = {
     ...payload,
@@ -234,6 +307,26 @@ const createPharmacyDispense = async (organizationId, payload, actor = null) => 
 
   const created = await pharmacyModel.createPharmacyDispense(organizationId, normalizedPayload, actor);
   await invalidatePharmacyRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "pharmacy",
+    action: "dispense_created",
+    summary: `Medicine dispensed: ${created.dispense_number}`,
+    entityType: "pharmacy_dispense",
+    entityId: created.id,
+    entityLabel: created.dispense_number,
+    metadata: {
+      patientId: created.patient_id,
+      doctorId: created.doctor_id || null,
+      invoiceId: created.invoice_id || null,
+      status: created.status
+    },
+    afterState: created
+  });
+
   return created;
 };
 

@@ -50,7 +50,7 @@ router.patch(
 );
 router.delete(
   "/:id",
-  authorizeRoles("full_access", "reception_access"),
+  authorizeRoles("full_access"),
   validateRequest({ params: appointmentsSchemas.idParams }),
   controller.deleteAppointment
 );

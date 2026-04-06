@@ -78,6 +78,7 @@ const reconcilePaidLink = async (invoice, paymentLink, providerPayment) => {
     invoice.organization_id,
     invoice.id,
     {
+      branchId: invoice.branch_id || paymentLink.branch_id || null,
       amount: amountToRecord,
       method: razorpayService.mapPaymentMethod(providerPayment?.method),
       reference,
@@ -99,7 +100,7 @@ const syncLinkAndInvoice = async (organizationId, invoiceId, localLink, provider
     providerPayload: providerLink.providerPayload
   });
 
-  const invoice = await billingsModel.getInvoiceById(organizationId, invoiceId);
+  const invoice = await billingsModel.getInvoiceById(organizationId, invoiceId, localLink.branch_id || null);
   if (!invoice) {
     throw new ApiError(404, "Invoice not found");
   }
@@ -116,12 +117,16 @@ const syncLinkAndInvoice = async (organizationId, invoiceId, localLink, provider
   };
 };
 
-const createInvoicePaymentLink = async (organizationId, invoiceId, payload = {}) => {
+const createInvoicePaymentLink = async (organizationId, invoiceId, payload = {}, branchContext = null) => {
   if (!razorpayService.isConfigured()) {
     throw new ApiError(400, "Razorpay is not configured");
   }
 
-  const invoice = await billingsModel.getInvoiceById(organizationId, invoiceId);
+  const invoice = await billingsModel.getInvoiceById(
+    organizationId,
+    invoiceId,
+    payload.branchId || branchContext?.readBranchId || branchContext?.writeBranchId || null
+  );
   if (!invoice) {
     throw new ApiError(404, "Invoice not found");
   }
@@ -166,22 +171,33 @@ const createInvoicePaymentLink = async (organizationId, invoiceId, payload = {})
     }
   });
 
-  const paymentLink = await paymentLinksModel.createPaymentLink(organizationId, invoiceId, providerLink);
+  const paymentLink = await paymentLinksModel.createPaymentLink(organizationId, invoiceId, {
+    ...providerLink,
+    branchId: invoice.branch_id || payload.branchId || null
+  });
   await invalidateBillingCaches(organizationId);
 
   return {
-    invoice: await billingsModel.getInvoiceById(organizationId, invoiceId),
+    invoice: await billingsModel.getInvoiceById(organizationId, invoiceId, invoice.branch_id || null),
     paymentLink
   };
 };
 
-const refreshInvoicePaymentLinkStatus = async (organizationId, invoiceId, linkId) => {
+const refreshInvoicePaymentLinkStatus = async (organizationId, invoiceId, linkId, branchContext = null) => {
   if (!razorpayService.isConfigured()) {
     throw new ApiError(400, "Razorpay is not configured");
   }
 
   const localLink = await paymentLinksModel.getPaymentLinkById(organizationId, invoiceId, linkId);
   if (!localLink) {
+    throw new ApiError(404, "Payment link not found");
+  }
+
+  if (
+    branchContext?.readBranchId &&
+    localLink.branch_id &&
+    branchContext.readBranchId !== localLink.branch_id
+  ) {
     throw new ApiError(404, "Payment link not found");
   }
 
