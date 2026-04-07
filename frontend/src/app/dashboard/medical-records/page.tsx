@@ -47,7 +47,6 @@ type MedicalRecordPayload = {
   diagnosis: string | null;
   prescription: string | null;
   notes: string | null;
-  fileUrl: string | null;
 };
 
 type UploadAttachmentResponse = {
@@ -168,8 +167,7 @@ export default function MedicalRecordsPage() {
     symptoms: form.symptoms.trim() || null,
     diagnosis: form.diagnosis.trim() || null,
     prescription: form.prescription.trim() || null,
-    notes: form.notes.trim() || null,
-    fileUrl: form.fileUrl.trim() || null
+    notes: form.notes.trim() || null
   });
 
   const resetForm = () => {
