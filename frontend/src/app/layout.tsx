@@ -13,8 +13,40 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MedSyra",
-  description: "A patient management app for doctors, clinics, and hospitals",
+  metadataBase: new URL("http://localhost:3000"),
+  title: {
+    default: "MedSyra",
+    template: "%s | MedSyra"
+  },
+  description: "Healthcare ERP and CRM software for clinics, doctors, and hospitals.",
+  applicationName: "MedSyra",
+  keywords: [
+    "healthcare ERP",
+    "clinic management software",
+    "hospital CRM",
+    "medical records",
+    "appointments",
+    "billing"
+  ],
+  openGraph: {
+    title: "MedSyra",
+    description: "Healthcare ERP and CRM software for clinics, doctors, and hospitals.",
+    type: "website",
+    images: [
+      {
+        url: "/Logo.jpeg",
+        width: 512,
+        height: 512,
+        alt: "MedSyra logo"
+      }
+    ]
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "MedSyra",
+    description: "Healthcare ERP and CRM software for clinics, doctors, and hospitals.",
+    images: ["/Logo.jpeg"]
+  },
   icons: {
     icon: "/Logo.jpeg",
     shortcut: "/Logo.jpeg",

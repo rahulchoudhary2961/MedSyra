@@ -1,6 +1,7 @@
 const app = require("./app");
 const env = require("./config/env");
 const pool = require("./config/db");
+const { startRuntimeDiagnostics } = require("./services/runtime-diagnostics.service");
 const { logError, logInfo, logWarn } = require("./utils/logger");
 const { getMailConfigStatus } = require("./services/mail.service");
 
@@ -20,6 +21,8 @@ const startServer = async () => {
       leadsEmailConfigured: Boolean(env.leadsEmailTo)
     });
   }
+
+  startRuntimeDiagnostics();
 
   app.listen(env.port, () => {
     logInfo("server_started", { port: env.port, nodeEnv: env.nodeEnv });

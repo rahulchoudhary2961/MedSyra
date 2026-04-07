@@ -18,6 +18,10 @@ const errorHandler = (error, req, res, _next) => {
     logWarn("api_client_error", payload);
   }
 
+  if (res.headersSent) {
+    return res.end();
+  }
+
   res.status(statusCode).json({
     success: false,
     message,

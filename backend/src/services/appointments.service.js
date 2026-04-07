@@ -37,6 +37,27 @@ const diffInDays = (futureDate, currentDate) => {
   return Math.round((futureDate.getTime() - currentDate.getTime()) / msPerDay);
 };
 
+const parseAppointmentDateTime = (appointmentDate, appointmentTime) => {
+  if (!appointmentDate || !appointmentTime) {
+    return null;
+  }
+
+  const [year, month, day] = String(appointmentDate)
+    .slice(0, 10)
+    .split("-")
+    .map(Number);
+  const [hours, minutes] = String(appointmentTime)
+    .slice(0, 5)
+    .split(":")
+    .map(Number);
+
+  if (!year || !month || !day || Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day, hours, minutes, 0, 0);
+};
+
 const formatAppointmentTimeLabel = (value) => {
   const [hours, minutes] = value.slice(0, 5).split(":").map(Number);
   const date = new Date();
@@ -89,6 +110,29 @@ const buildAppointmentReminderMessage = ({ patientName, clinicName, doctorName, 
     "",
     `- ${doctor}`
   ].join("\n");
+};
+
+const getSmartAppointmentWindow = (preferences, appointmentDate, appointmentTime) => {
+  if (preferences?.smart_timing_enabled !== true) {
+    return { allowed: true, leadMinutes: null, availableAt: null };
+  }
+
+  const leadMinutes = Number(preferences?.appointment_lead_minutes || 120);
+  const appointmentMoment = parseAppointmentDateTime(appointmentDate, appointmentTime);
+  if (!appointmentMoment) {
+    return { allowed: true, leadMinutes, availableAt: null };
+  }
+
+  const availableAt = new Date(appointmentMoment.getTime() - leadMinutes * 60 * 1000);
+  if (Date.now() < availableAt.getTime()) {
+    return {
+      allowed: false,
+      leadMinutes,
+      availableAt
+    };
+  }
+
+  return { allowed: true, leadMinutes, availableAt };
 };
 
 const invalidateAppointmentCaches = async (organizationId) => {
@@ -598,8 +642,24 @@ const generateAppointmentReminder = async (organizationId, appointmentId, actor 
   });
 
   const preferencesResponse = await notificationsService.getNotificationPreferences(organizationId);
+  const timingWindow = getSmartAppointmentWindow(
+    preferencesResponse.preferences,
+    context.appointment_date,
+    context.appointment_time
+  );
+  if (!timingWindow.allowed) {
+    throw new ApiError(
+      400,
+      `Smart timing is enabled. This reminder becomes available at ${timingWindow.availableAt.toLocaleTimeString("en-IN", {
+        hour: "numeric",
+        minute: "2-digit"
+      })}.`
+    );
+  }
+
   const deliveries = await notificationsService.sendReminderDeliveries({
     organizationId,
+    branchId: appointment.branch_id || scopeBranchId || null,
     actorUserId: actor?.sub || null,
     notificationType: "appointment_reminder",
     referenceId: appointmentId,
@@ -610,7 +670,8 @@ const generateAppointmentReminder = async (organizationId, appointmentId, actor 
       patientName: context.patient_name || context.title,
       doctorName: context.doctor_name || null,
       appointmentDate: context.appointment_date,
-      appointmentTime: context.appointment_time
+      appointmentTime: context.appointment_time,
+      smartLeadMinutes: timingWindow.leadMinutes
     },
     preferences: preferencesResponse.preferences
   });

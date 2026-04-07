@@ -90,6 +90,16 @@ const deriveFollowUpReminderStatus = (payload, followUpDate, fallbackStatus = nu
   return fallbackStatus ?? "pending";
 };
 
+const shouldDeferFollowUpReminder = (preferences) => {
+  if (preferences?.smart_timing_enabled !== true) {
+    return false;
+  }
+
+  const sendHour = Number(preferences?.follow_up_send_hour || 9);
+  const currentHour = new Date().getHours();
+  return currentHour < sendHour;
+};
+
 const listMedicalRecords = async (organizationId, query, actor = null) => {
   const page = Number.parseInt(query.page, 10) || 1;
   const limit = Number.parseInt(query.limit, 10) || 10;
@@ -441,27 +451,27 @@ const sendMedicalRecordFollowUpReminder = async (organizationId, id, actor = nul
     throw new ApiError(400, "No follow-up date saved for this medical record");
   }
 
-  const message = [
-    `Hello ${(reminderContext.patient_name || "Patient").trim().split(/\s+/)[0] || "Patient"},`,
-    `This is a reminder for your follow-up visit at ${reminderContext.clinic_name || "your clinic"}.`,
-    "Please visit today or tomorrow.",
-    "",
-    `- ${record.doctor_name || "Doctor"}`
-  ].join("\n");
-
   const preferencesResponse = await notificationsService.getNotificationPreferences(organizationId);
   const deliveries = await notificationsService.sendReminderDeliveries({
     organizationId,
+    branchId: record.branch_id || scopeBranchId || null,
     actorUserId: actor?.sub || null,
     notificationType: "follow_up_reminder",
     referenceId: record.id,
     phone: reminderContext.patient_phone,
-    body: message,
+    templateContext: {
+      patientName: reminderContext.patient_name,
+      clinicName: reminderContext.clinic_name,
+      doctorName: record.doctor_name || "Doctor",
+      followUpDate: record.follow_up_date,
+      diagnosis: record.diagnosis || ""
+    },
     metadata: {
       medicalRecordId: record.id,
       patientName: reminderContext.patient_name,
       doctorName: record.doctor_name || "Doctor",
-      followUpDate: record.follow_up_date
+      followUpDate: record.follow_up_date,
+      diagnosis: record.diagnosis || ""
     },
     preferences: preferencesResponse.preferences
   });
@@ -499,25 +509,30 @@ const processDueFollowUpReminders = async (organizationId = null) => {
     try {
       const targetOrganizationId = record.organization_id || organizationId;
       const preferencesResponse = await notificationsService.getNotificationPreferences(targetOrganizationId);
-      const message = [
-        `Hello ${(record.patient_name || "Patient").trim().split(/\s+/)[0] || "Patient"},`,
-        `This is a reminder for your follow-up visit at ${record.clinic_name || "your clinic"}.`,
-        "Please visit today or tomorrow.",
-        "",
-        `- ${record.doctor_name || "Doctor"}`
-      ].join("\n");
+      if (shouldDeferFollowUpReminder(preferencesResponse.preferences)) {
+        results.push({ id: record.id, status: "deferred" });
+        continue;
+      }
 
       const deliveries = await notificationsService.sendReminderDeliveries({
         organizationId: targetOrganizationId,
+        branchId: record.branch_id || null,
         notificationType: "follow_up_reminder",
         referenceId: record.id,
         phone: record.patient_phone,
-        body: message,
+        templateContext: {
+          patientName: record.patient_name,
+          clinicName: record.clinic_name,
+          doctorName: record.doctor_name || "Doctor",
+          followUpDate: record.follow_up_date,
+          diagnosis: record.diagnosis || ""
+        },
         metadata: {
           medicalRecordId: record.id,
           patientName: record.patient_name,
           doctorName: record.doctor_name || "Doctor",
-          followUpDate: record.follow_up_date
+          followUpDate: record.follow_up_date,
+          diagnosis: record.diagnosis || ""
         },
         preferences: preferencesResponse.preferences
       });

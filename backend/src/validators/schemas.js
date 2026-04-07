@@ -33,9 +33,12 @@ const bloodTypes = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const invoiceStatuses = ["draft", "issued", "partially_paid", "paid", "overdue", "void"];
 const paymentMethods = ["cash", "card", "bank_transfer", "insurance", "upi", "other"];
 const reportPeriods = ["7d", "30d", "90d", "12m"];
-const notificationTypes = ["appointment_reminder", "follow_up_reminder", "staff_daily_schedule", "appointment_no_show"];
+const notificationTypes = ["appointment_reminder", "follow_up_reminder", "staff_daily_schedule", "appointment_no_show", "marketing_campaign"];
 const notificationChannels = ["whatsapp", "sms", "email"];
 const notificationLogStatuses = ["sent", "failed", "fallback", "opened", "skipped"];
+const notificationTemplateChannels = ["whatsapp", "sms"];
+const notificationCampaignAudiences = ["all_active", "dormant_30", "dormant_60", "follow_up_due", "chronic"];
+const notificationCampaignStatuses = ["draft", "scheduled", "sent", "partial", "failed"];
 const auditOutcomes = ["success", "denied", "failed"];
 const crmTaskTypes = ["follow_up", "recall", "retention"];
 const crmTaskPriorities = ["high", "medium", "low"];
@@ -604,6 +607,12 @@ const crmSchemas = {
       assignedUserId: optional(uuidRule())
     }
   },
+  intelligenceQuery: {
+    fields: {
+      limit: optional(integerRule({ min: 1, max: 12, coerceString: true })),
+      patientId: optional(uuidRule())
+    }
+  },
   createBody: {
     fields: {
       patientId: uuidRule(),
@@ -711,7 +720,42 @@ const labSchemas = {
   idParams: idParamsSchema
 };
 
+const doctorToolsSchemas = {
+  workspaceQuery: {
+    fields: {
+      patientId: optional(uuidRule()),
+      doctorId: optional(uuidRule()),
+      q: optional(stringRule({ minLength: 1, maxLength: 120 })),
+      limit: optional(integerRule({ min: 1, max: 20, coerceString: true }))
+    }
+  },
+  templateCreateBody: {
+    fields: {
+      name: stringRule({ minLength: 2, maxLength: 100 }),
+      templateText: stringRule({ minLength: 2, maxLength: 4000 }),
+      diagnosisHint: optional(stringRule({ maxLength: 500 })),
+      notesHint: optional(stringRule({ maxLength: 500 }))
+    }
+  },
+  favoriteCreateBody: {
+    fields: {
+      medicineId: optional(uuidRule()),
+      medicineName: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      genericName: optional(stringRule({ maxLength: 120 })),
+      dosageForm: optional(stringRule({ maxLength: 80 })),
+      strength: optional(stringRule({ maxLength: 80 })),
+      preferredSig: optional(stringRule({ maxLength: 500 }))
+    }
+  },
+  idParams: idParamsSchema
+};
+
 const pharmacySchemas = {
+  insightsQuery: {
+    fields: {
+      limit: optional(integerRule({ min: 1, max: 20, coerceString: true }))
+    }
+  },
   medicinesListQuery: {
     fields: {
       ...paginationQuerySchema,
@@ -974,7 +1018,13 @@ const notificationsSchemas = {
       followUpWhatsappEnabled: optional(booleanRule()),
       followUpSmsEnabled: optional(booleanRule()),
       staffScheduleEmailEnabled: optional(booleanRule()),
-      staffScheduleSmsEnabled: optional(booleanRule())
+      staffScheduleSmsEnabled: optional(booleanRule()),
+      smartTimingEnabled: optional(booleanRule()),
+      appointmentLeadMinutes: optional(integerRule({ min: 15, max: 720, coerceString: true })),
+      followUpSendHour: optional(integerRule({ min: 6, max: 22, coerceString: true })),
+      conditionBasedFollowUpEnabled: optional(booleanRule()),
+      campaignWhatsappEnabled: optional(booleanRule()),
+      campaignSmsEnabled: optional(booleanRule())
     },
     requireAtLeastOne: true
   },
@@ -985,7 +1035,56 @@ const notificationsSchemas = {
       channel: optional(stringRule({ enumValues: notificationChannels, maxLength: 20 })),
       status: optional(stringRule({ enumValues: notificationLogStatuses, maxLength: 20 }))
     }
-  }
+  },
+  templatesQuery: {
+    fields: {
+      notificationType: optional(stringRule({ enumValues: notificationTypes, maxLength: 40 })),
+      channel: optional(stringRule({ enumValues: notificationTemplateChannels, maxLength: 20 }))
+    }
+  },
+  templateCreateBody: {
+    fields: {
+      name: stringRule({ minLength: 2, maxLength: 120 }),
+      notificationType: stringRule({ enumValues: ["appointment_reminder", "follow_up_reminder", "marketing_campaign"], maxLength: 40 }),
+      channel: stringRule({ enumValues: notificationTemplateChannels, maxLength: 20 }),
+      templateKey: optional(stringRule({ minLength: 2, maxLength: 60, safe: false })),
+      conditionTag: optional(stringRule({ minLength: 2, maxLength: 40, safe: false })),
+      body: stringRule({ minLength: 8, maxLength: 4000, safe: false }),
+      isDefault: optional(booleanRule()),
+      isActive: optional(booleanRule())
+    }
+  },
+  templateUpdateBody: {
+    fields: {
+      name: optional(stringRule({ minLength: 2, maxLength: 120 })),
+      notificationType: optional(stringRule({ enumValues: ["appointment_reminder", "follow_up_reminder", "marketing_campaign"], maxLength: 40 })),
+      channel: optional(stringRule({ enumValues: notificationTemplateChannels, maxLength: 20 })),
+      templateKey: optional(stringRule({ minLength: 2, maxLength: 60, safe: false })),
+      conditionTag: optional(stringRule({ minLength: 2, maxLength: 40, safe: false })),
+      body: optional(stringRule({ minLength: 8, maxLength: 4000, safe: false })),
+      isDefault: optional(booleanRule()),
+      isActive: optional(booleanRule())
+    },
+    requireAtLeastOne: true
+  },
+  campaignsQuery: {
+    fields: {
+      limit: optional(integerRule({ min: 1, max: 100, coerceString: true }))
+    }
+  },
+  campaignCreateBody: {
+    fields: {
+      name: stringRule({ minLength: 2, maxLength: 120 }),
+      audienceType: stringRule({ enumValues: notificationCampaignAudiences, maxLength: 40 }),
+      templateId: uuidRule(),
+      sendWhatsapp: optional(booleanRule()),
+      sendSms: optional(booleanRule()),
+      scheduledFor: optional(stringRule({ minLength: 10, maxLength: 40, safe: false })),
+      status: optional(stringRule({ enumValues: notificationCampaignStatuses, maxLength: 20 })),
+      notes: optional(stringRule({ maxLength: 500 }))
+    }
+  },
+  idParams: idParamsSchema
 };
 
 const commercialSchemas = {
@@ -1109,6 +1208,7 @@ module.exports = {
   billingsSchemas,
   dashboardSchemas,
   crmSchemas,
+  doctorToolsSchemas,
   labSchemas,
   pharmacySchemas,
   inventorySchemas,

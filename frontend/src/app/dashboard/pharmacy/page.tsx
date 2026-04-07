@@ -11,6 +11,19 @@ import { AuthUser, Doctor, MedicalRecord, Medicine, MedicineBatch, Patient, Phar
 type ListResponse<T> = { success: boolean; data: { items: T[] } };
 type SingleResponse<T> = { success: boolean; data: T };
 type MeResponse = { success: boolean; data: AuthUser };
+type PharmacyInsightItem = Medicine & {
+  severity: "critical" | "high" | "medium";
+};
+type PharmacyInsightsResponse = {
+  success: boolean;
+  data: {
+    generated_at: string;
+    low_stock_count: number;
+    out_of_stock_count: number;
+    total_suggested_reorder_quantity: number;
+    low_stock_items: PharmacyInsightItem[];
+  };
+};
 
 type MedicineForm = {
   code: string;
@@ -53,12 +66,107 @@ type DispenseForm = {
 
 const todayDateKey = () => new Date().toISOString().slice(0, 10);
 const money = (value: number | null | undefined) => `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const quantity = (value: number | null | undefined) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const formatDate = (value: string | null | undefined) => {
   if (!value) return "-";
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
     : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
+};
+
+const normalizeText = (value: string | null | undefined) =>
+  (value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const splitPrescriptionLines = (value: string) =>
+  value
+    .split(/\r?\n|;/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+const scoreMedicineMatch = (line: string, medicine: Medicine) => {
+  const normalizedLine = normalizeText(line);
+  if (!normalizedLine) {
+    return 0;
+  }
+
+  let score = 0;
+  const primaryName = normalizeText(medicine.name);
+  const genericName = normalizeText(medicine.generic_name);
+  const strength = normalizeText(medicine.strength);
+  const dosageForm = normalizeText(medicine.dosage_form);
+
+  if (primaryName && normalizedLine.includes(primaryName)) {
+    score += 100;
+  } else if (primaryName && primaryName.split(" ").some((token) => token.length > 3 && normalizedLine.includes(token))) {
+    score += 40;
+  }
+
+  if (genericName && normalizedLine.includes(genericName)) {
+    score += 80;
+  } else if (genericName && genericName.split(" ").some((token) => token.length > 3 && normalizedLine.includes(token))) {
+    score += 30;
+  }
+
+  if (strength && normalizedLine.includes(strength)) {
+    score += 20;
+  }
+
+  if (dosageForm && normalizedLine.includes(dosageForm)) {
+    score += 10;
+  }
+
+  return score;
+};
+
+const buildPrescriptionDispenseDraft = (prescriptionSnapshot: string, medicines: Medicine[], batches: MedicineBatch[]) => {
+  const lines = splitPrescriptionLines(prescriptionSnapshot);
+  const usedMedicineIds = new Set<string>();
+  const items: DispenseItemForm[] = [];
+  const unmatchedLines: string[] = [];
+
+  for (const line of lines) {
+    const rankedMatch = medicines
+      .filter((medicine) => medicine.is_active)
+      .map((medicine) => ({ medicine, score: scoreMedicineMatch(line, medicine) }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score)[0];
+
+    if (!rankedMatch || usedMedicineIds.has(rankedMatch.medicine.id)) {
+      unmatchedLines.push(line);
+      continue;
+    }
+
+    const batch = batches
+      .filter((entry) => entry.medicine_id === rankedMatch.medicine.id && entry.available_quantity > 0)
+      .sort((a, b) => {
+        const aDate = new Date(`${a.expiry_date}T00:00:00`).getTime();
+        const bDate = new Date(`${b.expiry_date}T00:00:00`).getTime();
+        if (aDate !== bDate) {
+          return aDate - bDate;
+        }
+        return Number(b.available_quantity || 0) - Number(a.available_quantity || 0);
+      })[0];
+
+    if (!batch) {
+      unmatchedLines.push(line);
+      continue;
+    }
+
+    usedMedicineIds.add(rankedMatch.medicine.id);
+    items.push({
+      medicineBatchId: batch.id,
+      quantity: "1",
+      unitPrice: String(batch.sale_price || ""),
+      directions: line
+    });
+  }
+
+  return { items, unmatchedLines };
 };
 
 const initialMedicineForm = (): MedicineForm => ({
@@ -110,8 +218,16 @@ export default function PharmacyPage() {
   const [batches, setBatches] = useState<MedicineBatch[]>([]);
   const [dispenses, setDispenses] = useState<PharmacyDispense[]>([]);
   const [patientRecords, setPatientRecords] = useState<MedicalRecord[]>([]);
+  const [insights, setInsights] = useState<PharmacyInsightsResponse["data"]>({
+    generated_at: "",
+    low_stock_count: 0,
+    out_of_stock_count: 0,
+    total_suggested_reorder_quantity: 0,
+    low_stock_items: []
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [assistMessage, setAssistMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [showMedicineForm, setShowMedicineForm] = useState(false);
   const [showBatchForm, setShowBatchForm] = useState(false);
@@ -134,18 +250,20 @@ export default function PharmacyPage() {
     setLoading(true);
     setError("");
     try {
-      const [me, patientsRes, doctorsRes, medicinesRes, batchesRes] = await Promise.all([
+      const [me, patientsRes, doctorsRes, medicinesRes, batchesRes, insightsRes] = await Promise.all([
         apiRequest<MeResponse>("/auth/me", { authenticated: true }),
         apiRequest<ListResponse<Patient>>("/patients?limit=100", { authenticated: true }),
         apiRequest<ListResponse<Doctor>>("/doctors?limit=100", { authenticated: true }),
         apiRequest<ListResponse<Medicine>>("/pharmacy/medicines?limit=200", { authenticated: true }),
-        apiRequest<ListResponse<MedicineBatch>>("/pharmacy/batches?limit=200", { authenticated: true })
+        apiRequest<ListResponse<MedicineBatch>>("/pharmacy/batches?limit=200", { authenticated: true }),
+        apiRequest<PharmacyInsightsResponse>("/pharmacy/insights?limit=8", { authenticated: true })
       ]);
       setCurrentUser(me.data);
       setPatients(patientsRes.data.items || []);
       setDoctors(doctorsRes.data.items || []);
       setMedicines(medicinesRes.data.items || []);
       setBatches(batchesRes.data.items || []);
+      setInsights(insightsRes.data);
       await loadDispenses();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to load pharmacy workspace");
@@ -173,6 +291,7 @@ export default function PharmacyPage() {
 
   useEffect(() => {
     setDispenseForm(initialDispenseForm(patientFilterId));
+    setAssistMessage("");
     void loadPatientRecords(patientFilterId);
   }, [patientFilterId, loadPatientRecords]);
 
@@ -193,6 +312,10 @@ export default function PharmacyPage() {
   const lowStock = useMemo(
     () => medicines.filter((medicine) => medicine.is_active && Number(medicine.current_stock || 0) <= Number(medicine.reorder_level || 0)),
     [medicines]
+  );
+  const prescriptionDraft = useMemo(
+    () => buildPrescriptionDispenseDraft(dispenseForm.prescriptionSnapshot, medicines, batches),
+    [batches, dispenseForm.prescriptionSnapshot, medicines]
   );
   const expiring = useMemo(() => {
     const now = new Date();
@@ -216,13 +339,33 @@ export default function PharmacyPage() {
     }));
   };
 
+  const applyPrescriptionDraft = () => {
+    if (prescriptionDraft.items.length === 0) {
+      setAssistMessage("No in-stock medicines matched the prescription text.");
+      return;
+    }
+
+    setDispenseForm((current) => ({
+      ...current,
+      items: prescriptionDraft.items
+    }));
+
+    if (prescriptionDraft.unmatchedLines.length > 0) {
+      setAssistMessage(`${prescriptionDraft.items.length} medicine line(s) matched. ${prescriptionDraft.unmatchedLines.length} line(s) still need manual review.`);
+    } else {
+      setAssistMessage(`Loaded ${prescriptionDraft.items.length} prescribed medicine line(s). Stock will deduct when you save the dispense.`);
+    }
+  };
+
   const refreshInventory = async () => {
-    const [medicinesRes, batchesRes] = await Promise.all([
+    const [medicinesRes, batchesRes, insightsRes] = await Promise.all([
       apiRequest<ListResponse<Medicine>>("/pharmacy/medicines?limit=200", { authenticated: true }),
-      apiRequest<ListResponse<MedicineBatch>>("/pharmacy/batches?limit=200", { authenticated: true })
+      apiRequest<ListResponse<MedicineBatch>>("/pharmacy/batches?limit=200", { authenticated: true }),
+      apiRequest<PharmacyInsightsResponse>("/pharmacy/insights?limit=8", { authenticated: true })
     ]);
     setMedicines(medicinesRes.data.items || []);
     setBatches(batchesRes.data.items || []);
+    setInsights(insightsRes.data);
   };
 
   const submitMedicine = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -310,6 +453,7 @@ export default function PharmacyPage() {
       setDispenses((current) => [response.data, ...current]);
       await refreshInventory();
       setDispenseForm(initialDispenseForm(patientFilterId));
+      setAssistMessage("");
       setShowDispenseForm(false);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to dispense medicines");
@@ -355,6 +499,7 @@ export default function PharmacyPage() {
       </div>
 
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {assistMessage && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{assistMessage}</div>}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-[0.14em] text-gray-500">Medicines</p><p className="mt-3 text-2xl text-gray-900">{medicines.length}</p></div>
@@ -362,6 +507,62 @@ export default function PharmacyPage() {
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-[0.14em] text-gray-500">Low Stock</p><p className="mt-3 text-2xl text-gray-900">{lowStock.length}</p></div>
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-[0.14em] text-gray-500">Expiring Soon</p><p className="mt-3 text-2xl text-gray-900">{expiring.length}</p></div>
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-[0.14em] text-gray-500">Dispenses</p><p className="mt-3 text-2xl text-gray-900">{dispenses.length}</p></div>
+      </section>
+
+      <section className="rounded-3xl border border-amber-200 bg-amber-50/40 p-6 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-amber-700">Daily Stock Alert</p>
+            <h2 className="mt-2 text-xl text-gray-900">Low stock summary</h2>
+            <p className="mt-2 max-w-3xl text-sm text-gray-600">
+              Auto-generated low stock summary with suggested reorder quantities based on reorder level and the last 30 days of dispense volume.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-white/70 bg-white px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Low Stock</p>
+              <p className="mt-2 text-2xl text-gray-900">{insights.low_stock_count}</p>
+            </div>
+            <div className="rounded-2xl border border-white/70 bg-white px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Out of Stock</p>
+              <p className="mt-2 text-2xl text-gray-900">{insights.out_of_stock_count}</p>
+            </div>
+            <div className="rounded-2xl border border-white/70 bg-white px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Suggested Reorder</p>
+              <p className="mt-2 text-2xl text-gray-900">{quantity(insights.total_suggested_reorder_quantity)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 xl:grid-cols-2">
+          {insights.low_stock_items.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-amber-200 bg-white px-6 py-10 text-sm text-gray-500 xl:col-span-2">
+              No low stock medicines in today&apos;s summary.
+            </div>
+          ) : (
+            insights.low_stock_items.map((item) => (
+              <article key={item.id} className="rounded-2xl border border-amber-100 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base text-gray-900">{item.name}</h3>
+                    <p className="mt-1 text-sm text-gray-600">{[item.strength, item.dosage_form, item.code].filter(Boolean).join(" | ") || item.generic_name || "General medicine"}</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
+                    item.severity === "critical" ? "bg-red-50 text-red-700" : item.severity === "high" ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"
+                  }`}>
+                    {item.severity}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-2 text-sm text-gray-600 md:grid-cols-2">
+                  <p><span className="font-medium text-gray-900">Current Stock:</span> {quantity(item.current_stock)} {item.unit}</p>
+                  <p><span className="font-medium text-gray-900">Reorder Level:</span> {quantity(item.reorder_level)} {item.unit}</p>
+                  <p><span className="font-medium text-gray-900">30 Day Usage:</span> {quantity(item.dispensed_last_30_days)} {item.unit}</p>
+                  <p><span className="font-medium text-gray-900">Suggested Reorder:</span> {quantity(item.suggested_reorder_quantity)} {item.unit}</p>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
       </section>
 
       {showMedicineForm && canManagePharmacyCatalog(currentUser?.role) && (
@@ -423,7 +624,10 @@ export default function PharmacyPage() {
           </div>
           <form className="mt-6 grid gap-4" onSubmit={submitDispense}>
             <div className="grid gap-4 lg:grid-cols-2">
-              <select value={dispenseForm.patientId} onChange={(event) => setDispenseForm((current) => ({ ...current, patientId: event.target.value, medicalRecordId: "", prescriptionSnapshot: "" }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
+              <select value={dispenseForm.patientId} onChange={(event) => {
+                setAssistMessage("");
+                setDispenseForm((current) => ({ ...current, patientId: event.target.value, medicalRecordId: "", prescriptionSnapshot: "", items: [emptyDispenseItem()] }));
+              }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
                 <option value="">Select patient</option>
                 {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name} | {patient.patient_code || patient.phone}</option>)}
               </select>
@@ -435,7 +639,13 @@ export default function PharmacyPage() {
                 value={dispenseForm.medicalRecordId}
                 onChange={(event) => {
                   const record = patientRecords.find((entry) => entry.id === event.target.value);
-                  setDispenseForm((current) => ({ ...current, medicalRecordId: event.target.value, prescriptionSnapshot: record?.prescription || current.prescriptionSnapshot }));
+                  setAssistMessage("");
+                  setDispenseForm((current) => ({
+                    ...current,
+                    medicalRecordId: event.target.value,
+                    doctorId: record?.doctor_id || current.doctorId,
+                    prescriptionSnapshot: record?.prescription || current.prescriptionSnapshot
+                  }));
                 }}
                 className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
               >
@@ -454,7 +664,27 @@ export default function PharmacyPage() {
               </div>
             )}
 
-            <textarea value={dispenseForm.prescriptionSnapshot} onChange={(event) => setDispenseForm((current) => ({ ...current, prescriptionSnapshot: event.target.value }))} placeholder="Prescription snapshot" rows={3} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <div className="space-y-3">
+              <textarea value={dispenseForm.prescriptionSnapshot} onChange={(event) => {
+                setAssistMessage("");
+                setDispenseForm((current) => ({ ...current, prescriptionSnapshot: event.target.value }));
+              }} placeholder="Prescription snapshot" rows={3} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={applyPrescriptionDraft}
+                  disabled={prescriptionDraft.items.length === 0}
+                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Dispense All Prescribed Meds
+                </button>
+                <p className="text-sm text-gray-600">
+                  {prescriptionDraft.items.length > 0
+                    ? `${prescriptionDraft.items.length} matched medicine line(s) ready${prescriptionDraft.unmatchedLines.length > 0 ? `, ${prescriptionDraft.unmatchedLines.length} unmatched` : ""}.`
+                    : "No matched in-stock medicines found yet."}
+                </p>
+              </div>
+            </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
@@ -516,6 +746,8 @@ export default function PharmacyPage() {
                     <p><span className="font-medium text-gray-900">Batches:</span> {medicine.active_batch_count || 0}</p>
                     <p><span className="font-medium text-gray-900">Reorder at:</span> {medicine.reorder_level || 0}</p>
                     <p><span className="font-medium text-gray-900">Nearest expiry:</span> {formatDate(medicine.nearest_expiry_date)}</p>
+                    <p><span className="font-medium text-gray-900">30 day usage:</span> {quantity(medicine.dispensed_last_30_days)} {medicine.unit}</p>
+                    <p><span className="font-medium text-gray-900">Suggested reorder:</span> {quantity(medicine.suggested_reorder_quantity)} {medicine.unit}</p>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     {isLowStock && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700"><TriangleAlert className="h-3.5 w-3.5" />Low stock</span>}

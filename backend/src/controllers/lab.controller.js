@@ -1,3 +1,4 @@
+const { pipeline } = require("stream/promises");
 const asyncHandler = require("../utils/async-handler");
 const { getRequestMeta, logInfo } = require("../utils/logger");
 const labService = require("../services/lab.service");
@@ -83,7 +84,7 @@ const downloadLabOrderReport = asyncHandler(async (req, res) => {
   res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
   res.setHeader("Cache-Control", "private, no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");
-  res.send(attachment.buffer);
+  await pipeline(attachment.createReadStream(), res);
 });
 
 module.exports = {

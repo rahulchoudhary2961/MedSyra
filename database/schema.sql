@@ -133,6 +133,12 @@ CREATE INDEX IF NOT EXISTS idx_appointments_org_date_time
 ON appointments (organization_id, appointment_date, appointment_time);
 CREATE INDEX IF NOT EXISTS idx_appointments_org_branch_date_time
 ON appointments (organization_id, branch_id, appointment_date, appointment_time);
+CREATE INDEX IF NOT EXISTS idx_appointments_org_patient_date_time
+  ON appointments (organization_id, patient_id, appointment_date DESC, appointment_time DESC)
+  WHERE patient_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_appointments_org_doctor_date_time
+  ON appointments (organization_id, doctor_id, appointment_date DESC, appointment_time DESC)
+  WHERE doctor_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS medical_records (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -163,6 +169,54 @@ CREATE INDEX IF NOT EXISTS idx_medical_records_org_date ON medical_records (orga
 CREATE INDEX IF NOT EXISTS idx_medical_records_org_follow_up_date ON medical_records (organization_id, follow_up_date) WHERE follow_up_date IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_medical_records_org_branch_date
   ON medical_records (organization_id, branch_id, record_date DESC);
+CREATE INDEX IF NOT EXISTS idx_medical_records_org_patient_date_created
+  ON medical_records (organization_id, patient_id, record_date DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_medical_records_org_doctor_date_created
+  ON medical_records (organization_id, doctor_id, record_date DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_medical_records_org_branch_follow_up_date
+  ON medical_records (organization_id, branch_id, follow_up_date)
+  WHERE follow_up_date IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS prescription_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
+  created_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  template_text TEXT NOT NULL,
+  diagnosis_hint TEXT,
+  notes_hint TEXT,
+  use_count INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prescription_templates_org_user_branch_updated
+  ON prescription_templates (organization_id, created_by_user_id, branch_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS favorite_medicines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
+  created_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
+  medicine_id UUID REFERENCES medicines(id) ON DELETE SET NULL,
+  medicine_name TEXT NOT NULL,
+  generic_name TEXT,
+  dosage_form TEXT,
+  strength TEXT,
+  preferred_sig TEXT NOT NULL,
+  use_count INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_favorite_medicines_org_user_branch_updated
+  ON favorite_medicines (organization_id, created_by_user_id, branch_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_favorite_medicines_org_medicine
+  ON favorite_medicines (organization_id, medicine_id, updated_at DESC)
+  WHERE medicine_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS crm_tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -365,6 +419,8 @@ CREATE TABLE IF NOT EXISTS pharmacy_dispense_items (
 
 CREATE INDEX IF NOT EXISTS idx_pharmacy_dispense_items_dispense
   ON pharmacy_dispense_items (dispense_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_pharmacy_dispense_items_medicine_dispense
+  ON pharmacy_dispense_items (medicine_id, dispense_id);
 
 CREATE TABLE IF NOT EXISTS inventory_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -565,8 +621,16 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
   follow_up_sms_enabled BOOLEAN NOT NULL DEFAULT false,
   staff_schedule_email_enabled BOOLEAN NOT NULL DEFAULT true,
   staff_schedule_sms_enabled BOOLEAN NOT NULL DEFAULT false,
+  smart_timing_enabled BOOLEAN NOT NULL DEFAULT true,
+  appointment_lead_minutes INT NOT NULL DEFAULT 120,
+  follow_up_send_hour INT NOT NULL DEFAULT 9,
+  condition_based_follow_up_enabled BOOLEAN NOT NULL DEFAULT true,
+  campaign_whatsapp_enabled BOOLEAN NOT NULL DEFAULT true,
+  campaign_sms_enabled BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT notification_preferences_appointment_lead_minutes_check CHECK (appointment_lead_minutes BETWEEN 15 AND 720),
+  CONSTRAINT notification_preferences_follow_up_send_hour_check CHECK (follow_up_send_hour BETWEEN 6 AND 22)
 );
 
 CREATE TABLE IF NOT EXISTS notification_logs (
@@ -584,7 +648,7 @@ CREATE TABLE IF NOT EXISTS notification_logs (
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT notification_logs_type_check CHECK (
-    notification_type IN ('appointment_reminder', 'follow_up_reminder', 'staff_daily_schedule', 'appointment_no_show')
+    notification_type IN ('appointment_reminder', 'follow_up_reminder', 'staff_daily_schedule', 'appointment_no_show', 'marketing_campaign')
   ),
   CONSTRAINT notification_logs_channel_check CHECK (
     channel IN ('whatsapp', 'sms', 'email')
@@ -601,6 +665,65 @@ CREATE INDEX IF NOT EXISTS idx_notification_logs_org_type_status
   ON notification_logs (organization_id, notification_type, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_logs_org_branch_time
   ON notification_logs (organization_id, branch_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS notification_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  notification_type TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  template_key TEXT NOT NULL,
+  condition_tag TEXT,
+  body TEXT NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT false,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT notification_templates_type_check CHECK (
+    notification_type IN ('appointment_reminder', 'follow_up_reminder', 'marketing_campaign')
+  ),
+  CONSTRAINT notification_templates_channel_check CHECK (
+    channel IN ('whatsapp', 'sms')
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_notification_templates_org_type_key
+  ON notification_templates (organization_id, notification_type, channel, template_key);
+
+CREATE INDEX IF NOT EXISTS idx_notification_templates_org_type_active
+  ON notification_templates (organization_id, notification_type, is_active, is_default DESC, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS notification_campaigns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  branch_id UUID REFERENCES branches(id) ON DELETE SET NULL,
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  audience_type TEXT NOT NULL,
+  template_id UUID NOT NULL REFERENCES notification_templates(id) ON DELETE RESTRICT,
+  channel_config JSONB NOT NULL DEFAULT '{"whatsapp": true, "sms": false}'::jsonb,
+  scheduled_for TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'draft',
+  total_recipients INT NOT NULL DEFAULT 0,
+  successful_recipients INT NOT NULL DEFAULT 0,
+  failed_recipients INT NOT NULL DEFAULT 0,
+  notes TEXT,
+  last_sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT notification_campaigns_audience_type_check CHECK (
+    audience_type IN ('all_active', 'dormant_30', 'dormant_60', 'follow_up_due', 'chronic')
+  ),
+  CONSTRAINT notification_campaigns_status_check CHECK (
+    status IN ('draft', 'scheduled', 'sent', 'partial', 'failed')
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_campaigns_org_status_time
+  ON notification_campaigns (organization_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_notification_campaigns_org_branch_time
+  ON notification_campaigns (organization_id, branch_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS ai_prescription_suggestions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -751,6 +874,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_org_appointment ON invoices (organ
 CREATE INDEX IF NOT EXISTS idx_invoices_org_status_date ON invoices (organization_id, status, issue_date DESC);
 CREATE INDEX IF NOT EXISTS idx_invoices_org_branch_status_date
   ON invoices (organization_id, branch_id, status, issue_date DESC);
+CREATE INDEX IF NOT EXISTS idx_invoices_org_patient_date
+  ON invoices (organization_id, patient_id, issue_date DESC, created_at DESC);
 
 ALTER TABLE pharmacy_dispenses
   DROP CONSTRAINT IF EXISTS pharmacy_dispenses_invoice_id_fkey;
@@ -792,6 +917,8 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE INDEX IF NOT EXISTS idx_payments_org_invoice ON payments (organization_id, invoice_id, paid_at DESC);
 CREATE INDEX IF NOT EXISTS idx_payments_org_branch_invoice
   ON payments (organization_id, branch_id, invoice_id, paid_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payments_org_status_method_paid
+  ON payments (organization_id, status, method, paid_at DESC);
 
 CREATE TABLE IF NOT EXISTS invoice_payment_links (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -355,6 +355,41 @@ const getSummary = async (organizationId, branchId = null) => {
          WHERE organization_id = $1
            AND appointment_date = $2::date
            ${branchFilterSql("appointments")}
+           AND status IN ('pending', 'confirmed', 'checked-in')) AS waiting_patients,
+        (SELECT COALESCE(SUM(balance_amount), 0)::numeric(12,2)
+         FROM invoices
+         WHERE organization_id = $1
+           ${branchFilterSql("invoices")}
+           AND balance_amount > 0
+           AND status IN ('issued', 'partially_paid', 'overdue')) AS pending_payment_amount,
+        (SELECT COUNT(*)::int
+         FROM medical_records
+         WHERE organization_id = $1
+           ${branchFilterSql("medical_records")}
+           AND follow_up_date = $2::date) AS follow_ups_due_today,
+        (SELECT COUNT(*)::int
+         FROM medical_records
+         WHERE organization_id = $1
+           ${branchFilterSql("medical_records")}
+           AND follow_up_date < $2::date
+           AND COALESCE(follow_up_reminder_status, 'pending') <> 'disabled') AS follow_ups_overdue,
+        (SELECT COUNT(*)::int
+         FROM lab_orders
+         WHERE organization_id = $1
+           ${branchFilterSql("lab_orders")}
+           AND status = 'report_ready') AS lab_reports_ready,
+        (SELECT COUNT(*)::int
+         FROM insurance_claims
+         WHERE organization_id = $1
+           ${branchFilterSql("insurance_claims")}
+           AND status IN ('under_review', 'approved', 'partially_approved')
+           AND response_due_date IS NOT NULL
+           AND response_due_date <= $2::date) AS insurance_follow_ups_due,
+        (SELECT COUNT(*)::int
+         FROM appointments
+         WHERE organization_id = $1
+           AND appointment_date = $2::date
+           ${branchFilterSql("appointments")}
            AND status = 'no-show') AS no_shows,
         (SELECT COUNT(*)::int
          FROM patients
@@ -378,12 +413,7 @@ const getSummary = async (organizationId, branchId = null) => {
            AND p.status = 'completed'
            AND p.paid_at >= DATE_TRUNC('month', $2::date::timestamp)
            AND p.paid_at < DATE_TRUNC('month', $2::date::timestamp) + INTERVAL '1 month'
-           ${branchFilterSql("p")}) AS monthly_revenue,
-        (SELECT COUNT(*)::int
-         FROM medical_records
-         WHERE organization_id = $1
-           AND follow_up_date = $2::date
-           ${branchFilterSql("medical_records")}) AS follow_ups_due_today
+           ${branchFilterSql("p")}) AS monthly_revenue
       `,
       [organizationId, currentDateKey, branchId]
     ),
@@ -493,6 +523,66 @@ const getSummary = async (organizationId, branchId = null) => {
       weeklyRevenue: Number(metrics.rows[0].weekly_revenue || 0),
       monthlyRevenue: Number(metrics.rows[0].monthly_revenue || 0),
       followUpsDueToday: Number(metrics.rows[0].follow_ups_due_today || 0)
+    },
+    operations: {
+      todayWaiting: Number(metrics.rows[0].waiting_patients || 0),
+      pendingPayments: Number(metrics.rows[0].pending_payments || 0),
+      pendingPaymentAmount: Number(metrics.rows[0].pending_payment_amount || 0),
+      followUpsDue: Number(metrics.rows[0].follow_ups_due_today || 0),
+      followUpsOverdue: Number(metrics.rows[0].follow_ups_overdue || 0),
+      labReportsReady: Number(metrics.rows[0].lab_reports_ready || 0),
+      insuranceFollowUpsDue: Number(metrics.rows[0].insurance_follow_ups_due || 0),
+      actionRequired: [
+        {
+          key: "waiting_patients",
+          label: "Patients waiting today",
+          count: Number(metrics.rows[0].waiting_patients || 0),
+          href: "/dashboard/appointments",
+          tone: "blue"
+        },
+        {
+          key: "pending_payments",
+          label: "Pending payment follow-up",
+          count: Number(metrics.rows[0].pending_payments || 0),
+          href: "/dashboard/billings",
+          tone: "amber"
+        },
+        {
+          key: "follow_ups_due",
+          label: "Follow-ups due today",
+          count: Number(metrics.rows[0].follow_ups_due_today || 0),
+          href: "/dashboard/crm",
+          tone: "emerald"
+        },
+        {
+          key: "follow_ups_overdue",
+          label: "Overdue follow-ups",
+          count: Number(metrics.rows[0].follow_ups_overdue || 0),
+          href: "/dashboard/crm",
+          tone: "rose"
+        },
+        {
+          key: "lab_reports_ready",
+          label: "Lab reports ready to share",
+          count: Number(metrics.rows[0].lab_reports_ready || 0),
+          href: "/dashboard/lab",
+          tone: "violet"
+        },
+        {
+          key: "insurance_follow_ups_due",
+          label: "Insurance responses due",
+          count: Number(metrics.rows[0].insurance_follow_ups_due || 0),
+          href: "/dashboard/insurance",
+          tone: "slate"
+        },
+        {
+          key: "no_shows",
+          label: "No-show recovery needed",
+          count: Number(metrics.rows[0].no_shows || 0),
+          href: "/dashboard/appointments",
+          tone: "orange"
+        }
+      ].filter((item) => item.count > 0)
     },
     crm: {
       followUpQueue: followUpQueue.rows.map((row) => ({

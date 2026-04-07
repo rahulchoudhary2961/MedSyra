@@ -13,7 +13,9 @@ const mapMedicine = (row) => {
     reorder_level: Number(row.reorder_level || 0),
     current_stock: Number(row.current_stock || 0),
     active_batch_count: Number(row.active_batch_count || 0),
-    expiring_batch_count: Number(row.expiring_batch_count || 0)
+    expiring_batch_count: Number(row.expiring_batch_count || 0),
+    dispensed_last_30_days: Number(row.dispensed_last_30_days || 0),
+    suggested_reorder_quantity: Number(row.suggested_reorder_quantity || 0)
   };
 };
 
@@ -105,7 +107,12 @@ const listMedicines = async (organizationId, query = {}) => {
       COALESCE(batch_summary.current_stock, 0)::numeric(12,2) AS current_stock,
       COALESCE(batch_summary.active_batch_count, 0)::int AS active_batch_count,
       batch_summary.nearest_expiry_date::text AS nearest_expiry_date,
-      COALESCE(batch_summary.expiring_batch_count, 0)::int AS expiring_batch_count
+      COALESCE(batch_summary.expiring_batch_count, 0)::int AS expiring_batch_count,
+      COALESCE(usage_summary.dispensed_last_30_days, 0)::numeric(12,2) AS dispensed_last_30_days,
+      GREATEST(
+        GREATEST(m.reorder_level, COALESCE(usage_summary.dispensed_last_30_days, 0)) - COALESCE(batch_summary.current_stock, 0),
+        0
+      )::numeric(12,2) AS suggested_reorder_quantity
     FROM medicines m
     LEFT JOIN LATERAL (
       SELECT
@@ -120,6 +127,17 @@ const listMedicines = async (organizationId, query = {}) => {
       WHERE mb.organization_id = m.organization_id
         AND mb.medicine_id = m.id
     ) batch_summary ON true
+    LEFT JOIN LATERAL (
+      SELECT
+        COALESCE(SUM(pdi.quantity), 0)::numeric(12,2) AS dispensed_last_30_days
+      FROM pharmacy_dispense_items pdi
+      JOIN pharmacy_dispenses pd
+        ON pd.id = pdi.dispense_id
+      WHERE pd.organization_id = m.organization_id
+        AND pdi.medicine_id = m.id
+        AND pd.status = 'dispensed'
+        AND pd.dispensed_date >= CURRENT_DATE - INTERVAL '30 days'
+    ) usage_summary ON true
     WHERE ${whereClause}
     ORDER BY m.is_active DESC, m.name ASC
     LIMIT $${values.length - 1} OFFSET $${values.length}
@@ -166,7 +184,12 @@ const getMedicineById = async (organizationId, id) => {
         COALESCE(batch_summary.current_stock, 0)::numeric(12,2) AS current_stock,
         COALESCE(batch_summary.active_batch_count, 0)::int AS active_batch_count,
         batch_summary.nearest_expiry_date::text AS nearest_expiry_date,
-        COALESCE(batch_summary.expiring_batch_count, 0)::int AS expiring_batch_count
+        COALESCE(batch_summary.expiring_batch_count, 0)::int AS expiring_batch_count,
+        COALESCE(usage_summary.dispensed_last_30_days, 0)::numeric(12,2) AS dispensed_last_30_days,
+        GREATEST(
+          GREATEST(m.reorder_level, COALESCE(usage_summary.dispensed_last_30_days, 0)) - COALESCE(batch_summary.current_stock, 0),
+          0
+        )::numeric(12,2) AS suggested_reorder_quantity
       FROM medicines m
       LEFT JOIN LATERAL (
         SELECT
@@ -181,6 +204,17 @@ const getMedicineById = async (organizationId, id) => {
         WHERE mb.organization_id = m.organization_id
           AND mb.medicine_id = m.id
       ) batch_summary ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          COALESCE(SUM(pdi.quantity), 0)::numeric(12,2) AS dispensed_last_30_days
+        FROM pharmacy_dispense_items pdi
+        JOIN pharmacy_dispenses pd
+          ON pd.id = pdi.dispense_id
+        WHERE pd.organization_id = m.organization_id
+          AND pdi.medicine_id = m.id
+          AND pd.status = 'dispensed'
+          AND pd.dispensed_date >= CURRENT_DATE - INTERVAL '30 days'
+      ) usage_summary ON true
       WHERE m.organization_id = $1
         AND m.id = $2
       LIMIT 1
@@ -222,6 +256,125 @@ const createMedicine = async (organizationId, payload) => {
   );
 
   return getMedicineById(organizationId, rows[0].id);
+};
+
+const getPharmacyInsights = async (organizationId, limit = 8) => {
+  const { rows } = await pool.query(
+    `
+      WITH medicine_insights AS (
+        SELECT
+          m.id,
+          m.code,
+          m.name,
+          m.generic_name,
+          m.dosage_form,
+          m.strength,
+          m.unit,
+          m.reorder_level,
+          COALESCE(batch_summary.current_stock, 0)::numeric(12,2) AS current_stock,
+          batch_summary.nearest_expiry_date::text AS nearest_expiry_date,
+          COALESCE(batch_summary.expiring_batch_count, 0)::int AS expiring_batch_count,
+          COALESCE(usage_summary.dispensed_last_30_days, 0)::numeric(12,2) AS dispensed_last_30_days,
+          GREATEST(
+            GREATEST(m.reorder_level, COALESCE(usage_summary.dispensed_last_30_days, 0)) - COALESCE(batch_summary.current_stock, 0),
+            0
+          )::numeric(12,2) AS suggested_reorder_quantity
+        FROM medicines m
+        LEFT JOIN LATERAL (
+          SELECT
+            COALESCE(SUM(mb.available_quantity), 0)::numeric(12,2) AS current_stock,
+            MIN(mb.expiry_date) FILTER (WHERE mb.available_quantity > 0)::date AS nearest_expiry_date,
+            COUNT(*) FILTER (
+              WHERE mb.available_quantity > 0
+                AND mb.expiry_date <= CURRENT_DATE + INTERVAL '30 days'
+            )::int AS expiring_batch_count
+          FROM medicine_batches mb
+          WHERE mb.organization_id = m.organization_id
+            AND mb.medicine_id = m.id
+        ) batch_summary ON true
+        LEFT JOIN LATERAL (
+          SELECT
+            COALESCE(SUM(pdi.quantity), 0)::numeric(12,2) AS dispensed_last_30_days
+          FROM pharmacy_dispense_items pdi
+          JOIN pharmacy_dispenses pd
+            ON pd.id = pdi.dispense_id
+          WHERE pd.organization_id = m.organization_id
+            AND pdi.medicine_id = m.id
+            AND pd.status = 'dispensed'
+            AND pd.dispensed_date >= CURRENT_DATE - INTERVAL '30 days'
+        ) usage_summary ON true
+        WHERE m.organization_id = $1
+          AND m.is_active = true
+      )
+      SELECT
+        (
+          SELECT COUNT(*)::int
+          FROM medicine_insights
+          WHERE current_stock <= reorder_level
+        ) AS low_stock_count,
+        (
+          SELECT COUNT(*)::int
+          FROM medicine_insights
+          WHERE current_stock <= 0
+        ) AS out_of_stock_count,
+        (
+          SELECT COALESCE(SUM(suggested_reorder_quantity), 0)::numeric(12,2)
+          FROM medicine_insights
+          WHERE current_stock <= reorder_level
+        ) AS total_suggested_reorder_quantity,
+        COALESCE(
+          (
+            SELECT JSON_AGG(
+              JSON_BUILD_OBJECT(
+                'id', mi.id,
+                'code', mi.code,
+                'name', mi.name,
+                'generic_name', mi.generic_name,
+                'dosage_form', mi.dosage_form,
+                'strength', mi.strength,
+                'unit', mi.unit,
+                'reorder_level', mi.reorder_level,
+                'current_stock', mi.current_stock,
+                'nearest_expiry_date', mi.nearest_expiry_date,
+                'expiring_batch_count', mi.expiring_batch_count,
+                'dispensed_last_30_days', mi.dispensed_last_30_days,
+                'suggested_reorder_quantity', mi.suggested_reorder_quantity,
+                'severity',
+                  CASE
+                    WHEN mi.current_stock <= 0 THEN 'critical'
+                    WHEN mi.current_stock <= (mi.reorder_level / 2.0) THEN 'high'
+                    ELSE 'medium'
+                  END
+              )
+            )
+            FROM (
+              SELECT *
+              FROM medicine_insights
+              WHERE current_stock <= reorder_level
+              ORDER BY
+                CASE
+                  WHEN current_stock <= 0 THEN 0
+                  WHEN current_stock <= (reorder_level / 2.0) THEN 1
+                  ELSE 2
+                END,
+                suggested_reorder_quantity DESC,
+                name ASC
+              LIMIT $2
+            ) mi
+          ),
+          '[]'::json
+        ) AS low_stock_items
+    `,
+    [organizationId, limit]
+  );
+
+  return {
+    generated_at: new Date().toISOString(),
+    low_stock_count: Number(rows[0]?.low_stock_count || 0),
+    out_of_stock_count: Number(rows[0]?.out_of_stock_count || 0),
+    total_suggested_reorder_quantity: Number(rows[0]?.total_suggested_reorder_quantity || 0),
+    low_stock_items: Array.isArray(rows[0]?.low_stock_items) ? rows[0].low_stock_items.map(mapMedicine) : []
+  };
 };
 
 const updateMedicine = async (organizationId, id, payload) => {
@@ -847,6 +1000,7 @@ const createPharmacyDispense = async (organizationId, payload, actor = null) => 
 module.exports = {
   listMedicines,
   getMedicineById,
+  getPharmacyInsights,
   createMedicine,
   updateMedicine,
   listMedicineBatches,

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Users, FileText, UserRound, IndianRupee } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import StatCard from "../components/StatCard";
 import RecentPatientsTable from "../components/RecentPatientsTable";
 import PatientActivityTimeline from "../components/PatientActivityTimeline";
@@ -39,6 +39,23 @@ type DashboardCrmState = {
   recallQueue: DashboardRecallQueueItem[];
 };
 
+type DashboardOperationsState = {
+  todayWaiting: number;
+  pendingPayments: number;
+  pendingPaymentAmount: number;
+  followUpsDue: number;
+  followUpsOverdue: number;
+  labReportsReady: number;
+  insuranceFollowUpsDue: number;
+  actionRequired: Array<{
+    key: string;
+    label: string;
+    count: number;
+    href: string;
+    tone: "blue" | "amber" | "emerald" | "rose" | "violet" | "slate" | "orange";
+  }>;
+};
+
 type DashboardResponse = {
   success: boolean;
   data: {
@@ -57,6 +74,7 @@ type DashboardResponse = {
       weeklyRevenue: number;
       followUpsDueToday: number;
     };
+    operations: DashboardOperationsState;
     crm: DashboardCrmState;
     recentActivity: ActivityLog[];
   };
@@ -108,6 +126,16 @@ const emptyCrmState: DashboardCrmState = {
   followUpQueue: [],
   recallQueue: []
 };
+const emptyOperationsState: DashboardOperationsState = {
+  todayWaiting: 0,
+  pendingPayments: 0,
+  pendingPaymentAmount: 0,
+  followUpsDue: 0,
+  followUpsOverdue: 0,
+  labReportsReady: 0,
+  insuranceFollowUpsDue: 0,
+  actionRequired: []
+};
 
 const calculateAgeFromDateOfBirth = (value: string) => {
   if (!value) return "";
@@ -150,50 +178,56 @@ export default function Dashboard() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [crm, setCrm] = useState<DashboardCrmState>(emptyCrmState);
+  const [operations, setOperations] = useState<DashboardOperationsState>(emptyOperationsState);
   const [viewPatient, setViewPatient] = useState<Patient | null>(null);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
   const [patientForm, setPatientForm] = useState<EditPatientForm>(initialPatientForm);
   const [patientFormError, setPatientFormError] = useState("");
   const [isUpdatingPatient, setIsUpdatingPatient] = useState(false);
+  const dashboardRequestRef = useRef(0);
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (showLoader = false) => {
+    const requestId = dashboardRequestRef.current + 1;
+    dashboardRequestRef.current = requestId;
+
+    if (showLoader) {
+      setLoading(true);
+    }
     setError("");
 
-    Promise.all([
-      apiRequest<DashboardResponse>("/dashboard/summary", { authenticated: true }),
-      apiRequest<PatientsResponse>("/patients?limit=5", { authenticated: true })
-    ])
-      .then(([dashboardRes, patientsRes]) => {
-        setStats(dashboardRes.data.stats);
-        setInsights(dashboardRes.data.insights);
-        setCrm(dashboardRes.data.crm || emptyCrmState);
-        setActivities(dashboardRes.data.recentActivity || []);
-        setPatients(patientsRes.data.items || []);
-      })
-      .catch((err: Error) => {
-        setError(err.message || "Failed to load dashboard data");
-      });
+    try {
+      const [dashboardRes, patientsRes] = await Promise.all([
+        apiRequest<DashboardResponse>("/dashboard/summary", { authenticated: true }),
+        apiRequest<PatientsResponse>("/patients?limit=5", { authenticated: true })
+      ]);
+
+      if (dashboardRequestRef.current !== requestId) {
+        return;
+      }
+
+      setStats(dashboardRes.data.stats);
+      setInsights(dashboardRes.data.insights);
+      setOperations(dashboardRes.data.operations || emptyOperationsState);
+      setCrm(dashboardRes.data.crm || emptyCrmState);
+      setActivities(dashboardRes.data.recentActivity || []);
+      setPatients(patientsRes.data.items || []);
+    } catch (err) {
+      if (dashboardRequestRef.current !== requestId) {
+        return;
+      }
+
+      const message = err instanceof Error ? err.message : "Failed to load dashboard data";
+      setError(message);
+    } finally {
+      if (showLoader && dashboardRequestRef.current === requestId) {
+        setLoading(false);
+      }
+    }
   }, []);
 
   useEffect(() => {
-    Promise.all([
-      apiRequest<DashboardResponse>("/dashboard/summary", { authenticated: true }),
-      apiRequest<PatientsResponse>("/patients?limit=5", { authenticated: true })
-    ])
-      .then(([dashboardRes, patientsRes]) => {
-        setStats(dashboardRes.data.stats);
-        setInsights(dashboardRes.data.insights);
-        setCrm(dashboardRes.data.crm || emptyCrmState);
-        setActivities(dashboardRes.data.recentActivity || []);
-        setPatients(patientsRes.data.items || []);
-      })
-      .catch((err: Error) => {
-        setError(err.message || "Failed to load dashboard data");
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, []);
+    void loadDashboard(true);
+  }, [loadDashboard]);
 
   useEffect(() => {
     const reloadDashboard = () => {
@@ -256,6 +290,16 @@ export default function Dashboard() {
 
   const getRecallStateTone = (daysSinceLastVisit: number) =>
     daysSinceLastVisit >= 60 ? "bg-red-50 text-red-700 ring-red-200" : "bg-blue-50 text-blue-700 ring-blue-200";
+
+  const getActionTone = (tone: DashboardOperationsState["actionRequired"][number]["tone"]) => {
+    if (tone === "amber") return "bg-amber-50 text-amber-700 ring-amber-200";
+    if (tone === "emerald") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+    if (tone === "rose") return "bg-rose-50 text-rose-700 ring-rose-200";
+    if (tone === "violet") return "bg-violet-50 text-violet-700 ring-violet-200";
+    if (tone === "slate") return "bg-slate-100 text-slate-700 ring-slate-200";
+    if (tone === "orange") return "bg-orange-50 text-orange-700 ring-orange-200";
+    return "bg-blue-50 text-blue-700 ring-blue-200";
+  };
 
   const openViewPatient = async (patient: Patient) => {
     if (!isUuid(patient.id)) {
@@ -360,6 +404,74 @@ export default function Dashboard() {
         <StatCard title="Pending Payments" value={String(stats.pendingPayments)} change="Open" trend="up" icon={FileText} color="emerald" />
         <StatCard title="No-shows" value={String(stats.noShows)} change="Today" trend="up" icon={UserRound} color="teal" />
       </div>
+
+      <section className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="theme-heading text-lg">Daily Operations</h2>
+            <p className="theme-copy mt-1">A shift-level view of what needs action today, not just what happened.</p>
+          </div>
+          <div className="text-sm theme-copy">
+            Pending collection: <span className="font-medium text-gray-900">{formatRupee(operations.pendingPaymentAmount)}</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="theme-panel rounded-xl p-5">
+            <p className="text-sm theme-muted">Patients Waiting</p>
+            <p className="mt-2 text-2xl theme-heading">{operations.todayWaiting}</p>
+            <p className="mt-2 text-sm theme-copy">Pending, confirmed, or checked-in for today</p>
+          </div>
+          <div className="theme-panel rounded-xl p-5">
+            <p className="text-sm theme-muted">Pending Payments</p>
+            <p className="mt-2 text-2xl theme-heading">{operations.pendingPayments}</p>
+            <p className="mt-2 text-sm theme-copy">{formatRupee(operations.pendingPaymentAmount)} outstanding</p>
+          </div>
+          <div className="theme-panel rounded-xl p-5">
+            <p className="text-sm theme-muted">Follow-ups Due</p>
+            <p className="mt-2 text-2xl theme-heading">{operations.followUpsDue}</p>
+            <p className="mt-2 text-sm theme-copy">{operations.followUpsOverdue} overdue cases in queue</p>
+          </div>
+          <div className="theme-panel rounded-xl p-5">
+            <p className="text-sm theme-muted">Action Required</p>
+            <p className="mt-2 text-2xl theme-heading">{operations.actionRequired.length}</p>
+            <p className="mt-2 text-sm theme-copy">Live queues across ops, CRM, lab, and billing</p>
+          </div>
+        </div>
+
+        <div className="theme-panel rounded-xl p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="theme-heading text-base">Action Required</h3>
+              <p className="mt-1 text-sm theme-copy">Open the exact workspace that needs attention right now.</p>
+            </div>
+          </div>
+
+          {operations.actionRequired.length === 0 ? (
+            <div className="mt-4 rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
+              No urgent operational queues right now.
+            </div>
+          ) : (
+            <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {operations.actionRequired.map((item) => (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-4 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{item.label}</p>
+                    <p className="mt-1 text-xs text-gray-500">Open queue</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ring-1 ${getActionTone(item.tone)}`}>
+                    {item.count}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
 
       <section data-tour-id="tour-dashboard-insights" className="space-y-3">
         <div>

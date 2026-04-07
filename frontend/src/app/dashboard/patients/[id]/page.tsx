@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CalendarDays, CreditCard, Download, Eye, FileText, Pencil, Pill, Stethoscope, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, CreditCard, Download, Eye, FileText, Pencil, Pill, Search, Stethoscope, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import { isUuid } from "@/lib/uuid";
@@ -53,6 +53,30 @@ type AttachmentPreview = {
   fileName: string;
   contentType: string;
   externalUrl: string | null;
+};
+
+type PatientInvoiceHistoryItem = {
+  id: string;
+  invoice_number: string;
+  total_amount: number;
+  balance_amount: number;
+  status: string;
+  issue_date: string;
+};
+
+type PatientTimelineItem = {
+  id: string;
+  type: "visit" | "prescription" | "report" | "invoice" | "pharmacy";
+  date: string;
+  secondaryDate?: string | null;
+  title: string;
+  subtitle: string;
+  tags: string[];
+  detailLines: string[];
+  href: string;
+  ctaLabel: string;
+  toneClass: string;
+  searchText: string;
 };
 
 const formatDate = (value: string | null) => {
@@ -123,6 +147,7 @@ const inferContentType = (fileUrl?: string | null) => {
 };
 
 const isImageContentType = (contentType: string) => contentType.startsWith("image/");
+const MAX_INLINE_ATTACHMENT_PRELOAD = 8;
 
 const triggerDownload = (url: string, fileName: string) => {
   const anchor = document.createElement("a");
@@ -134,6 +159,22 @@ const triggerDownload = (url: string, fileName: string) => {
   document.body.removeChild(anchor);
 };
 
+const normalizeHistorySearch = (value: string) => value.trim().toLowerCase();
+
+const buildTimelineSearchText = (...parts: Array<string | null | undefined>) =>
+  parts
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+const getTimelineTone = (type: PatientTimelineItem["type"]) => {
+  if (type === "invoice") return "bg-amber-50 text-amber-700 ring-amber-200";
+  if (type === "report") return "bg-blue-50 text-blue-700 ring-blue-200";
+  if (type === "pharmacy") return "bg-violet-50 text-violet-700 ring-violet-200";
+  if (type === "prescription") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  return "bg-slate-100 text-slate-700 ring-slate-200";
+};
+
 export default function PatientProfilePage() {
   const params = useParams<{ id: string }>();
   const patientId = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -143,6 +184,7 @@ export default function PatientProfilePage() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [visits, setVisits] = useState<PatientVisit[]>([]);
   const [records, setRecords] = useState<MedicalRecord[]>([]);
+  const [invoices, setInvoices] = useState<PatientInvoiceHistoryItem[]>([]);
   const [labOrders, setLabOrders] = useState<LabOrder[]>([]);
   const [pharmacyDispenses, setPharmacyDispenses] = useState<PharmacyDispense[]>([]);
   const [smartSummary, setSmartSummary] = useState<SmartSummaryItem[]>([]);
@@ -153,6 +195,9 @@ export default function PatientProfilePage() {
     pendingAmount: number;
   } | null>(null);
   const [previews, setPreviews] = useState<Record<string, AttachmentPreview>>({});
+  const [historySearch, setHistorySearch] = useState("");
+  const previewsRef = useRef<Record<string, AttachmentPreview>>({});
+  const attachmentObjectUrlsRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (!patientId || hasInvalidPatientId) return;
@@ -162,6 +207,7 @@ export default function PatientProfilePage() {
         setPatient(response.data.patient);
         setVisits(response.data.visits || []);
         setRecords(response.data.medicalRecords || []);
+        setInvoices(response.data.invoices || []);
         setLabOrders(response.data.labOrders || []);
         setPharmacyDispenses(response.data.pharmacyDispenses || []);
         setSmartSummary(response.data.smartSummary || []);
@@ -172,66 +218,96 @@ export default function PatientProfilePage() {
   }, [patientId, hasInvalidPatientId]);
 
   useEffect(() => {
+    previewsRef.current = previews;
+  }, [previews]);
+
+  const revokeAttachmentObjectUrls = useCallback(() => {
+    attachmentObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    attachmentObjectUrlsRef.current = [];
+  }, []);
+
+  const ensureAttachmentPreview = useCallback(async (record: MedicalRecord) => {
+    const existingPreview = previewsRef.current[record.id];
+    if (existingPreview) {
+      return existingPreview;
+    }
+
+    const fileUrl = record.file_url || "";
+    const fallbackFileName = getAttachmentFileName(record.id, fileUrl);
+    const fallbackContentType = inferContentType(fileUrl);
+
+    if (/^https?:\/\//i.test(fileUrl)) {
+      const preview: AttachmentPreview = {
+        recordId: record.id,
+        url: isImageContentType(fallbackContentType) ? fileUrl : null,
+        fileName: fallbackFileName,
+        contentType: fallbackContentType,
+        externalUrl: fileUrl
+      };
+
+      previewsRef.current = { ...previewsRef.current, [record.id]: preview };
+      setPreviews((current) => (current[record.id] ? current : { ...current, [record.id]: preview }));
+      return preview;
+    }
+
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(getAttachmentEndpoint(record.id), {
+      method: "GET",
+      headers,
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load attachment preview");
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    attachmentObjectUrlsRef.current.push(objectUrl);
+
+    const preview: AttachmentPreview = {
+      recordId: record.id,
+      url: objectUrl,
+      fileName: fallbackFileName,
+      contentType: blob.type || fallbackContentType,
+      externalUrl: null
+    };
+
+    previewsRef.current = { ...previewsRef.current, [record.id]: preview };
+    setPreviews((current) => (current[record.id] ? current : { ...current, [record.id]: preview }));
+    return preview;
+  }, []);
+
+  useEffect(() => {
     const attachmentRecords = records.filter((record) => record.file_url);
+    revokeAttachmentObjectUrls();
+    previewsRef.current = {};
+
     if (attachmentRecords.length === 0) {
       setPreviews({});
       return;
     }
 
-    let revokedUrls: string[] = [];
     let cancelled = false;
 
     const loadPreviews = async () => {
-      const token = getAuthToken();
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
+      const eagerRecords = attachmentRecords
+        .filter((record) => {
+          const fileUrl = record.file_url || "";
+          return /^https?:\/\//i.test(fileUrl) || isImageContentType(inferContentType(fileUrl));
+        })
+        .slice(0, MAX_INLINE_ATTACHMENT_PRELOAD);
 
       const items = await Promise.all(
-        attachmentRecords.map(async (record) => {
-          const fileUrl = record.file_url || "";
-          const fallbackFileName = getAttachmentFileName(record.id, fileUrl);
-          const fallbackContentType = inferContentType(fileUrl);
-
-          if (/^https?:\/\//i.test(fileUrl)) {
-            return [
-              record.id,
-              {
-                recordId: record.id,
-                url: fileUrl,
-                fileName: fallbackFileName,
-                contentType: fallbackContentType,
-                externalUrl: fileUrl
-              }
-            ] as const;
-          }
-
+        eagerRecords.map(async (record) => {
           try {
-            const response = await fetch(getAttachmentEndpoint(record.id), {
-              method: "GET",
-              headers,
-              cache: "no-store"
-            });
-
-            if (!response.ok) {
-              return null;
-            }
-
-            const blob = await response.blob();
-            const objectUrl = URL.createObjectURL(blob);
-            revokedUrls.push(objectUrl);
-
-            return [
-              record.id,
-              {
-                recordId: record.id,
-                url: objectUrl,
-                fileName: fallbackFileName,
-                contentType: blob.type || fallbackContentType,
-                externalUrl: null
-              }
-            ] as const;
+            const preview = await ensureAttachmentPreview(record);
+            return [record.id, preview] as const;
           } catch {
             return null;
           }
@@ -249,25 +325,227 @@ export default function PatientProfilePage() {
       });
 
       if (cancelled) {
-        revokedUrls.forEach((url) => URL.revokeObjectURL(url));
         return;
       }
 
-      setPreviews(nextPreviews);
+      setPreviews((current) => ({ ...current, ...nextPreviews }));
     };
 
     void loadPreviews();
 
     return () => {
       cancelled = true;
-      revokedUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [records]);
+  }, [records, ensureAttachmentPreview, revokeAttachmentObjectUrls]);
+
+  useEffect(() => () => revokeAttachmentObjectUrls(), [revokeAttachmentObjectUrls]);
+
+  const handleOpenAttachment = useCallback(
+    async (record: MedicalRecord) => {
+      try {
+        const preview = await ensureAttachmentPreview(record);
+        const openUrl =
+          preview.externalUrl || preview.url || (/^https?:\/\//i.test(record.file_url || "") ? record.file_url || "" : "");
+
+        if (openUrl) {
+          window.open(openUrl, "_blank", "noopener,noreferrer");
+        }
+      } catch {
+        // Keep the rest of the profile usable if a single attachment fails.
+      }
+    },
+    [ensureAttachmentPreview]
+  );
+
+  const handleDownloadAttachment = useCallback(
+    async (record: MedicalRecord) => {
+      try {
+        const preview = await ensureAttachmentPreview(record);
+        const downloadUrl =
+          preview.url || preview.externalUrl || (/^https?:\/\//i.test(record.file_url || "") ? record.file_url || "" : "");
+
+        if (downloadUrl) {
+          triggerDownload(downloadUrl, preview.fileName || getAttachmentFileName(record.id, record.file_url));
+        }
+      } catch {
+        // Keep the rest of the profile usable if a single attachment fails.
+      }
+    },
+    [ensureAttachmentPreview]
+  );
 
   const attachmentRecords = useMemo(
     () => records.filter((record) => record.file_url).sort((left, right) => right.record_date.localeCompare(left.record_date)),
     [records]
   );
+
+  const historyTimeline = useMemo<PatientTimelineItem[]>(() => {
+    if (!patient) {
+      return [];
+    }
+
+    const visitItems: PatientTimelineItem[] = visits.map((visit) => ({
+      id: `visit-${visit.id}`,
+      type: "visit",
+      date: visit.appointment_date,
+      secondaryDate: visit.appointment_time,
+      title: `${visit.category || "Consultation"} visit`,
+      subtitle: visit.doctor_name ? `${visit.doctor_name} | ${formatTime(visit.appointment_time)}` : formatTime(visit.appointment_time),
+      tags: ["Visit"],
+      detailLines: [visit.planned_procedures || visit.notes || "Visit recorded in appointments", `Status: ${visit.status}`],
+      href: `/dashboard/appointments?patientId=${encodeURIComponent(patient.id)}`,
+      ctaLabel: "Open Appointments",
+      toneClass: getTimelineTone("visit"),
+      searchText: buildTimelineSearchText(
+        visit.category,
+        visit.status,
+        visit.doctor_name,
+        visit.planned_procedures,
+        visit.notes,
+        visit.appointment_date,
+        visit.appointment_time
+      )
+    }));
+
+    const recordItems: PatientTimelineItem[] = records.map((record) => {
+      const tags = ["Clinical Note"];
+      let type: PatientTimelineItem["type"] = "visit";
+
+      if (record.prescription) {
+        tags.unshift("Prescription");
+        type = "prescription";
+      }
+      if (record.file_url) {
+        tags.push("Report");
+        type = "report";
+      }
+
+      return {
+        id: `record-${record.id}`,
+        type,
+        date: record.record_date,
+        title: record.record_type,
+        subtitle: record.doctor_name ? `${record.doctor_name} | ${record.status}` : record.status,
+        tags,
+        detailLines: [
+          record.diagnosis ? `Diagnosis: ${record.diagnosis}` : "",
+          record.prescription ? `Prescription: ${record.prescription}` : "",
+          record.notes || "",
+          record.follow_up_date ? `Follow-up ${formatDate(record.follow_up_date)}` : ""
+        ].filter(Boolean),
+        href: `/dashboard/medical-records?patientId=${encodeURIComponent(patient.id)}`,
+        ctaLabel: "Open Medical Records",
+        toneClass: getTimelineTone(type),
+        searchText: buildTimelineSearchText(
+          record.record_type,
+          record.status,
+          record.doctor_name,
+          record.diagnosis,
+          record.prescription,
+          record.notes,
+          record.follow_up_date
+        )
+      };
+    });
+
+    const labItems: PatientTimelineItem[] = labOrders.map((order) => ({
+      id: `lab-${order.id}`,
+      type: "report",
+      date: order.ordered_date,
+      title: order.order_number,
+      subtitle: `${order.status.replace(/_/g, " ")}${order.doctor_name ? ` | ${order.doctor_name}` : ""}`,
+      tags: [order.report_file_url ? "Lab Report" : "Lab Order", "Report"],
+      detailLines: [
+        order.items.map((item) => item.test_name).join(", "),
+        order.notes || "",
+        order.due_date ? `Due ${formatDate(order.due_date)}` : ""
+      ].filter(Boolean),
+      href: `/dashboard/lab?patientId=${encodeURIComponent(patient.id)}`,
+      ctaLabel: "Open Lab",
+      toneClass: getTimelineTone("report"),
+      searchText: buildTimelineSearchText(
+        order.order_number,
+        order.status,
+        order.doctor_name,
+        order.notes,
+        order.due_date,
+        ...order.items.map((item) => item.test_name)
+      )
+    }));
+
+    const invoiceItems: PatientTimelineItem[] = invoices.map((invoice) => ({
+      id: `invoice-${invoice.id}`,
+      type: "invoice",
+      date: invoice.issue_date,
+      title: invoice.invoice_number,
+      subtitle: `${formatCurrency(invoice.total_amount)} | ${invoice.status}`,
+      tags: ["Invoice"],
+      detailLines: [
+        invoice.balance_amount > 0 ? `Pending ${formatCurrency(invoice.balance_amount)}` : "Paid in full"
+      ],
+      href: `/dashboard/billings?patientId=${encodeURIComponent(patient.id)}`,
+      ctaLabel: "Open Billing",
+      toneClass: getTimelineTone("invoice"),
+      searchText: buildTimelineSearchText(
+        invoice.invoice_number,
+        invoice.status,
+        String(invoice.total_amount),
+        String(invoice.balance_amount),
+        invoice.issue_date
+      )
+    }));
+
+    const pharmacyItems: PatientTimelineItem[] = pharmacyDispenses.map((dispense) => ({
+      id: `pharmacy-${dispense.id}`,
+      type: "pharmacy",
+      date: dispense.dispensed_date,
+      title: dispense.dispense_number,
+      subtitle: `${dispense.status}${dispense.invoice_number ? ` | ${dispense.invoice_number}` : ""}`,
+      tags: ["Pharmacy", "Prescription"],
+      detailLines: [
+        dispense.items.map((item) => `${item.medicine_name} x ${item.quantity}`).join(", "),
+        dispense.prescription_snapshot || "",
+        dispense.notes || ""
+      ].filter(Boolean),
+      href: `/dashboard/pharmacy?patientId=${encodeURIComponent(patient.id)}`,
+      ctaLabel: "Open Pharmacy",
+      toneClass: getTimelineTone("pharmacy"),
+      searchText: buildTimelineSearchText(
+        dispense.dispense_number,
+        dispense.status,
+        dispense.invoice_number,
+        dispense.prescription_snapshot,
+        dispense.notes,
+        ...dispense.items.map((item) => `${item.medicine_name} ${item.batch_number}`)
+      )
+    }));
+
+    return [...visitItems, ...recordItems, ...labItems, ...invoiceItems, ...pharmacyItems].sort((left, right) => {
+      const leftKey = `${left.date}T${left.secondaryDate || "00:00:00"}`;
+      const rightKey = `${right.date}T${right.secondaryDate || "00:00:00"}`;
+      return rightKey.localeCompare(leftKey);
+    });
+  }, [patient, visits, records, labOrders, invoices, pharmacyDispenses]);
+
+  const filteredHistoryTimeline = useMemo(() => {
+    const query = normalizeHistorySearch(historySearch);
+    if (!query) {
+      return historyTimeline;
+    }
+
+    return historyTimeline.filter((item) => item.searchText.includes(query));
+  }, [historySearch, historyTimeline]);
+
+  const timelineSummary = useMemo(() => {
+    const counts = {
+      visits: historyTimeline.filter((item) => item.type === "visit").length,
+      prescriptions: historyTimeline.filter((item) => item.tags.includes("Prescription")).length,
+      reports: historyTimeline.filter((item) => item.tags.includes("Report") || item.tags.includes("Lab Report")).length,
+      invoices: historyTimeline.filter((item) => item.type === "invoice").length
+    };
+
+    return counts;
+  }, [historyTimeline]);
 
   const profileFields = useMemo(() => {
     if (!patient) return [];
@@ -500,6 +778,103 @@ export default function PatientProfilePage() {
       )}
 
       <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Consultation View</p>
+            <h2 className="mt-2 text-xl text-gray-900">Patient Timeline</h2>
+            <p className="mt-2 max-w-2xl text-sm text-gray-600">
+              Visits, prescriptions, reports, pharmacy dispenses, and invoices in one searchable stream so doctors can find context fast.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Visits</p>
+              <p className="mt-2 text-lg text-gray-900">{timelineSummary.visits}</p>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Prescriptions</p>
+              <p className="mt-2 text-lg text-gray-900">{timelineSummary.prescriptions}</p>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Reports</p>
+              <p className="mt-2 text-lg text-gray-900">{timelineSummary.reports}</p>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Invoices</p>
+              <p className="mt-2 text-lg text-gray-900">{timelineSummary.invoices}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <label className="flex flex-1 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <Search className="h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              value={historySearch}
+              onChange={(event) => setHistorySearch(event.target.value)}
+              placeholder="Search diagnosis, medicine, report, invoice, or notes"
+              className="w-full border-none bg-transparent text-sm text-gray-700 outline-none"
+            />
+          </label>
+          <p className="text-sm text-gray-500">
+            Showing <span className="font-medium text-gray-900">{filteredHistoryTimeline.length}</span> of{" "}
+            <span className="font-medium text-gray-900">{historyTimeline.length}</span> history items
+          </p>
+        </div>
+
+        {filteredHistoryTimeline.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-5 py-10 text-center text-sm text-gray-500">
+            No patient history matched the current search.
+          </div>
+        ) : (
+          <div className="mt-6 space-y-4">
+            {filteredHistoryTimeline.slice(0, 16).map((item) => (
+              <article key={item.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {item.tags.map((tag) => (
+                        <span
+                          key={`${item.id}-${tag}`}
+                          className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ring-1 ${item.toneClass}`}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-base font-medium text-gray-900">{item.title}</p>
+                      <p className="mt-1 text-sm text-gray-600">
+                        {formatDate(item.date)}
+                        {item.secondaryDate ? ` | ${formatTime(item.secondaryDate)}` : ""}
+                        {item.subtitle ? ` | ${item.subtitle}` : ""}
+                      </p>
+                    </div>
+                    {item.detailLines.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {item.detailLines.slice(0, 3).map((line) => (
+                          <p key={`${item.id}-${line}`} className="text-sm leading-6 text-gray-700">
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <Link
+                    href={item.href}
+                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    {item.ctaLabel}
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
         <div className="flex items-end justify-between gap-3">
           <div>
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Dispensing</p>
@@ -617,7 +992,7 @@ export default function PatientProfilePage() {
                   <div>
                     <p className="text-sm font-medium text-gray-900">{record.record_type}</p>
                     <p className="mt-1 text-sm text-gray-600">
-                      {formatDate(record.record_date)}{record.doctor_name ? ` • ${record.doctor_name}` : ""}
+                      {formatDate(record.record_date)}{record.doctor_name ? ` | ${record.doctor_name}` : ""}
                     </p>
                   </div>
                   <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600 ring-1 ring-gray-200">
@@ -715,9 +1090,6 @@ export default function PatientProfilePage() {
             {attachmentRecords.map((record) => {
               const preview = previews[record.id];
               const previewUrl = preview?.url || "";
-              const openUrl = preview?.externalUrl || preview?.url || (/^https?:\/\//i.test(record.file_url || "") ? record.file_url || "" : "");
-              const downloadUrl = preview?.url || preview?.externalUrl || "";
-              const fileName = preview?.fileName || getAttachmentFileName(record.id, record.file_url);
               const isImage = isImageContentType(preview?.contentType || inferContentType(record.file_url));
 
               return (
@@ -727,6 +1099,8 @@ export default function PatientProfilePage() {
                       <img
                         src={previewUrl}
                         alt={record.record_type || "Medical record attachment"}
+                        loading="lazy"
+                        decoding="async"
                         className="h-full w-full object-cover"
                       />
                     ) : (
@@ -750,28 +1124,22 @@ export default function PatientProfilePage() {
                       <p className="truncate text-xs text-gray-500">{preview?.fileName || getAttachmentFileName(record.id, record.file_url)}</p>
                     </div>
                     <div className="flex items-center gap-1">
-                      {openUrl && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => window.open(openUrl, "_blank", "noopener,noreferrer")}
-                            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-                            title="Open attachment"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                          {downloadUrl && (
-                            <button
-                              type="button"
-                              onClick={() => triggerDownload(downloadUrl, fileName)}
-                              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-                              title="Download attachment"
-                            >
-                              <Download className="h-4 w-4" />
-                            </button>
-                          )}
-                        </>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => void handleOpenAttachment(record)}
+                        className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                        title="Open attachment"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDownloadAttachment(record)}
+                        className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                        title="Download attachment"
+                      >
+                        <Download className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
                 </article>

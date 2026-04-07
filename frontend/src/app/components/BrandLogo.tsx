@@ -13,6 +13,7 @@ export default function BrandLogo({ size = 64, className = "", priority = false 
       alt="MedSyra logo"
       width={size}
       height={size}
+      sizes={`${size}px`}
       priority={priority}
       className={className}
     />
