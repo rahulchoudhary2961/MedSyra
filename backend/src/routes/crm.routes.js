@@ -12,6 +12,12 @@ router.get(
   validateRequest({ query: crmSchemas.listQuery }),
   controller.listTasks
 );
+router.get(
+  "/intelligence",
+  authorizeRoles("full_access", "reception_access", "doctor"),
+  validateRequest({ query: crmSchemas.intelligenceQuery }),
+  controller.getSmartFollowUpInsights
+);
 router.post(
   "/tasks",
   authorizeRoles("full_access", "reception_access", "doctor"),

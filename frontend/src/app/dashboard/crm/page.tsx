@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, Phone, Plus, RefreshCcw, Users } from "lucide-react";
+import { AlertTriangle, CalendarDays, HeartPulse, Phone, Plus, RefreshCcw, Stethoscope, Users } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { canAccessCrm, isFullAccessRole } from "@/lib/roles";
 import { AuthUser, CrmTask, Patient } from "@/types/api";
@@ -44,6 +44,77 @@ type MeResponse = {
 type CrmMutationResponse = {
   success: boolean;
   data: CrmTask;
+};
+
+type CrmAutoSuggestion = {
+  patientId: string;
+  patientCode: string | null;
+  patientName: string;
+  phone: string | null;
+  medicalRecordId: string;
+  diagnosis: string;
+  recordDate: string;
+  lastVisitAt: string | null;
+  suggestionLabel: string;
+  suggestedFollowUpDays: number;
+  suggestedFollowUpDate: string | null;
+  daysUntilSuggestedFollowUp: number | null;
+  priority: CrmTask["priority"];
+  rationale: string;
+};
+
+type CrmMissedFollowUp = {
+  patientId: string;
+  patientCode: string | null;
+  patientName: string;
+  phone: string | null;
+  medicalRecordId: string;
+  diagnosis: string | null;
+  recordDate: string;
+  followUpDate: string;
+  reminderStatus: string;
+  lastVisitAt: string | null;
+  daysOverdue: number;
+};
+
+type CrmInactivePatient = {
+  patientId: string;
+  patientCode: string | null;
+  patientName: string;
+  phone: string | null;
+  lastVisitAt: string | null;
+  daysSinceLastVisit: number;
+};
+
+type CrmChronicPatient = {
+  patientId: string;
+  patientCode: string | null;
+  patientName: string;
+  phone: string | null;
+  lastVisitAt: string | null;
+  nextFollowUpDate: string | null;
+  latestDiagnosis: string | null;
+  repeatDiagnosisCount: number;
+  conditionLabel: string;
+  trackingReason: string;
+};
+
+type CrmIntelligenceResponse = {
+  success: boolean;
+  data: {
+    summary: {
+      autoSuggestions: number;
+      missedFollowUps: number;
+      inactive30Days: number;
+      inactive60Days: number;
+      chronicPatients: number;
+    };
+    autoSuggestions: CrmAutoSuggestion[];
+    missedFollowUps: CrmMissedFollowUp[];
+    inactive30Days: CrmInactivePatient[];
+    inactive60Days: CrmInactivePatient[];
+    chronicPatients: CrmChronicPatient[];
+  };
 };
 
 type CreateTaskForm = {
@@ -147,6 +218,12 @@ const getDueLabel = (task: CrmTask) => {
   return `Due in ${task.days_until_due} day${task.days_until_due === 1 ? "" : "s"}`;
 };
 
+const getSignalTone = (priority: "high" | "medium" | "low") => {
+  if (priority === "high") return "border-red-200 bg-red-50 text-red-700";
+  if (priority === "medium") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-blue-200 bg-blue-50 text-blue-700";
+};
+
 const buildDefaultCreateForm = (patientId = ""): CreateTaskForm => ({
   patientId,
   taskType: "follow_up",
@@ -156,6 +233,21 @@ const buildDefaultCreateForm = (patientId = ""): CreateTaskForm => ({
   assignedUserId: "",
   outcomeNotes: ""
 });
+
+const emptySmartFollowUp = {
+  summary: {
+    autoSuggestions: 0,
+    missedFollowUps: 0,
+    inactive30Days: 0,
+    inactive60Days: 0,
+    chronicPatients: 0
+  },
+  autoSuggestions: [] as CrmAutoSuggestion[],
+  missedFollowUps: [] as CrmMissedFollowUp[],
+  inactive30Days: [] as CrmInactivePatient[],
+  inactive60Days: [] as CrmInactivePatient[],
+  chronicPatients: [] as CrmChronicPatient[]
+};
 
 export default function CrmPage() {
   const searchParams = useSearchParams();
@@ -173,6 +265,7 @@ export default function CrmPage() {
     overdueTasks: 0,
     dueTodayTasks: 0
   });
+  const [smartFollowUp, setSmartFollowUp] = useState<CrmIntelligenceResponse["data"]>(emptySmartFollowUp);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filters, setFilters] = useState({
@@ -210,6 +303,19 @@ export default function CrmPage() {
     setSummary(response.data.summary);
   }, [filters.q, filters.status, filters.taskType, patientFilterId]);
 
+  const loadSmartFollowUp = useCallback(async () => {
+    const params = new URLSearchParams();
+    params.set("limit", "6");
+    if (patientFilterId) {
+      params.set("patientId", patientFilterId);
+    }
+
+    const response = await apiRequest<CrmIntelligenceResponse>(`/crm/intelligence?${params.toString()}`, {
+      authenticated: true
+    });
+    setSmartFollowUp(response.data);
+  }, [patientFilterId]);
+
   const loadPage = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -220,6 +326,7 @@ export default function CrmPage() {
 
       const requests: Array<Promise<unknown>> = [
         loadTasks(),
+        loadSmartFollowUp(),
         apiRequest<PatientsResponse>("/patients?limit=100", { authenticated: true })
       ];
 
@@ -227,7 +334,7 @@ export default function CrmPage() {
         requests.push(apiRequest<UsersResponse>("/auth/users", { authenticated: true }));
       }
 
-      const [, patientsResponse, usersResponse] = await Promise.all(requests);
+      const [, , patientsResponse, usersResponse] = await Promise.all(requests);
       setPatients((patientsResponse as PatientsResponse).data.items || []);
       setUsers((usersResponse as UsersResponse | undefined)?.data || []);
     } catch (requestError) {
@@ -235,7 +342,7 @@ export default function CrmPage() {
     } finally {
       setLoading(false);
     }
-  }, [loadTasks]);
+  }, [loadSmartFollowUp, loadTasks]);
 
   useEffect(() => {
     void loadPage();
@@ -278,7 +385,7 @@ export default function CrmPage() {
 
       setShowCreateForm(false);
       setCreateForm(buildDefaultCreateForm(patientFilterId));
-      await loadTasks();
+      await Promise.all([loadTasks(), loadSmartFollowUp()]);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to create CRM task");
     } finally {
@@ -307,12 +414,21 @@ export default function CrmPage() {
       });
 
       setEditingTask(null);
-      await loadTasks();
+      await Promise.all([loadTasks(), loadSmartFollowUp()]);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to update CRM task");
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const prefillCreateTask = (payload: Partial<CreateTaskForm> & { patientId: string }) => {
+    setEditingTask(null);
+    setCreateForm({
+      ...buildDefaultCreateForm(payload.patientId),
+      ...payload
+    });
+    setShowCreateForm(true);
   };
 
   if (currentUser && !canAccessCrm(currentUser.role)) {
@@ -332,7 +448,7 @@ export default function CrmPage() {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => void loadTasks()}
+            onClick={() => void Promise.all([loadTasks(), loadSmartFollowUp()])}
             className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
           >
             <RefreshCcw className="h-4 w-4" />
@@ -371,6 +487,41 @@ export default function CrmPage() {
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Overdue</p>
           <p className="mt-3 text-2xl text-gray-900">{summary.overdueTasks}</p>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-emerald-200 bg-emerald-50/40 p-6 shadow-sm">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Smart Follow-up System</p>
+            <h2 className="mt-2 text-xl text-gray-900">Signals that need action</h2>
+            <p className="mt-2 max-w-3xl text-sm text-gray-600">
+              Auto-suggest follow-ups from diagnosis patterns, highlight missed reviews, segment inactive patients, and keep chronic cases visible.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-2xl border border-white/70 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Auto Suggestions</p>
+            <p className="mt-3 text-2xl text-gray-900">{smartFollowUp.summary.autoSuggestions}</p>
+          </div>
+          <div className="rounded-2xl border border-white/70 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Missed Follow-ups</p>
+            <p className="mt-3 text-2xl text-gray-900">{smartFollowUp.summary.missedFollowUps}</p>
+          </div>
+          <div className="rounded-2xl border border-white/70 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">30-59 Days Inactive</p>
+            <p className="mt-3 text-2xl text-gray-900">{smartFollowUp.summary.inactive30Days}</p>
+          </div>
+          <div className="rounded-2xl border border-white/70 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">60+ Days Inactive</p>
+            <p className="mt-3 text-2xl text-gray-900">{smartFollowUp.summary.inactive60Days}</p>
+          </div>
+          <div className="rounded-2xl border border-white/70 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Chronic Tracking</p>
+            <p className="mt-3 text-2xl text-gray-900">{smartFollowUp.summary.chronicPatients}</p>
+          </div>
         </div>
       </section>
 
@@ -415,6 +566,301 @@ export default function CrmPage() {
               ))}
             </select>
           </label>
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-2xl bg-blue-50 p-3 text-blue-700">
+              <Stethoscope className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm uppercase tracking-[0.16em] text-blue-700">Auto Follow-up Suggestions</p>
+              <p className="mt-2 text-sm text-gray-600">Latest diagnoses without an explicit follow-up are converted into suggested review windows.</p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-3">
+            {smartFollowUp.autoSuggestions.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                No diagnosis-based follow-up suggestions right now.
+              </p>
+            ) : (
+              smartFollowUp.autoSuggestions.map((item) => (
+                <article key={item.medicalRecordId} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getSignalTone(item.priority)}`}>
+                      {item.suggestionLabel}
+                    </span>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600">
+                      {item.suggestedFollowUpDays} day review
+                    </span>
+                  </div>
+                  <h3 className="mt-3 text-base text-gray-900">{item.patientName}</h3>
+                  <p className="mt-1 text-sm text-gray-600">{item.patientCode ? `${item.patientCode} | ` : ""}{item.diagnosis}</p>
+                  <div className="mt-3 grid gap-2 text-sm text-gray-600 md:grid-cols-2">
+                    <p><span className="font-medium text-gray-900">Record Date:</span> {formatDate(item.recordDate)}</p>
+                    <p><span className="font-medium text-gray-900">Suggested Date:</span> {formatDate(item.suggestedFollowUpDate)}</p>
+                  </div>
+                  <p className="mt-3 rounded-2xl bg-white px-3 py-2 text-sm text-gray-700">{item.rationale}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        prefillCreateTask({
+                          patientId: item.patientId,
+                          taskType: "follow_up",
+                          dueDate: item.suggestedFollowUpDate || new Date().toISOString().slice(0, 10),
+                          priority: item.priority,
+                          title: `Auto follow-up for ${item.patientName}`,
+                          outcomeNotes: `Diagnosis: ${item.diagnosis}\nSuggested review: ${item.suggestedFollowUpDays} days\nReason: ${item.rationale}`
+                        })
+                      }
+                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
+                    >
+                      Queue Task
+                    </button>
+                    <Link
+                      href={`/dashboard/medical-records?patientId=${encodeURIComponent(item.patientId)}`}
+                      className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Open Records
+                    </Link>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-2xl bg-red-50 p-3 text-red-700">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm uppercase tracking-[0.16em] text-red-700">Missed Follow-up Alerts</p>
+              <p className="mt-2 text-sm text-gray-600">Patients who were due for follow-up but still have no completed return visit.</p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-3">
+            {smartFollowUp.missedFollowUps.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                No missed follow-up alerts right now.
+              </p>
+            ) : (
+              smartFollowUp.missedFollowUps.map((item) => (
+                <article key={item.medicalRecordId} className="rounded-2xl border border-red-100 bg-red-50/40 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-red-700">
+                      Overdue by {item.daysOverdue} day{item.daysOverdue === 1 ? "" : "s"}
+                    </span>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600">
+                      Reminder {item.reminderStatus}
+                    </span>
+                  </div>
+                  <h3 className="mt-3 text-base text-gray-900">{item.patientName}</h3>
+                  <p className="mt-1 text-sm text-gray-600">{item.patientCode ? `${item.patientCode} | ` : ""}{item.diagnosis || "No diagnosis recorded"}</p>
+                  <div className="mt-3 grid gap-2 text-sm text-gray-600 md:grid-cols-2">
+                    <p><span className="font-medium text-gray-900">Due Date:</span> {formatDate(item.followUpDate)}</p>
+                    <p><span className="font-medium text-gray-900">Last Visit:</span> {formatDate(item.lastVisitAt)}</p>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        prefillCreateTask({
+                          patientId: item.patientId,
+                          taskType: "follow_up",
+                          dueDate: new Date().toISOString().slice(0, 10),
+                          priority: "high",
+                          title: `Missed follow-up alert for ${item.patientName}`,
+                          outcomeNotes: `Follow-up was due on ${item.followUpDate}. Overdue by ${item.daysOverdue} days. Reminder status: ${item.reminderStatus}.`
+                        })
+                      }
+                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
+                    >
+                      Queue Alert Task
+                    </button>
+                    <Link
+                      href={`/dashboard/appointments?patientId=${encodeURIComponent(item.patientId)}`}
+                      className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Book Visit
+                    </Link>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-2xl bg-amber-50 p-3 text-amber-700">
+              <Users className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm uppercase tracking-[0.16em] text-amber-700">Patients Not Visited In 30-59 Days</p>
+              <p className="mt-2 text-sm text-gray-600">Patients drifting out of care before they become long-gap recall cases.</p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-3">
+            {smartFollowUp.inactive30Days.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                No patients in the 30-59 day inactive bucket.
+              </p>
+            ) : (
+              smartFollowUp.inactive30Days.map((item) => (
+                <article key={`inactive30-${item.patientId}`} className="rounded-2xl border border-amber-100 bg-amber-50/40 p-4">
+                  <h3 className="text-base text-gray-900">{item.patientName}</h3>
+                  <p className="mt-1 text-sm text-gray-600">{item.patientCode ? `${item.patientCode} | ` : ""}{item.daysSinceLastVisit} days since last visit</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        prefillCreateTask({
+                          patientId: item.patientId,
+                          taskType: "recall",
+                          dueDate: new Date().toISOString().slice(0, 10),
+                          priority: "medium",
+                          title: `30-day recall for ${item.patientName}`,
+                          outcomeNotes: `Patient has not visited for ${item.daysSinceLastVisit} days.`
+                        })
+                      }
+                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
+                    >
+                      Create Recall
+                    </button>
+                    <Link
+                      href={`/dashboard/patients/${item.patientId}`}
+                      className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Open Patient
+                    </Link>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-2xl bg-rose-50 p-3 text-rose-700">
+              <Users className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm uppercase tracking-[0.16em] text-rose-700">Patients Not Visited In 60+ Days</p>
+              <p className="mt-2 text-sm text-gray-600">Higher-risk recall patients who need stronger outreach and appointment recovery.</p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-3">
+            {smartFollowUp.inactive60Days.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                No patients in the 60+ day inactive bucket.
+              </p>
+            ) : (
+              smartFollowUp.inactive60Days.map((item) => (
+                <article key={`inactive60-${item.patientId}`} className="rounded-2xl border border-rose-100 bg-rose-50/40 p-4">
+                  <h3 className="text-base text-gray-900">{item.patientName}</h3>
+                  <p className="mt-1 text-sm text-gray-600">{item.patientCode ? `${item.patientCode} | ` : ""}{item.daysSinceLastVisit} days since last visit</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        prefillCreateTask({
+                          patientId: item.patientId,
+                          taskType: "recall",
+                          dueDate: new Date().toISOString().slice(0, 10),
+                          priority: "high",
+                          title: `60+ day recall for ${item.patientName}`,
+                          outcomeNotes: `Patient has not visited for ${item.daysSinceLastVisit} days. Priority recall recommended.`
+                        })
+                      }
+                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
+                    >
+                      Create Recall
+                    </button>
+                    {item.phone && (
+                      <a
+                        href={`tel:${item.phone}`}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        <Phone className="h-4 w-4" />
+                        Call
+                      </a>
+                    )}
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-700">
+            <HeartPulse className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-sm uppercase tracking-[0.16em] text-emerald-700">Chronic Patient Tracking</p>
+            <p className="mt-2 text-sm text-gray-600">Longitudinal visibility for repeat diagnoses and chronic conditions that need proactive follow-up.</p>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          {smartFollowUp.chronicPatients.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500 xl:col-span-2">
+              No chronic tracking candidates right now.
+            </p>
+          ) : (
+            smartFollowUp.chronicPatients.map((item) => (
+              <article key={`chronic-${item.patientId}`} className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                    {item.conditionLabel}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600">
+                    {item.repeatDiagnosisCount} repeated diagnoses
+                  </span>
+                </div>
+                <h3 className="mt-3 text-base text-gray-900">{item.patientName}</h3>
+                <p className="mt-1 text-sm text-gray-600">{item.patientCode ? `${item.patientCode} | ` : ""}{item.latestDiagnosis || "No diagnosis summary"}</p>
+                <div className="mt-3 grid gap-2 text-sm text-gray-600 md:grid-cols-2">
+                  <p><span className="font-medium text-gray-900">Last Visit:</span> {formatDate(item.lastVisitAt)}</p>
+                  <p><span className="font-medium text-gray-900">Next Follow-up:</span> {formatDate(item.nextFollowUpDate)}</p>
+                </div>
+                <p className="mt-3 rounded-2xl bg-white px-3 py-2 text-sm text-gray-700">{item.trackingReason}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      prefillCreateTask({
+                        patientId: item.patientId,
+                        taskType: "retention",
+                        dueDate: item.nextFollowUpDate || new Date().toISOString().slice(0, 10),
+                        priority: item.nextFollowUpDate ? "medium" : "high",
+                        title: `Chronic tracking for ${item.patientName}`,
+                        outcomeNotes: `${item.conditionLabel}: ${item.trackingReason}`
+                      })
+                    }
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
+                  >
+                    Create Tracking Task
+                  </button>
+                  <Link
+                    href={`/dashboard/patients/${item.patientId}`}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Open Patient
+                  </Link>
+                </div>
+              </article>
+            ))
+          )}
         </div>
       </section>
 

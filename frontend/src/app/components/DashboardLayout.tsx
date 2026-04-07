@@ -523,6 +523,7 @@ export default function DashboardLayout({
                   <li key={item.path}>
                     <Link
                       href={item.path}
+                      prefetch={false}
                       className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                         active ? "bg-emerald-500/14 text-emerald-300" : "text-slate-300 hover:bg-white/6 hover:text-white"
                       }`}
@@ -614,18 +615,18 @@ export default function DashboardLayout({
                           <div className="px-4 py-3 text-sm theme-muted">No patient matches</div>
                         ) : (
                           searchResults.patients.map((patient) => (
-                            <button
+                            <Link
                               key={patient.id}
-                              type="button"
+                              href={`/dashboard/patients/${patient.id}`}
+                              prefetch={false}
                               onClick={() => {
                                 setShowSearchResults(false);
-                                router.push(`/dashboard/patients/${patient.id}`);
                               }}
                               className="block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-emerald-50/60"
                             >
                               <p className="text-sm theme-heading">{patient.full_name}</p>
                               <p className="text-xs theme-muted">{patient.phone}</p>
-                            </button>
+                            </Link>
                           ))
                         )}
 
@@ -636,18 +637,18 @@ export default function DashboardLayout({
                               <div className="px-4 py-3 text-sm theme-muted">No doctor matches</div>
                             ) : (
                               searchResults.doctors.map((doctor) => (
-                                <button
+                                <Link
                                   key={doctor.id}
-                                  type="button"
+                                  href={`/dashboard/doctors?q=${encodeURIComponent(doctor.full_name)}`}
+                                  prefetch={false}
                                   onClick={() => {
                                     setShowSearchResults(false);
-                                    router.push(`/dashboard/doctors?q=${encodeURIComponent(doctor.full_name)}`);
                                   }}
                                   className="block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-emerald-50/60 last:border-b-0"
                                 >
                                   <p className="text-sm theme-heading">{doctor.full_name}</p>
                                   <p className="text-xs theme-muted">{doctor.specialty}</p>
-                                </button>
+                                </Link>
                               ))
                             )}
                           </>

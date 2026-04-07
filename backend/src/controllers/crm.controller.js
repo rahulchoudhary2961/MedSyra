@@ -10,6 +10,14 @@ const listTasks = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+const getSmartFollowUpInsights = asyncHandler(async (req, res) => {
+  const data = await crmService.getSmartFollowUpInsights(req.user.organizationId, {
+    ...req.query,
+    branchId: req.branchContext?.readBranchId || null
+  });
+  res.json({ success: true, data });
+});
+
 const createTask = asyncHandler(async (req, res) => {
   const data = await crmService.createTask(
     req.user.organizationId,
@@ -41,6 +49,7 @@ const updateTask = asyncHandler(async (req, res) => {
 
 module.exports = {
   listTasks,
+  getSmartFollowUpInsights,
   createTask,
   updateTask
 };

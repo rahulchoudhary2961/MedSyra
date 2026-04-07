@@ -339,6 +339,12 @@ export interface NotificationPreferencesData {
     follow_up_sms_enabled: boolean;
     staff_schedule_email_enabled: boolean;
     staff_schedule_sms_enabled: boolean;
+    smart_timing_enabled: boolean;
+    appointment_lead_minutes: number;
+    follow_up_send_hour: number;
+    condition_based_follow_up_enabled: boolean;
+    campaign_whatsapp_enabled: boolean;
+    campaign_sms_enabled: boolean;
     created_at?: string;
     updated_at?: string;
   };
@@ -370,6 +376,45 @@ export interface NotificationLog {
   error_message: string | null;
   metadata?: Record<string, unknown>;
   created_at: string;
+}
+
+export interface NotificationTemplate {
+  id: string;
+  organization_id: string;
+  name: string;
+  notification_type: "appointment_reminder" | "follow_up_reminder" | "marketing_campaign";
+  channel: "whatsapp" | "sms";
+  template_key: string;
+  condition_tag: string | null;
+  body: string;
+  is_default: boolean;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface NotificationCampaign {
+  id: string;
+  organization_id: string;
+  branch_id: string | null;
+  name: string;
+  audience_type: "all_active" | "dormant_30" | "dormant_60" | "follow_up_due" | "chronic";
+  template_id: string;
+  template_name?: string | null;
+  template_channel?: "whatsapp" | "sms" | null;
+  channel_config: {
+    whatsapp: boolean;
+    sms: boolean;
+  };
+  scheduled_for: string | null;
+  status: "draft" | "scheduled" | "sent" | "partial" | "failed";
+  total_recipients: number;
+  successful_recipients: number;
+  failed_recipients: number;
+  notes: string | null;
+  last_sent_at: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface CrmTask {
@@ -465,6 +510,8 @@ export interface Medicine {
   active_batch_count?: number;
   nearest_expiry_date?: string | null;
   expiring_batch_count?: number;
+  dispensed_last_30_days?: number;
+  suggested_reorder_quantity?: number;
   created_at?: string;
   updated_at?: string;
 }

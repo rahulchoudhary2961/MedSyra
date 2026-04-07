@@ -12,6 +12,7 @@ const labRoutes = require("./lab.routes");
 const pharmacyRoutes = require("./pharmacy.routes");
 const inventoryRoutes = require("./inventory.routes");
 const insuranceRoutes = require("./insurance.routes");
+const doctorToolsRoutes = require("./doctor-tools.routes");
 const notificationsRoutes = require("./notifications.routes");
 const securityRoutes = require("./security.routes");
 const commercialRoutes = require("./commercial.routes");
@@ -43,6 +44,7 @@ router.use("/lab", requireAuth, resolveBranchContext, protectedReadLimiter, prot
 router.use("/pharmacy", requireAuth, resolveBranchContext, protectedReadLimiter, protectedWriteLimiter, pharmacyRoutes);
 router.use("/inventory", requireAuth, resolveBranchContext, protectedReadLimiter, protectedWriteLimiter, inventoryRoutes);
 router.use("/insurance", requireAuth, resolveBranchContext, protectedReadLimiter, protectedWriteLimiter, insuranceRoutes);
+router.use("/doctor-tools", requireAuth, resolveBranchContext, protectedReadLimiter, protectedWriteLimiter, doctorToolsRoutes);
 router.use("/notifications", requireAuth, resolveBranchContext, protectedReadLimiter, protectedWriteLimiter, notificationsRoutes);
 router.use("/security", requireAuth, resolveBranchContext, protectedReadLimiter, protectedWriteLimiter, securityRoutes);
 router.use("/commercial", requireAuth, protectedReadLimiter, protectedWriteLimiter, commercialRoutes);

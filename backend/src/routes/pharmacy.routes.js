@@ -12,6 +12,12 @@ router.get(
   validateRequest({ query: pharmacySchemas.medicinesListQuery }),
   controller.listMedicines
 );
+router.get(
+  "/insights",
+  authorizeRoles("full_access", "billing_access", "reception_access", "doctor"),
+  validateRequest({ query: pharmacySchemas.insightsQuery }),
+  controller.getPharmacyInsights
+);
 router.post(
   "/medicines",
   authorizeRoles("full_access"),

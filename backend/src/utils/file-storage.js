@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { createReadStream } = require("fs");
 const fs = require("fs/promises");
 const path = require("path");
 const ApiError = require("./api-error");
@@ -131,28 +132,36 @@ const saveLabReportAttachment = async ({ fileName, contentType, dataBase64 }) =>
     privatePrefix: PRIVATE_LAB_REPORTS_PREFIX
   });
 
+const getAttachmentStats = async (absolutePath, notFoundMessage) => {
+  try {
+    const stats = await fs.stat(absolutePath);
+    if (!stats.isFile()) {
+      throw new ApiError(404, notFoundMessage);
+    }
+
+    return stats;
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      throw new ApiError(404, notFoundMessage);
+    }
+
+    throw error;
+  }
+};
+
 const loadMedicalRecordAttachment = async (fileUrl) => {
   const parsedAttachmentPath = parseStoredMedicalRecordPath(fileUrl);
   const absolutePath = getMedicalRecordAbsolutePath(parsedAttachmentPath);
-
-  let buffer;
-  try {
-    buffer = await fs.readFile(absolutePath);
-  } catch (error) {
-    if (error?.code === "ENOENT") {
-      throw new ApiError(404, "Attachment file not found");
-    }
-    throw error;
-  }
+  const stats = await getAttachmentStats(absolutePath, "Attachment file not found");
 
   return {
     absolutePath,
-    buffer,
-    size: buffer.length,
+    size: stats.size,
     storedFileName: parsedAttachmentPath.storedFileName,
     downloadFileName: deriveMedicalRecordDownloadFileName(parsedAttachmentPath.storedFileName),
     contentType: getMedicalRecordContentType(parsedAttachmentPath.storedFileName),
-    storageScope: parsedAttachmentPath.storageScope
+    storageScope: parsedAttachmentPath.storageScope,
+    createReadStream: () => createReadStream(absolutePath)
   };
 };
 
@@ -164,25 +173,16 @@ const getLabReportAbsolutePath = (parsedAttachmentPath) =>
 const loadLabReportAttachment = async (fileUrl) => {
   const parsedAttachmentPath = parseStoredLabReportPath(fileUrl);
   const absolutePath = getLabReportAbsolutePath(parsedAttachmentPath);
-
-  let buffer;
-  try {
-    buffer = await fs.readFile(absolutePath);
-  } catch (error) {
-    if (error?.code === "ENOENT") {
-      throw new ApiError(404, "Lab report file not found");
-    }
-    throw error;
-  }
+  const stats = await getAttachmentStats(absolutePath, "Lab report file not found");
 
   return {
     absolutePath,
-    buffer,
-    size: buffer.length,
+    size: stats.size,
     storedFileName: parsedAttachmentPath.storedFileName,
     downloadFileName: deriveDownloadFileName(parsedAttachmentPath.storedFileName),
     contentType: getMedicalRecordContentType(parsedAttachmentPath.storedFileName),
-    storageScope: parsedAttachmentPath.storageScope
+    storageScope: parsedAttachmentPath.storageScope,
+    createReadStream: () => createReadStream(absolutePath)
   };
 };
 

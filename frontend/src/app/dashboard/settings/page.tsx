@@ -7,8 +7,13 @@ import {
   Building2,
   Shield,
   Search,
+  Clock3,
+  Megaphone,
+  MessageSquareText,
+  Plus,
   User,
   Save,
+  Send,
   RotateCcw,
   LogOut,
   Trash2,
@@ -18,7 +23,16 @@ import {
 import { apiRequest } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth";
 import { canAccessSettings, isFullAccessRole } from "@/lib/roles";
-import { AuditLogEntry, AuthUser, Branch, NotificationLog, NotificationPreferencesData, SecurityOverviewData } from "@/types/api";
+import {
+  AuditLogEntry,
+  AuthUser,
+  Branch,
+  NotificationCampaign,
+  NotificationLog,
+  NotificationPreferencesData,
+  NotificationTemplate,
+  SecurityOverviewData
+} from "@/types/api";
 
 type MeResponse = {
   success: boolean;
@@ -85,6 +99,20 @@ type NotificationLogsResponse = {
   };
 };
 
+type NotificationTemplatesResponse = {
+  success: boolean;
+  data: {
+    items: NotificationTemplate[];
+  };
+};
+
+type NotificationCampaignsResponse = {
+  success: boolean;
+  data: {
+    items: NotificationCampaign[];
+  };
+};
+
 type SecurityOverviewResponse = {
   success: boolean;
   data: SecurityOverviewData;
@@ -111,6 +139,23 @@ type StaffForm = {
   branchId: string;
   smsDailySchedule: boolean;
   emailDailySchedule: boolean;
+};
+
+type TemplateForm = {
+  name: string;
+  notificationType: "appointment_reminder" | "follow_up_reminder" | "marketing_campaign";
+  channel: "whatsapp" | "sms";
+  conditionTag: string;
+  body: string;
+};
+
+type CampaignForm = {
+  name: string;
+  audienceType: "all_active" | "dormant_30" | "dormant_60" | "follow_up_due" | "chronic";
+  templateId: string;
+  sendWhatsapp: boolean;
+  sendSms: boolean;
+  notes: string;
 };
 
 type BranchesResponse = {
@@ -144,6 +189,23 @@ const DEFAULT_STAFF_FORM: StaffForm = {
   branchId: "",
   smsDailySchedule: true,
   emailDailySchedule: true
+};
+
+const DEFAULT_TEMPLATE_FORM: TemplateForm = {
+  name: "",
+  notificationType: "marketing_campaign",
+  channel: "whatsapp",
+  conditionTag: "",
+  body: ""
+};
+
+const DEFAULT_CAMPAIGN_FORM: CampaignForm = {
+  name: "",
+  audienceType: "all_active",
+  templateId: "",
+  sendWhatsapp: true,
+  sendSms: false,
+  notes: ""
 };
 
 const STAFF_ACCESS_OPTIONS = [
@@ -221,9 +283,16 @@ export default function SettingsPage() {
   const [staffSearch, setStaffSearch] = useState("");
   const [notificationCenter, setNotificationCenter] = useState<NotificationPreferencesData | null>(null);
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
+  const [notificationTemplates, setNotificationTemplates] = useState<NotificationTemplate[]>([]);
+  const [notificationCampaigns, setNotificationCampaigns] = useState<NotificationCampaign[]>([]);
   const [notificationError, setNotificationError] = useState("");
   const [isLoadingNotificationCenter, setIsLoadingNotificationCenter] = useState(false);
   const [isSavingNotificationCenter, setIsSavingNotificationCenter] = useState(false);
+  const [templateForm, setTemplateForm] = useState<TemplateForm>(DEFAULT_TEMPLATE_FORM);
+  const [campaignForm, setCampaignForm] = useState<CampaignForm>(DEFAULT_CAMPAIGN_FORM);
+  const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
+  const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
+  const [sendingCampaignId, setSendingCampaignId] = useState<string | null>(null);
   const [securityOverview, setSecurityOverview] = useState<SecurityOverviewData | null>(null);
   const [securityLogs, setSecurityLogs] = useState<AuditLogEntry[]>([]);
   const [securityError, setSecurityError] = useState("");
@@ -247,7 +316,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (!currentUser || !isFullAccessRole(currentUser.role)) {
+    if (!currentUser || !isFullAccessRole(currentUser.role) || activeTab !== "staff") {
       return;
     }
 
@@ -271,10 +340,10 @@ export default function SettingsPage() {
       .finally(() => {
         setIsLoadingStaff(false);
       });
-  }, [currentUser]);
+  }, [activeTab, currentUser]);
 
   useEffect(() => {
-    if (!currentUser || !isFullAccessRole(currentUser.role)) {
+    if (!currentUser || !isFullAccessRole(currentUser.role) || activeTab !== "security") {
       return;
     }
 
@@ -291,10 +360,10 @@ export default function SettingsPage() {
       .finally(() => {
         setIsLoadingSecurityOverview(false);
       });
-  }, [currentUser]);
+  }, [activeTab, currentUser]);
 
   useEffect(() => {
-    if (!currentUser || !isFullAccessRole(currentUser.role)) {
+    if (!currentUser || !isFullAccessRole(currentUser.role) || activeTab !== "security") {
       return;
     }
 
@@ -322,10 +391,10 @@ export default function SettingsPage() {
       .finally(() => {
         setIsLoadingSecurityLogs(false);
       });
-  }, [currentUser, securityModuleFilter, securityOutcomeFilter, securityDestructiveOnly]);
+  }, [activeTab, currentUser, securityModuleFilter, securityOutcomeFilter, securityDestructiveOnly]);
 
   useEffect(() => {
-    if (!currentUser || !isFullAccessRole(currentUser.role)) {
+    if (!currentUser || !isFullAccessRole(currentUser.role) || activeTab !== "notifications") {
       return;
     }
 
@@ -334,11 +403,22 @@ export default function SettingsPage() {
 
     Promise.all([
       apiRequest<NotificationPreferencesResponse>("/notifications/preferences", { authenticated: true }),
-      apiRequest<NotificationLogsResponse>("/notifications/logs?limit=20", { authenticated: true })
+      apiRequest<NotificationLogsResponse>("/notifications/logs?limit=20", { authenticated: true }),
+      apiRequest<NotificationTemplatesResponse>("/notifications/templates", { authenticated: true }),
+      apiRequest<NotificationCampaignsResponse>("/notifications/campaigns?limit=20", { authenticated: true })
     ])
-      .then(([preferencesResponse, logsResponse]) => {
+      .then(([preferencesResponse, logsResponse, templatesResponse, campaignsResponse]) => {
+        const marketingTemplate = (templatesResponse.data.items || []).find(
+          (item) => item.notification_type === "marketing_campaign"
+        );
         setNotificationCenter(preferencesResponse.data);
         setNotificationLogs(logsResponse.data.items || []);
+        setNotificationTemplates(templatesResponse.data.items || []);
+        setNotificationCampaigns(campaignsResponse.data.items || []);
+        setCampaignForm((current) => ({
+          ...current,
+          templateId: current.templateId || marketingTemplate?.id || ""
+        }));
       })
       .catch((error: Error) => {
         setNotificationError(error.message || "Failed to load notification settings");
@@ -346,7 +426,7 @@ export default function SettingsPage() {
       .finally(() => {
         setIsLoadingNotificationCenter(false);
       });
-  }, [currentUser]);
+  }, [activeTab, currentUser]);
 
   const userInitials = useMemo(() => {
     const name = currentUser?.full_name || "User";
@@ -527,9 +607,9 @@ export default function SettingsPage() {
     }
   };
 
-  const updateReminderPreference = (
-    key: keyof NotificationPreferencesData["preferences"],
-    checked: boolean
+  const updateReminderPreference = <K extends keyof NotificationPreferencesData["preferences"]>(
+    key: K,
+    value: NotificationPreferencesData["preferences"][K]
   ) => {
     setNotificationCenter((current) =>
       current
@@ -537,7 +617,7 @@ export default function SettingsPage() {
             ...current,
             preferences: {
               ...current.preferences,
-              [key]: checked
+              [key]: value
             }
           }
         : current
@@ -562,7 +642,13 @@ export default function SettingsPage() {
           followUpWhatsappEnabled: notificationCenter.preferences.follow_up_whatsapp_enabled,
           followUpSmsEnabled: notificationCenter.preferences.follow_up_sms_enabled,
           staffScheduleEmailEnabled: notificationCenter.preferences.staff_schedule_email_enabled,
-          staffScheduleSmsEnabled: notificationCenter.preferences.staff_schedule_sms_enabled
+          staffScheduleSmsEnabled: notificationCenter.preferences.staff_schedule_sms_enabled,
+          smartTimingEnabled: notificationCenter.preferences.smart_timing_enabled,
+          appointmentLeadMinutes: notificationCenter.preferences.appointment_lead_minutes,
+          followUpSendHour: notificationCenter.preferences.follow_up_send_hour,
+          conditionBasedFollowUpEnabled: notificationCenter.preferences.condition_based_follow_up_enabled,
+          campaignWhatsappEnabled: notificationCenter.preferences.campaign_whatsapp_enabled,
+          campaignSmsEnabled: notificationCenter.preferences.campaign_sms_enabled
         }
       });
 
@@ -573,6 +659,121 @@ export default function SettingsPage() {
     } finally {
       setIsSavingNotificationCenter(false);
     }
+  };
+
+  const handleCreateTemplate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsCreatingTemplate(true);
+    setNotificationError("");
+
+    try {
+      const response = await apiRequest<{ success: boolean; data: NotificationTemplate }>("/notifications/templates", {
+        method: "POST",
+        authenticated: true,
+        body: {
+          name: templateForm.name,
+          notificationType: templateForm.notificationType,
+          channel: templateForm.channel,
+          conditionTag: templateForm.conditionTag || undefined,
+          body: templateForm.body
+        }
+      });
+
+      setNotificationTemplates((current) =>
+        [...current, response.data].sort((left, right) => left.name.localeCompare(right.name))
+      );
+      setTemplateForm(DEFAULT_TEMPLATE_FORM);
+      setCampaignForm((current) => ({
+        ...current,
+        templateId:
+          current.templateId ||
+          (response.data.notification_type === "marketing_campaign" ? response.data.id : "")
+      }));
+      showSaved("Notification template added");
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Failed to create notification template");
+    } finally {
+      setIsCreatingTemplate(false);
+    }
+  };
+
+  const handleCreateCampaign = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsCreatingCampaign(true);
+    setNotificationError("");
+
+    try {
+      const selectedTemplate = notificationTemplates.find((item) => item.id === campaignForm.templateId);
+      const response = await apiRequest<{ success: boolean; data: NotificationCampaign }>("/notifications/campaigns", {
+        method: "POST",
+        authenticated: true,
+        body: {
+          name: campaignForm.name,
+          audienceType: campaignForm.audienceType,
+          templateId: campaignForm.templateId,
+          sendWhatsapp: campaignForm.sendWhatsapp,
+          sendSms: campaignForm.sendSms,
+          notes: campaignForm.notes || undefined
+        }
+      });
+
+      setNotificationCampaigns((current) => [
+        {
+          ...response.data,
+          template_name: selectedTemplate?.name || response.data.template_name || null,
+          template_channel: selectedTemplate?.channel || response.data.template_channel || null
+        },
+        ...current
+      ]);
+      setCampaignForm((current) => ({
+        ...DEFAULT_CAMPAIGN_FORM,
+        templateId: current.templateId || response.data.template_id
+      }));
+      showSaved("Campaign created");
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Failed to create campaign");
+    } finally {
+      setIsCreatingCampaign(false);
+    }
+  };
+
+  const handleSendCampaign = async (campaignId: string) => {
+    setSendingCampaignId(campaignId);
+    setNotificationError("");
+
+    try {
+      const response = await apiRequest<{ success: boolean; data: { campaign: NotificationCampaign } }>(
+        `/notifications/campaigns/${campaignId}/send`,
+        {
+          method: "POST",
+          authenticated: true,
+          body: {}
+        }
+      );
+
+      setNotificationCampaigns((current) =>
+        current.map((item) => (item.id === campaignId ? response.data.campaign : item))
+      );
+
+      const logsResponse = await apiRequest<NotificationLogsResponse>("/notifications/logs?limit=20", {
+        authenticated: true
+      });
+      setNotificationLogs(logsResponse.data.items || []);
+      showSaved("Campaign processed");
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Failed to send campaign");
+    } finally {
+      setSendingCampaignId(null);
+    }
+  };
+
+  const formatNotificationTypeLabel = (value: string) => value.replace(/_/g, " ");
+  const formatCampaignAudience = (value: CampaignForm["audienceType"] | NotificationCampaign["audience_type"]) => {
+    if (value === "all_active") return "All active patients";
+    if (value === "dormant_30") return "No visit in 30+ days";
+    if (value === "dormant_60") return "No visit in 60+ days";
+    if (value === "follow_up_due") return "Follow-ups due";
+    return "Chronic patients";
   };
 
   if (!isLoadingProfile && currentUser && !canAccessSettings(currentUser.role)) {
@@ -830,6 +1031,119 @@ export default function SettingsPage() {
                             <span>SMS</span>
                           </label>
                         </div>
+                        <div className="grid grid-cols-[1.3fr_0.6fr_0.6fr] items-center px-4 py-4 text-sm text-gray-700">
+                          <div>
+                            <p className="text-gray-900">Bulk campaigns</p>
+                            <p className="mt-1 text-xs text-gray-500">Revenue-driven campaigns like free checkup camps and dormant-patient recalls.</p>
+                          </div>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={notificationCenter.preferences.campaign_whatsapp_enabled}
+                              onChange={(e) => updateReminderPreference("campaign_whatsapp_enabled", e.target.checked)}
+                            />
+                            <span>WhatsApp</span>
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={notificationCenter.preferences.campaign_sms_enabled}
+                              onChange={(e) => updateReminderPreference("campaign_sms_enabled", e.target.checked)}
+                            />
+                            <span>SMS</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+                        <div className="flex items-start gap-3">
+                          <Clock3 className="mt-0.5 h-5 w-5 text-emerald-600" />
+                          <div className="space-y-4">
+                            <div>
+                              <h4 className="text-gray-900">Smart Timing</h4>
+                              <p className="mt-1 text-sm text-gray-600">
+                                Keep reminders closer to the visit window instead of sending them randomly during the day.
+                              </p>
+                            </div>
+                            <label className="flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={notificationCenter.preferences.smart_timing_enabled}
+                                onChange={(e) => updateReminderPreference("smart_timing_enabled", e.target.checked)}
+                              />
+                              <span>Enable smart timing guardrail</span>
+                            </label>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <div>
+                                <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">
+                                  Appointment lead
+                                </label>
+                                <input
+                                  type="number"
+                                  min={15}
+                                  max={720}
+                                  value={notificationCenter.preferences.appointment_lead_minutes}
+                                  onChange={(e) =>
+                                    updateReminderPreference(
+                                      "appointment_lead_minutes",
+                                      Number.parseInt(e.target.value, 10) || 120
+                                    )
+                                  }
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                                />
+                                <p className="mt-1 text-xs text-gray-500">Minutes before appointment when manual reminder becomes available.</p>
+                              </div>
+                              <div>
+                                <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">
+                                  Follow-up send hour
+                                </label>
+                                <input
+                                  type="number"
+                                  min={6}
+                                  max={22}
+                                  value={notificationCenter.preferences.follow_up_send_hour}
+                                  onChange={(e) =>
+                                    updateReminderPreference(
+                                      "follow_up_send_hour",
+                                      Number.parseInt(e.target.value, 10) || 9
+                                    )
+                                  }
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                                />
+                                <p className="mt-1 text-xs text-gray-500">Scheduled follow-up reminders wait until this hour.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+                        <div className="flex items-start gap-3">
+                          <MessageSquareText className="mt-0.5 h-5 w-5 text-emerald-600" />
+                          <div className="space-y-4">
+                            <div>
+                              <h4 className="text-gray-900">Condition-Based Follow-up</h4>
+                              <p className="mt-1 text-sm text-gray-600">
+                                Switch reminder copy automatically for diabetes, dental, hypertension, and other tracked conditions.
+                              </p>
+                            </div>
+                            <label className="flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={notificationCenter.preferences.condition_based_follow_up_enabled}
+                                onChange={(e) =>
+                                  updateReminderPreference("condition_based_follow_up_enabled", e.target.checked)
+                                }
+                              />
+                              <span>Use diagnosis-aware follow-up templates</span>
+                            </label>
+                            <div className="rounded-lg border border-emerald-100 bg-white px-4 py-3 text-sm text-gray-600">
+                              Templates tagged with a condition are chosen first. If nothing matches, the general follow-up template is used.
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -842,6 +1156,269 @@ export default function SettingsPage() {
                         <Save className="w-4 h-4" />
                         {isSavingNotificationCenter ? "Saving..." : "Save Reminder Settings"}
                       </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+                      <div className="rounded-xl border border-gray-200 overflow-hidden">
+                        <div className="border-b border-gray-200 px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <MessageSquareText className="h-4 w-4 text-emerald-600" />
+                            <h4 className="text-gray-900">Predefined Templates</h4>
+                          </div>
+                          <p className="mt-1 text-sm text-gray-500">
+                            Manage WhatsApp/SMS copy for reminders and campaigns.
+                          </p>
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                          {notificationTemplates.length === 0 && (
+                            <div className="px-4 py-4 text-sm text-gray-500">No templates available yet.</div>
+                          )}
+                          {notificationTemplates.map((template) => (
+                            <div key={template.id} className="px-4 py-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm text-gray-900">{template.name}</p>
+                                    {template.is_default && (
+                                      <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] uppercase tracking-[0.14em] text-emerald-700">
+                                        Default
+                                      </span>
+                                    )}
+                                    {template.condition_tag && (
+                                      <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] uppercase tracking-[0.14em] text-blue-700">
+                                        {template.condition_tag}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="mt-1 text-xs text-gray-500">
+                                    {formatNotificationTypeLabel(template.notification_type)} | {template.channel.toUpperCase()}
+                                  </p>
+                                  <p className="mt-2 text-xs leading-6 text-gray-600">{template.body}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleCreateTemplate} className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Plus className="h-4 w-4 text-emerald-600" />
+                          <h4 className="text-gray-900">Add Template</h4>
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Template name</label>
+                          <input
+                            type="text"
+                            value={templateForm.name}
+                            onChange={(e) => setTemplateForm((prev) => ({ ...prev, name: e.target.value }))}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            placeholder="Free Checkup Camp"
+                            required
+                          />
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Type</label>
+                            <select
+                              value={templateForm.notificationType}
+                              onChange={(e) =>
+                                setTemplateForm((prev) => ({
+                                  ...prev,
+                                  notificationType: e.target.value as TemplateForm["notificationType"]
+                                }))
+                              }
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            >
+                              <option value="appointment_reminder">Appointment reminder</option>
+                              <option value="follow_up_reminder">Follow-up reminder</option>
+                              <option value="marketing_campaign">Marketing campaign</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Channel</label>
+                            <select
+                              value={templateForm.channel}
+                              onChange={(e) =>
+                                setTemplateForm((prev) => ({
+                                  ...prev,
+                                  channel: e.target.value as TemplateForm["channel"]
+                                }))
+                              }
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            >
+                              <option value="whatsapp">WhatsApp</option>
+                              <option value="sms">SMS</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Condition tag</label>
+                          <input
+                            type="text"
+                            value={templateForm.conditionTag}
+                            onChange={(e) => setTemplateForm((prev) => ({ ...prev, conditionTag: e.target.value }))}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            placeholder="Optional: diabetes, dental"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Message body</label>
+                          <textarea
+                            rows={5}
+                            value={templateForm.body}
+                            onChange={(e) => setTemplateForm((prev) => ({ ...prev, body: e.target.value }))}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            placeholder="Use placeholders like {{firstName}}, {{clinicName}}, {{doctorName}}, {{followUpDate}}, {{campaignName}}"
+                            required
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={isCreatingTemplate}
+                          className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          <Plus className="h-4 w-4" />
+                          {isCreatingTemplate ? "Saving..." : "Add Template"}
+                        </button>
+                      </form>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+                      <form onSubmit={handleCreateCampaign} className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Megaphone className="h-4 w-4 text-emerald-600" />
+                          <h4 className="text-gray-900">Bulk Campaign</h4>
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Campaign name</label>
+                          <input
+                            type="text"
+                            value={campaignForm.name}
+                            onChange={(e) => setCampaignForm((prev) => ({ ...prev, name: e.target.value }))}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            placeholder="Free Checkup Camp"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Audience</label>
+                          <select
+                            value={campaignForm.audienceType}
+                            onChange={(e) =>
+                              setCampaignForm((prev) => ({
+                                ...prev,
+                                audienceType: e.target.value as CampaignForm["audienceType"]
+                              }))
+                            }
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          >
+                            <option value="all_active">All active patients</option>
+                            <option value="dormant_30">Patients not visited in 30+ days</option>
+                            <option value="dormant_60">Patients not visited in 60+ days</option>
+                            <option value="follow_up_due">Follow-ups due</option>
+                            <option value="chronic">Chronic patients</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Template</label>
+                          <select
+                            value={campaignForm.templateId}
+                            onChange={(e) => setCampaignForm((prev) => ({ ...prev, templateId: e.target.value }))}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            required
+                          >
+                            <option value="" disabled>
+                              Select template
+                            </option>
+                            {notificationTemplates
+                              .filter((template) => template.notification_type === "marketing_campaign")
+                              .map((template) => (
+                                <option key={template.id} value={template.id}>
+                                  {template.name}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <label className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={campaignForm.sendWhatsapp}
+                              onChange={(e) => setCampaignForm((prev) => ({ ...prev, sendWhatsapp: e.target.checked }))}
+                            />
+                            <span>WhatsApp</span>
+                          </label>
+                          <label className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={campaignForm.sendSms}
+                              onChange={(e) => setCampaignForm((prev) => ({ ...prev, sendSms: e.target.checked }))}
+                            />
+                            <span>SMS</span>
+                          </label>
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-xs uppercase tracking-[0.14em] text-gray-500">Campaign note</label>
+                          <textarea
+                            rows={3}
+                            value={campaignForm.notes}
+                            onChange={(e) => setCampaignForm((prev) => ({ ...prev, notes: e.target.value }))}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            placeholder="Optional CTA or offer details"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={isCreatingCampaign}
+                          className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          <Megaphone className="h-4 w-4" />
+                          {isCreatingCampaign ? "Saving..." : "Create Campaign"}
+                        </button>
+                      </form>
+
+                      <div className="rounded-xl border border-gray-200 overflow-hidden">
+                        <div className="border-b border-gray-200 px-4 py-3">
+                          <h4 className="text-gray-900">Campaign Queue</h4>
+                          <p className="mt-1 text-sm text-gray-500">Create once, then send when the offer is ready.</p>
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                          {notificationCampaigns.length === 0 && (
+                            <div className="px-4 py-4 text-sm text-gray-500">No campaigns created yet.</div>
+                          )}
+                          {notificationCampaigns.map((campaign) => (
+                            <div key={campaign.id} className="px-4 py-4">
+                              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                  <p className="text-sm text-gray-900">{campaign.name}</p>
+                                  <p className="mt-1 text-xs text-gray-500">
+                                    {formatCampaignAudience(campaign.audience_type)} | {campaign.template_name || "Template missing"}
+                                  </p>
+                                  <p className="mt-2 text-xs text-gray-600">
+                                    Sent {campaign.successful_recipients} / {campaign.total_recipients} | Failed {campaign.failed_recipients}
+                                  </p>
+                                  {campaign.notes && <p className="mt-2 text-xs text-gray-600">{campaign.notes}</p>}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] uppercase tracking-[0.14em] text-gray-700">
+                                    {campaign.status}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleSendCampaign(campaign.id)}
+                                    disabled={sendingCampaignId === campaign.id}
+                                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                                  >
+                                    <Send className="h-4 w-4" />
+                                    {sendingCampaignId === campaign.id ? "Sending..." : "Send now"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="rounded-xl border border-gray-200 overflow-hidden">

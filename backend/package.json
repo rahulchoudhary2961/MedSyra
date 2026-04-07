@@ -6,9 +6,13 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
+    "profile:cpu": "node --cpu-prof src/server.js",
+    "profile:heap": "node --heap-prof src/server.js",
     "migrate": "node src/scripts/migrate.js",
     "seed": "node src/scripts/seed.js",
     "db:reset": "node src/scripts/reset-db.js",
+    "db:maintain": "node src/scripts/db-maintenance.js",
+    "db:report": "node src/scripts/db-performance-report.js",
     "lint": "node src/scripts/lint.js",
     "test": "node src/scripts/test.js",
     "org-stats": "node src/scripts/org-stats.js",

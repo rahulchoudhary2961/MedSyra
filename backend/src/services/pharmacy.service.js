@@ -159,6 +159,8 @@ const validateDispenseItems = async (organizationId, items) => {
 };
 
 const listMedicines = async (organizationId, query) => pharmacyModel.listMedicines(organizationId, query);
+const getPharmacyInsights = async (organizationId, query = {}) =>
+  pharmacyModel.getPharmacyInsights(organizationId, Math.min(Math.max(Number(query.limit) || 8, 1), 20));
 
 const createMedicine = async (organizationId, payload, actor = null, requestMeta = null) => {
   const created = await pharmacyModel.createMedicine(organizationId, payload);
@@ -332,6 +334,7 @@ const createPharmacyDispense = async (organizationId, payload, actor = null, req
 
 module.exports = {
   listMedicines,
+  getPharmacyInsights,
   createMedicine,
   updateMedicine,
   listMedicineBatches,

@@ -2,6 +2,29 @@ const pool = require("../config/db");
 const parsePagination = require("../utils/pagination");
 const { getCurrentDateKey } = require("../utils/date");
 
+const branchFilterSql = (alias, paramIndex = 3) =>
+  `AND ($${paramIndex}::uuid IS NULL OR ${alias}.branch_id = $${paramIndex}::uuid)`;
+
+const branchExistsSql = (organizationAlias, patientAlias, paramIndex = 3) => `
+  AND (
+    $${paramIndex}::uuid IS NULL
+    OR EXISTS (
+      SELECT 1
+      FROM appointments scoped_a
+      WHERE scoped_a.organization_id = ${organizationAlias}
+        AND scoped_a.patient_id = ${patientAlias}
+        AND scoped_a.branch_id = $${paramIndex}::uuid
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM medical_records scoped_mr
+      WHERE scoped_mr.organization_id = ${organizationAlias}
+        AND scoped_mr.patient_id = ${patientAlias}
+        AND scoped_mr.branch_id = $${paramIndex}::uuid
+    )
+  )
+`;
+
 const mapTask = (row) => {
   if (!row) {
     return null;
@@ -412,6 +435,250 @@ const getTaskById = async (organizationId, id, branchId = null) => {
   return mapTask(rows[0] || null);
 };
 
+const getSmartFollowUpInsights = async (organizationId, query = {}) => {
+  const currentDateKey = getCurrentDateKey();
+  const branchId = query.branchId || null;
+  const patientId = query.patientId || null;
+  const limit = Math.min(Math.max(Number(query.limit) || 6, 1), 12);
+  const values = [organizationId, currentDateKey, branchId, patientId, limit];
+
+  const autoSuggestionsSql = `
+    WITH latest_records AS (
+      SELECT DISTINCT ON (mr.patient_id)
+        mr.id AS medical_record_id,
+        mr.patient_id,
+        p.patient_code,
+        p.full_name AS patient_name,
+        p.phone,
+        mr.record_date::text AS record_date,
+        TRIM(mr.diagnosis) AS diagnosis,
+        p.last_visit_at::text AS last_visit_at
+      FROM medical_records mr
+      JOIN patients p
+        ON p.id = mr.patient_id
+       AND p.organization_id = mr.organization_id
+      WHERE mr.organization_id = $1
+        ${branchFilterSql("mr", 3)}
+        AND ($4::uuid IS NULL OR mr.patient_id = $4::uuid)
+        AND p.is_active = true
+        AND mr.diagnosis IS NOT NULL
+        AND BTRIM(mr.diagnosis) <> ''
+        AND mr.follow_up_date IS NULL
+        AND mr.record_date >= $2::date - INTERVAL '120 days'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM appointments a
+          WHERE a.organization_id = mr.organization_id
+            AND a.patient_id = mr.patient_id
+            ${branchFilterSql("a", 3)}
+            AND a.status IN ('pending', 'confirmed', 'checked-in')
+            AND a.appointment_date >= $2::date
+        )
+      ORDER BY mr.patient_id, mr.record_date DESC, mr.created_at DESC
+    )
+    SELECT *
+    FROM latest_records
+    ORDER BY record_date DESC, patient_name ASC
+    LIMIT $5
+  `;
+
+  const missedFollowUpsSql = `
+    WITH ranked_due AS (
+      SELECT
+        mr.id AS medical_record_id,
+        mr.patient_id,
+        p.patient_code,
+        p.full_name AS patient_name,
+        p.phone,
+        TRIM(mr.diagnosis) AS diagnosis,
+        mr.record_date::text AS record_date,
+        mr.follow_up_date::text AS follow_up_date,
+        COALESCE(mr.follow_up_reminder_status, 'pending') AS reminder_status,
+        p.last_visit_at::text AS last_visit_at,
+        ROW_NUMBER() OVER (
+          PARTITION BY mr.patient_id
+          ORDER BY mr.follow_up_date ASC, mr.created_at DESC
+        ) AS row_number
+      FROM medical_records mr
+      JOIN patients p
+        ON p.id = mr.patient_id
+       AND p.organization_id = mr.organization_id
+      WHERE mr.organization_id = $1
+        ${branchFilterSql("mr", 3)}
+        AND ($4::uuid IS NULL OR mr.patient_id = $4::uuid)
+        AND p.is_active = true
+        AND mr.follow_up_date IS NOT NULL
+        AND mr.follow_up_date < $2::date
+        AND COALESCE(mr.follow_up_reminder_status, 'pending') <> 'disabled'
+    )
+    SELECT
+      ranked_due.medical_record_id,
+      ranked_due.patient_id,
+      ranked_due.patient_code,
+      ranked_due.patient_name,
+      ranked_due.phone,
+      ranked_due.diagnosis,
+      ranked_due.record_date,
+      ranked_due.follow_up_date,
+      ranked_due.reminder_status,
+      ranked_due.last_visit_at,
+      ($2::date - ranked_due.follow_up_date::date)::int AS days_overdue
+    FROM ranked_due
+    WHERE ranked_due.row_number = 1
+      AND NOT EXISTS (
+        SELECT 1
+        FROM appointments a
+        WHERE a.organization_id = $1
+          AND a.patient_id = ranked_due.patient_id
+          ${branchFilterSql("a", 3)}
+          AND a.status = 'completed'
+          AND a.appointment_date >= ranked_due.follow_up_date::date
+      )
+    ORDER BY ranked_due.follow_up_date ASC, ranked_due.patient_name ASC
+    LIMIT $5
+  `;
+
+  const inactive30DaysSql = `
+    SELECT
+      p.id AS patient_id,
+      p.patient_code,
+      p.full_name AS patient_name,
+      p.phone,
+      p.last_visit_at::text AS last_visit_at,
+      ($2::date - p.last_visit_at::date)::int AS days_since_last_visit
+    FROM patients p
+    WHERE p.organization_id = $1
+      AND p.is_active = true
+      AND ($4::uuid IS NULL OR p.id = $4::uuid)
+      ${branchExistsSql("p.organization_id", "p.id", 3)}
+      AND p.last_visit_at IS NOT NULL
+      AND p.last_visit_at::date < $2::date - 30
+      AND p.last_visit_at::date >= $2::date - 60
+      AND NOT EXISTS (
+        SELECT 1
+        FROM appointments a
+        WHERE a.organization_id = p.organization_id
+          AND a.patient_id = p.id
+          ${branchFilterSql("a", 3)}
+          AND a.status IN ('pending', 'confirmed', 'checked-in')
+          AND a.appointment_date >= $2::date
+      )
+    ORDER BY p.last_visit_at ASC, p.full_name ASC
+    LIMIT $5
+  `;
+
+  const inactive60DaysSql = `
+    SELECT
+      p.id AS patient_id,
+      p.patient_code,
+      p.full_name AS patient_name,
+      p.phone,
+      p.last_visit_at::text AS last_visit_at,
+      ($2::date - p.last_visit_at::date)::int AS days_since_last_visit
+    FROM patients p
+    WHERE p.organization_id = $1
+      AND p.is_active = true
+      AND ($4::uuid IS NULL OR p.id = $4::uuid)
+      ${branchExistsSql("p.organization_id", "p.id", 3)}
+      AND p.last_visit_at IS NOT NULL
+      AND p.last_visit_at::date < $2::date - 60
+      AND NOT EXISTS (
+        SELECT 1
+        FROM appointments a
+        WHERE a.organization_id = p.organization_id
+          AND a.patient_id = p.id
+          ${branchFilterSql("a", 3)}
+          AND a.status IN ('pending', 'confirmed', 'checked-in')
+          AND a.appointment_date >= $2::date
+      )
+    ORDER BY p.last_visit_at ASC, p.full_name ASC
+    LIMIT $5
+  `;
+
+  const chronicPatientsSql = `
+    SELECT
+      p.id AS patient_id,
+      p.patient_code,
+      p.full_name AS patient_name,
+      p.phone,
+      p.last_visit_at::text AS last_visit_at,
+      latest_diagnosis.latest_diagnosis,
+      COALESCE(repeat_stats.repeat_diagnosis_count, 0)::int AS repeat_diagnosis_count,
+      next_follow_up.next_follow_up_date::text AS next_follow_up_date
+    FROM patients p
+    LEFT JOIN LATERAL (
+      SELECT MAX(repeat_count)::int AS repeat_diagnosis_count
+      FROM (
+        SELECT COUNT(*)::int AS repeat_count
+        FROM medical_records mr
+        WHERE mr.organization_id = p.organization_id
+          AND mr.patient_id = p.id
+          ${branchFilterSql("mr", 3)}
+          AND mr.diagnosis IS NOT NULL
+          AND BTRIM(mr.diagnosis) <> ''
+          AND mr.record_date >= $2::date - INTERVAL '365 days'
+        GROUP BY LOWER(TRIM(mr.diagnosis))
+      ) grouped_diagnoses
+    ) AS repeat_stats ON true
+    LEFT JOIN LATERAL (
+      SELECT TRIM(mr.diagnosis) AS latest_diagnosis
+      FROM medical_records mr
+      WHERE mr.organization_id = p.organization_id
+        AND mr.patient_id = p.id
+        ${branchFilterSql("mr", 3)}
+        AND mr.diagnosis IS NOT NULL
+        AND BTRIM(mr.diagnosis) <> ''
+      ORDER BY mr.record_date DESC, mr.created_at DESC
+      LIMIT 1
+    ) AS latest_diagnosis ON true
+    LEFT JOIN LATERAL (
+      SELECT MIN(mr.follow_up_date)::date AS next_follow_up_date
+      FROM medical_records mr
+      WHERE mr.organization_id = p.organization_id
+        AND mr.patient_id = p.id
+        ${branchFilterSql("mr", 3)}
+        AND mr.follow_up_date IS NOT NULL
+        AND COALESCE(mr.follow_up_reminder_status, 'pending') <> 'disabled'
+        AND mr.follow_up_date >= $2::date
+    ) AS next_follow_up ON true
+    WHERE p.organization_id = $1
+      AND p.is_active = true
+      AND ($4::uuid IS NULL OR p.id = $4::uuid)
+      ${branchExistsSql("p.organization_id", "p.id", 3)}
+      AND p.last_visit_at IS NOT NULL
+      AND p.last_visit_at::date >= $2::date - 365
+      AND latest_diagnosis.latest_diagnosis IS NOT NULL
+      AND (
+        COALESCE(repeat_stats.repeat_diagnosis_count, 0) >= 2
+        OR latest_diagnosis.latest_diagnosis ~* '(diabet|hypert|asthma|copd|thyroid|arthritis|ckd|kidney disease|cardiac|coronary|epilep|stroke|obesity|cholesterol|lipid|pcos|pcod)'
+      )
+    ORDER BY COALESCE(repeat_stats.repeat_diagnosis_count, 0) DESC, p.last_visit_at DESC, p.full_name ASC
+    LIMIT $5
+  `;
+
+  const [
+    autoSuggestionsRes,
+    missedFollowUpsRes,
+    inactive30DaysRes,
+    inactive60DaysRes,
+    chronicPatientsRes
+  ] = await Promise.all([
+    pool.query(autoSuggestionsSql, values),
+    pool.query(missedFollowUpsSql, values),
+    pool.query(inactive30DaysSql, values),
+    pool.query(inactive60DaysSql, values),
+    pool.query(chronicPatientsSql, values)
+  ]);
+
+  return {
+    autoSuggestions: autoSuggestionsRes.rows,
+    missedFollowUps: missedFollowUpsRes.rows,
+    inactive30Days: inactive30DaysRes.rows,
+    inactive60Days: inactive60DaysRes.rows,
+    chronicPatients: chronicPatientsRes.rows
+  };
+};
+
 const createTask = async (organizationId, payload) => {
   const query = `
     INSERT INTO crm_tasks (
@@ -505,6 +772,7 @@ module.exports = {
   syncAutoTasks,
   listTasks,
   getTaskById,
+  getSmartFollowUpInsights,
   createTask,
   updateTask
 };

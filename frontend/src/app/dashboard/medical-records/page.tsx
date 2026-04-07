@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Eye, FileText, Pencil, Plus, Send, Sparkles, Trash2 } from "lucide-react";
+import DoctorSpeedTools from "@/app/components/DoctorSpeedTools";
 import { apiRequest } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import {
@@ -1105,6 +1106,16 @@ export default function MedicalRecordsPage() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
               />
             </div>
+
+            <DoctorSpeedTools
+              patientId={form.patientId || null}
+              doctorId={form.doctorId || null}
+              prescription={form.prescription}
+              notes={form.notes}
+              diagnosis={form.diagnosis}
+              onPrescriptionChange={(value) => setForm((current) => ({ ...current, prescription: value }))}
+              onNotesChange={(value) => setForm((current) => ({ ...current, notes: value }))}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <div>

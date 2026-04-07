@@ -281,6 +281,7 @@ const getMedicalRecordReminderContext = async (organizationId, id, branchId = nu
       mr.organization_id,
       mr.branch_id,
       mr.follow_up_date,
+      mr.diagnosis,
       p.full_name AS patient_name,
       p.phone AS patient_phone,
       d.full_name AS doctor_name,
@@ -323,7 +324,9 @@ const listDueFollowUpReminders = async (organizationId = null) => {
     SELECT
       mr.id,
       mr.organization_id,
+      mr.branch_id,
       mr.patient_id,
+      mr.diagnosis,
       p.full_name AS patient_name,
       p.phone AS patient_phone,
       d.full_name AS doctor_name,

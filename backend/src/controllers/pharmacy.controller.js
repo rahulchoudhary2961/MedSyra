@@ -7,6 +7,11 @@ const listMedicines = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+const getPharmacyInsights = asyncHandler(async (req, res) => {
+  const data = await pharmacyService.getPharmacyInsights(req.user.organizationId, req.query);
+  res.json({ success: true, data });
+});
+
 const createMedicine = asyncHandler(async (req, res) => {
   const data = await pharmacyService.createMedicine(req.user.organizationId, req.body, req.user, getRequestMeta(req));
   res.status(201).json({ success: true, message: "Medicine created", data });
@@ -71,6 +76,7 @@ const createPharmacyDispense = asyncHandler(async (req, res) => {
 
 module.exports = {
   listMedicines,
+  getPharmacyInsights,
   createMedicine,
   updateMedicine,
   listMedicineBatches,
