@@ -42,6 +42,12 @@ type ReferenceDataResponse = {
   };
 };
 
+type PatientReference = ReferenceDataResponse["data"]["patients"][number];
+type PatientReferenceResponse = {
+  success: boolean;
+  data: PatientReference;
+};
+
 type ClaimStatus = InsuranceClaim["status"];
 
 type ProviderForm = {
@@ -267,6 +273,32 @@ export default function InsurancePage() {
   useEffect(() => {
     setClaimForm(buildClaimForm(patientFilterId || filters.patientId || ""));
   }, [filters.patientId, patientFilterId]);
+
+  useEffect(() => {
+    if (!patientFilterId || patients.some((patient) => patient.id === patientFilterId)) {
+      return;
+    }
+
+    apiRequest<PatientReferenceResponse>(`/patients/${patientFilterId}`, { authenticated: true })
+      .then((response) => {
+        setPatients((current) => {
+          if (current.some((patient) => patient.id === response.data.id)) {
+            return current;
+          }
+
+          return [
+            {
+              id: response.data.id,
+              patient_code: response.data.patient_code || null,
+              full_name: response.data.full_name,
+              phone: response.data.phone || null
+            },
+            ...current
+          ];
+        });
+      })
+      .catch(() => undefined);
+  }, [patientFilterId, patients]);
 
   const claimSummary = useMemo(() => ({
     total: claims.length,
@@ -498,12 +530,12 @@ export default function InsurancePage() {
             Refresh
           </button>
           {canManageInsuranceCatalog(currentUser?.role) && (
-            <button type="button" onClick={() => setShowProviderForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
+            <button data-testid="insurance-add-provider-button" type="button" onClick={() => setShowProviderForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
               <Plus className="h-4 w-4" />
               {showProviderForm ? "Hide Provider Form" : "Add Provider"}
             </button>
           )}
-          <button type="button" onClick={() => setShowClaimForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">
+          <button data-testid="insurance-add-claim-button" type="button" onClick={() => setShowClaimForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">
             <Plus className="h-4 w-4" />
             {showClaimForm ? "Hide Claim Form" : "Submit Claim"}
           </button>
@@ -524,46 +556,46 @@ export default function InsurancePage() {
           </div>
 
           {showProviderForm && canManageInsuranceCatalog(currentUser?.role) && (
-            <form onSubmit={submitProvider} className="rounded-2xl border border-gray-200 bg-white p-6">
+            <form data-testid="insurance-provider-form" onSubmit={submitProvider} className="rounded-2xl border border-gray-200 bg-white p-6">
               <div className="flex items-center justify-between gap-3">
                 <div><h2 className="text-gray-900">Payer Catalog</h2><p className="mt-1 text-sm text-gray-500">Maintain the insurers your clinic submits claims to.</p></div>
                 <ShieldCheck className="h-5 w-5 text-emerald-600" />
               </div>
               <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-                <input value={providerForm.payerCode} onChange={(event) => setProviderForm((current) => ({ ...current, payerCode: event.target.value }))} placeholder="Payer code" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
-                <input value={providerForm.name} onChange={(event) => setProviderForm((current) => ({ ...current, name: event.target.value }))} placeholder="Provider name" required className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
-                <input type="email" value={providerForm.contactEmail} onChange={(event) => setProviderForm((current) => ({ ...current, contactEmail: event.target.value }))} placeholder="Contact email" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
-                <input value={providerForm.contactPhone} onChange={(event) => setProviderForm((current) => ({ ...current, contactPhone: event.target.value }))} placeholder="Contact phone" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
-                <input value={providerForm.portalUrl} onChange={(event) => setProviderForm((current) => ({ ...current, portalUrl: event.target.value }))} placeholder="Portal URL" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
+                <input data-testid="insurance-provider-code-input" value={providerForm.payerCode} onChange={(event) => setProviderForm((current) => ({ ...current, payerCode: event.target.value }))} placeholder="Payer code" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
+                <input data-testid="insurance-provider-name-input" value={providerForm.name} onChange={(event) => setProviderForm((current) => ({ ...current, name: event.target.value }))} placeholder="Provider name" required className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
+                <input data-testid="insurance-provider-email-input" type="email" value={providerForm.contactEmail} onChange={(event) => setProviderForm((current) => ({ ...current, contactEmail: event.target.value }))} placeholder="Contact email" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
+                <input data-testid="insurance-provider-phone-input" value={providerForm.contactPhone} onChange={(event) => setProviderForm((current) => ({ ...current, contactPhone: event.target.value }))} placeholder="Contact phone" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
+                <input data-testid="insurance-provider-portal-url-input" value={providerForm.portalUrl} onChange={(event) => setProviderForm((current) => ({ ...current, portalUrl: event.target.value }))} placeholder="Portal URL" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
               </div>
-              <div className="mt-5 flex justify-end"><button type="submit" disabled={isSubmitting} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">Save Provider</button></div>
+              <div className="mt-5 flex justify-end"><button data-testid="insurance-provider-submit-button" type="submit" disabled={isSubmitting} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">Save Provider</button></div>
             </form>
           )}
 
           {showClaimForm && (
-            <form onSubmit={submitClaim} className="rounded-2xl border border-gray-200 bg-white p-6">
+            <form data-testid="insurance-claim-form" onSubmit={submitClaim} className="rounded-2xl border border-gray-200 bg-white p-6">
               <div className="flex items-center justify-between gap-3">
                 <div><h2 className="text-gray-900">Claim Submission</h2><p className="mt-1 text-sm text-gray-500">Link a payer claim to the patient, invoice, and supporting record.</p></div>
                 <FileHeart className="h-5 w-5 text-emerald-600" />
               </div>
               <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
-                <select value={claimForm.patientId} onChange={(event) => void handleClaimPatientChange(event.target.value)} required className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"><option value="">Select patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name} | {patient.patient_code || patient.phone || "No code"}</option>)}</select>
-                <select value={claimForm.providerId} onChange={(event) => setClaimForm((current) => ({ ...current, providerId: event.target.value }))} required className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"><option value="">Select provider</option>{providerOptions.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select>
-                <select value={claimForm.doctorId} onChange={(event) => setClaimForm((current) => ({ ...current, doctorId: event.target.value }))} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"><option value="">Unassigned doctor</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.full_name} | {doctor.specialty || "General"}</option>)}</select>
-                <select value={claimForm.status} onChange={(event) => setClaimForm((current) => ({ ...current, status: event.target.value as ClaimStatus }))} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">{claimStatuses.map((status) => <option key={status} value={status}>{formatStatus(status)}</option>)}</select>
-                <select value={claimForm.medicalRecordId} onChange={(event) => handleRecordChange(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"><option value="">Select record</option>{filteredMedicalRecords.map((record) => <option key={record.id} value={record.id}>{record.record_type} | {record.patient_name} | {formatDate(record.record_date)}</option>)}</select>
-                <select value={claimForm.invoiceId} onChange={(event) => handleInvoiceChange(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"><option value="">Select invoice</option>{filteredInvoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.invoice_number} | Balance {formatCurrency(invoice.balance_amount)}</option>)}</select>
-                <input value={claimForm.policyNumber} onChange={(event) => setClaimForm((current) => ({ ...current, policyNumber: event.target.value }))} placeholder="Policy number" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
-                <input value={claimForm.memberId} onChange={(event) => setClaimForm((current) => ({ ...current, memberId: event.target.value }))} placeholder="Member ID" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
-                <input type="number" min="0.01" step="0.01" value={claimForm.claimedAmount} onChange={(event) => setClaimForm((current) => ({ ...current, claimedAmount: event.target.value }))} placeholder="Claimed amount" required className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
-                <input type="date" value={claimForm.submittedDate} onChange={(event) => setClaimForm((current) => ({ ...current, submittedDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
-                <input type="date" value={claimForm.responseDueDate} onChange={(event) => setClaimForm((current) => ({ ...current, responseDueDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
-                <textarea rows={2} value={claimForm.diagnosisSummary} onChange={(event) => setClaimForm((current) => ({ ...current, diagnosisSummary: event.target.value }))} placeholder="Diagnosis summary" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 lg:col-span-2" />
-                <textarea rows={2} value={claimForm.treatmentSummary} onChange={(event) => setClaimForm((current) => ({ ...current, treatmentSummary: event.target.value }))} placeholder="Treatment summary" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 lg:col-span-2" />
-                <textarea rows={2} value={claimForm.notes} onChange={(event) => setClaimForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Notes" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 lg:col-span-4" />
+                <select data-testid="insurance-claim-patient-select" value={claimForm.patientId} onChange={(event) => void handleClaimPatientChange(event.target.value)} required className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"><option value="">Select patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name} | {patient.patient_code || patient.phone || "No code"}</option>)}</select>
+                <select data-testid="insurance-claim-provider-select" value={claimForm.providerId} onChange={(event) => setClaimForm((current) => ({ ...current, providerId: event.target.value }))} required className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"><option value="">Select provider</option>{providerOptions.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select>
+                <select data-testid="insurance-claim-doctor-select" value={claimForm.doctorId} onChange={(event) => setClaimForm((current) => ({ ...current, doctorId: event.target.value }))} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"><option value="">Unassigned doctor</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.full_name} | {doctor.specialty || "General"}</option>)}</select>
+                <select data-testid="insurance-claim-status-select" value={claimForm.status} onChange={(event) => setClaimForm((current) => ({ ...current, status: event.target.value as ClaimStatus }))} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">{claimStatuses.map((status) => <option key={status} value={status}>{formatStatus(status)}</option>)}</select>
+                <select data-testid="insurance-claim-record-select" value={claimForm.medicalRecordId} onChange={(event) => handleRecordChange(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"><option value="">Select record</option>{filteredMedicalRecords.map((record) => <option key={record.id} value={record.id}>{record.record_type} | {record.patient_name} | {formatDate(record.record_date)}</option>)}</select>
+                <select data-testid="insurance-claim-invoice-select" value={claimForm.invoiceId} onChange={(event) => handleInvoiceChange(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"><option value="">Select invoice</option>{filteredInvoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.invoice_number} | Balance {formatCurrency(invoice.balance_amount)}</option>)}</select>
+                <input data-testid="insurance-claim-policy-number-input" value={claimForm.policyNumber} onChange={(event) => setClaimForm((current) => ({ ...current, policyNumber: event.target.value }))} placeholder="Policy number" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
+                <input data-testid="insurance-claim-member-id-input" value={claimForm.memberId} onChange={(event) => setClaimForm((current) => ({ ...current, memberId: event.target.value }))} placeholder="Member ID" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
+                <input data-testid="insurance-claim-amount-input" type="number" min="0.01" step="0.01" value={claimForm.claimedAmount} onChange={(event) => setClaimForm((current) => ({ ...current, claimedAmount: event.target.value }))} placeholder="Claimed amount" required className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
+                <input data-testid="insurance-claim-submitted-date-input" type="date" value={claimForm.submittedDate} onChange={(event) => setClaimForm((current) => ({ ...current, submittedDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
+                <input data-testid="insurance-claim-response-due-date-input" type="date" value={claimForm.responseDueDate} onChange={(event) => setClaimForm((current) => ({ ...current, responseDueDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700" />
+                <textarea data-testid="insurance-claim-diagnosis-input" rows={2} value={claimForm.diagnosisSummary} onChange={(event) => setClaimForm((current) => ({ ...current, diagnosisSummary: event.target.value }))} placeholder="Diagnosis summary" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 lg:col-span-2" />
+                <textarea data-testid="insurance-claim-treatment-input" rows={2} value={claimForm.treatmentSummary} onChange={(event) => setClaimForm((current) => ({ ...current, treatmentSummary: event.target.value }))} placeholder="Treatment summary" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 lg:col-span-2" />
+                <textarea data-testid="insurance-claim-notes-input" rows={2} value={claimForm.notes} onChange={(event) => setClaimForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Notes" className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 lg:col-span-4" />
               </div>
               {selectedInvoice && <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-900">Linked invoice {selectedInvoice.invoice_number} has a balance of {formatCurrency(selectedInvoice.balance_amount)}.</div>}
-              <div className="mt-5 flex justify-end"><button type="submit" disabled={isSubmitting} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">Create Claim</button></div>
+              <div className="mt-5 flex justify-end"><button data-testid="insurance-claim-submit-button" type="submit" disabled={isSubmitting} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">Create Claim</button></div>
             </form>
           )}
 
@@ -582,7 +614,7 @@ export default function InsurancePage() {
               <div className="divide-y divide-gray-100">
                 {claims.length === 0 && <div className="px-6 py-6 text-sm text-gray-500">No insurance claims found for the selected filters.</div>}
                 {claims.map((claim) => (
-                  <button key={claim.id} type="button" onClick={() => void loadClaimDetail(claim.id)} className={`w-full px-6 py-4 text-left transition ${selectedClaimId === claim.id ? "bg-emerald-50" : "hover:bg-gray-50"}`}>
+                  <button key={claim.id} data-testid="insurance-claim-queue-item" type="button" onClick={() => void loadClaimDetail(claim.id)} className={`w-full px-6 py-4 text-left transition ${selectedClaimId === claim.id ? "bg-emerald-50" : "hover:bg-gray-50"}`}>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">

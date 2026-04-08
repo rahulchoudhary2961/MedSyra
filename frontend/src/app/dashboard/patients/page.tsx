@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Edit2, Eye, Plus, Search, Trash2 } from "lucide-react";
+import { Edit2, Eye, Plus, Trash2 } from "lucide-react";
 import { apiRequest, ApiRequestError } from "@/lib/api";
 import { canAccessPatients, canDeletePatients } from "@/lib/roles";
 import { isUuid } from "@/lib/uuid";
@@ -380,6 +380,7 @@ export default function PatientsPage() {
           <p className="text-gray-600 mt-1">Manage and view all patient records</p>
         </div>
         <button
+          data-testid="add-patient-button"
           data-tour-id="tour-patients-add"
           onClick={() => {
             setEditingPatientId(null);
@@ -395,20 +396,18 @@ export default function PatientsPage() {
         </button>
       </div>
 
-      <div className="bg-white rounded-xl p-4 border border-gray-200">
-        <div className="flex gap-3">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2 flex-1">
-            <Search className="w-4 h-4 text-gray-500" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by patient ID, name, phone, or email..."
-              className="bg-transparent border-none outline-none flex-1 text-sm"
-            />
-          </div>
-        </div>
-      </div>
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <label className="space-y-2">
+          <span className="text-sm text-gray-700">Search</span>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by patient ID, name, phone, or email..."
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
+          />
+        </label>
+      </section>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -543,7 +542,7 @@ export default function PatientsPage() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div data-testid="patient-form-modal" className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleCreateOrUpdatePatient}>
               <div className="p-6 border-b border-gray-200">
                 <h2 className="text-xl text-gray-900">{editingPatientId ? "Edit Patient" : "Add New Patient"}</h2>
@@ -572,6 +571,7 @@ export default function PatientsPage() {
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Full Name</label>
                     <input
+                      data-testid="patient-full-name-input"
                       type="text"
                       value={formData.fullName}
                       onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
@@ -582,6 +582,7 @@ export default function PatientsPage() {
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Age</label>
                     <input
+                      data-testid="patient-age-input"
                       type="text"
                       inputMode="numeric"
                       pattern="\d*"
@@ -596,6 +597,7 @@ export default function PatientsPage() {
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Date of Birth</label>
                     <input
+                      data-testid="patient-dob-input"
                       type="date"
                       value={formData.dateOfBirth}
                       onChange={(e) =>
@@ -611,6 +613,7 @@ export default function PatientsPage() {
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Gender</label>
                     <select
+                      data-testid="patient-gender-select"
                       value={formData.gender}
                       onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg"
@@ -625,6 +628,7 @@ export default function PatientsPage() {
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Phone</label>
                     <input
+                      data-testid="patient-phone-input"
                       type="text"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
@@ -639,6 +643,7 @@ export default function PatientsPage() {
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Email</label>
                     <input
+                      data-testid="patient-email-input"
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -648,6 +653,7 @@ export default function PatientsPage() {
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Blood Type</label>
                     <input
+                      data-testid="patient-blood-type-input"
                       type="text"
                       value={formData.bloodType}
                       onChange={(e) => setFormData({ ...formData, bloodType: e.target.value })}
@@ -657,6 +663,7 @@ export default function PatientsPage() {
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Emergency Contact</label>
                     <input
+                      data-testid="patient-emergency-contact-input"
                       type="text"
                       value={formData.emergencyContact}
                       onChange={(e) =>
@@ -674,6 +681,7 @@ export default function PatientsPage() {
                 <div>
                   <label className="block text-sm text-gray-700 mb-2">Address</label>
                   <textarea
+                    data-testid="patient-address-input"
                     rows={3}
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
@@ -684,6 +692,7 @@ export default function PatientsPage() {
 
               <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
                 <button
+                  data-testid="patient-cancel-button"
                   type="button"
                   onClick={() => {
                     setShowModal(false);
@@ -697,6 +706,7 @@ export default function PatientsPage() {
                   Cancel
                 </button>
                 <button
+                  data-testid="patient-submit-button"
                   type="submit"
                   disabled={isSubmitting}
                   className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60"

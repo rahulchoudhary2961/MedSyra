@@ -27,6 +27,7 @@ type BillingsResponse = {
 
 type DoctorsResponse = { success: boolean; data: { items: Doctor[] } };
 type PatientsResponse = { success: boolean; data: { items: Patient[] } };
+type PatientResponse = { success: boolean; data: Patient };
 type MeResponse = { success: boolean; data: { role: string } };
 type CreateInvoiceResponse = { success: boolean; data: Invoice };
 type ReconciliationResponse = { success: boolean; data: ReconciliationReport };
@@ -193,21 +194,49 @@ export default function BillingsPage() {
       });
   }, [appliedSearch, appliedStatusFilter, patientFilterId]);
 
-  const loadMetadata = useCallback(() => {
-    Promise.all([
+  const loadMetadata = useCallback(async () => {
+    const [patientsResult, doctorsResult] = await Promise.allSettled([
       apiRequest<PatientsResponse>("/patients?limit=100", { authenticated: true }),
       apiRequest<DoctorsResponse>("/doctors?limit=100", { authenticated: true })
-    ])
-      .then(([patientsRes, doctorsRes]) => {
-        setPatients(patientsRes.data.items || []);
-        setDoctors(doctorsRes.data.items || []);
-      })
-      .catch((err: Error) => setError(err.message || "Failed to load billing form data"));
+    ]);
+
+    if (patientsResult.status === "fulfilled") {
+      setPatients(patientsResult.value.data.items || []);
+    }
+
+    if (doctorsResult.status === "fulfilled") {
+      setDoctors(doctorsResult.value.data.items || []);
+    }
+
+    if (patientsResult.status === "rejected" && doctorsResult.status === "rejected") {
+      const reason = patientsResult.reason instanceof Error ? patientsResult.reason : doctorsResult.reason;
+      setError(reason instanceof Error ? reason.message : "Failed to load billing form data");
+    }
   }, []);
 
   useEffect(() => {
     loadMetadata();
   }, [loadMetadata]);
+
+  useEffect(() => {
+    if (!patientFilterId || patients.some((patient) => patient.id === patientFilterId)) {
+      return;
+    }
+
+    apiRequest<PatientResponse>(`/patients/${patientFilterId}`, { authenticated: true })
+      .then((response) => {
+        setPatients((current) => {
+          if (current.some((patient) => patient.id === response.data.id)) {
+            return current;
+          }
+
+          return [response.data, ...current];
+        });
+      })
+      .catch(() => {
+        // Keep the page usable even if the patient lookup fails.
+      });
+  }, [patientFilterId, patients]);
 
   useEffect(() => {
     apiRequest<MeResponse>("/auth/me", { authenticated: true })
@@ -539,6 +568,7 @@ export default function BillingsPage() {
           <p className="text-gray-600 mt-1">Manage invoices and payment records</p>
         </div>
         <button
+          data-testid="create-invoice-button"
           onClick={() => {
             setInvoiceForm({
               ...initialInvoiceForm,
@@ -871,11 +901,12 @@ export default function BillingsPage() {
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
-          <form onSubmit={handleCreateInvoice} className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
+          <form data-testid="invoice-form-modal" onSubmit={handleCreateInvoice} className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-lg text-gray-900">Create Invoice</h2>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Patient</label>
               <select
+                data-testid="invoice-patient-select"
                 value={invoiceForm.patientId}
                 onChange={(e) => setInvoiceForm((p) => ({ ...p, patientId: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
@@ -902,6 +933,7 @@ export default function BillingsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-1">Doctor (optional)</label>
               <select
+                data-testid="invoice-doctor-select"
                 value={invoiceForm.doctorId}
                 onChange={(e) => {
                   const nextDoctorId = e.target.value;
@@ -1014,6 +1046,7 @@ export default function BillingsPage() {
                         <div>
                           <label className="mb-1 block text-sm text-gray-700">Description</label>
                           <input
+                            data-testid={index === 0 ? "invoice-item-description-input" : undefined}
                             type="text"
                             value={item.description}
                             onChange={(e) => handleInvoiceItemChange(item.id, "description", e.target.value)}
@@ -1025,6 +1058,7 @@ export default function BillingsPage() {
                         <div>
                           <label className="mb-1 block text-sm text-gray-700">Qty</label>
                           <input
+                            data-testid={index === 0 ? "invoice-item-quantity-input" : undefined}
                             type="number"
                             min={0.01}
                             step="0.01"
@@ -1037,6 +1071,7 @@ export default function BillingsPage() {
                         <div>
                           <label className="mb-1 block text-sm text-gray-700">Unit Price</label>
                           <input
+                            data-testid={index === 0 ? "invoice-item-unit-price-input" : undefined}
                             type="number"
                             min={0.01}
                             step="0.01"
@@ -1061,6 +1096,7 @@ export default function BillingsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-1">Due Date</label>
               <input
+                data-testid="invoice-due-date-input"
                 type="date"
                 value={invoiceForm.dueDate}
                 onChange={(e) => setInvoiceForm((p) => ({ ...p, dueDate: e.target.value }))}
@@ -1070,6 +1106,7 @@ export default function BillingsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-1">Notes</label>
               <textarea
+                data-testid="invoice-notes-input"
                 rows={3}
                 value={invoiceForm.notes}
                 onChange={(e) => setInvoiceForm((p) => ({ ...p, notes: e.target.value }))}
@@ -1078,6 +1115,7 @@ export default function BillingsPage() {
             </div>
             <div className="flex justify-end gap-3">
               <button
+                data-testid="invoice-cancel-button"
                 type="button"
                 onClick={() => {
                   setShowCreate(false);
@@ -1090,7 +1128,7 @@ export default function BillingsPage() {
               >
                 Cancel
               </button>
-              <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-emerald-600 text-white rounded-lg">
+              <button data-testid="invoice-submit-button" type="submit" disabled={isSubmitting} className="px-4 py-2 bg-emerald-600 text-white rounded-lg">
                 {isSubmitting ? "Creating..." : "Create"}
               </button>
             </div>
@@ -1100,7 +1138,7 @@ export default function BillingsPage() {
 
       {showPaymentModal && selectedInvoice && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
-          <form onSubmit={handleRecordPayment} className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
+          <form data-testid="payment-form-modal" onSubmit={handleRecordPayment} className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-lg text-gray-900">Record Payment</h2>
             <p className="text-sm text-gray-600">
               Invoice: {selectedInvoice.invoice_number} | Balance: {formatInvoiceMoney(selectedInvoice.balance_amount, selectedInvoice.currency)}
@@ -1120,6 +1158,7 @@ export default function BillingsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-1">Amount</label>
               <input
+                data-testid="payment-amount-input"
                 type="number"
                 min={0.01}
                 step="0.01"
@@ -1139,6 +1178,7 @@ export default function BillingsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-1">Method</label>
               <select
+                data-testid="payment-method-select"
                 value={paymentForm.method}
                 onChange={(e) => setPaymentForm((p) => ({ ...p, method: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
@@ -1154,6 +1194,7 @@ export default function BillingsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-1">Reference</label>
               <input
+                data-testid="payment-reference-input"
                 type="text"
                 value={paymentForm.reference}
                 onChange={(e) => setPaymentForm((p) => ({ ...p, reference: e.target.value }))}
@@ -1162,6 +1203,7 @@ export default function BillingsPage() {
             </div>
             <div className="flex justify-end gap-3">
               <button
+                data-testid="payment-cancel-button"
                 type="button"
                 onClick={() => {
                   setShowPaymentModal(false);
@@ -1172,7 +1214,7 @@ export default function BillingsPage() {
               >
                 Cancel
               </button>
-              <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-green-600 text-white rounded-lg">
+              <button data-testid="payment-submit-button" type="submit" disabled={isSubmitting} className="px-4 py-2 bg-green-600 text-white rounded-lg">
                 {isSubmitting ? "Saving..." : "Record Payment"}
               </button>
             </div>

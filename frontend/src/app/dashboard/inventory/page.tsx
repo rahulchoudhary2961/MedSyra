@@ -181,7 +181,7 @@ export default function InventoryPage() {
     setSaving(true);
     setError("");
     try {
-      await apiRequest<SingleResponse<InventoryMovement>>("/inventory/movements", {
+      const response = await apiRequest<SingleResponse<InventoryMovement>>("/inventory/movements", {
         method: "POST",
         authenticated: true,
         body: {
@@ -193,9 +193,10 @@ export default function InventoryPage() {
           notes: movementForm.notes.trim() || undefined
         }
       });
-      await Promise.all([loadItems(), loadMovements()]);
+      setMovements((current) => [response.data, ...current.filter((movement) => movement.id !== response.data.id)]);
       setMovementForm(initialMovementForm());
       setShowMovementForm(false);
+      void Promise.all([loadItems(), loadMovements()]).catch(() => undefined);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to record stock movement");
     } finally {
@@ -223,12 +224,12 @@ export default function InventoryPage() {
             Refresh
           </button>
           {canManageInventory(currentUser?.role) && (
-            <button type="button" onClick={() => setShowItemForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
+            <button data-testid="inventory-add-item-button" type="button" onClick={() => setShowItemForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
               <Boxes className="h-4 w-4" />
               Add Consumable
             </button>
           )}
-          <button type="button" onClick={() => setShowMovementForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">
+          <button data-testid="inventory-record-movement-button" type="button" onClick={() => setShowMovementForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">
             <Plus className="h-4 w-4" />
             Record Movement
           </button>
@@ -246,7 +247,7 @@ export default function InventoryPage() {
       </section>
 
       {showItemForm && canManageInventory(currentUser?.role) && (
-        <section className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
+        <section data-testid="inventory-item-form" className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Catalog</p>
@@ -255,18 +256,18 @@ export default function InventoryPage() {
             <button type="button" onClick={() => setShowItemForm(false)} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm text-emerald-800 hover:bg-white">Close</button>
           </div>
           <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitItem}>
-            <input value={itemForm.code} onChange={(event) => setItemForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input value={itemForm.name} onChange={(event) => setItemForm((current) => ({ ...current, name: event.target.value }))} placeholder="Consumable name" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
-            <input value={itemForm.category} onChange={(event) => setItemForm((current) => ({ ...current, category: event.target.value }))} placeholder="Category" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input value={itemForm.unit} onChange={(event) => setItemForm((current) => ({ ...current, unit: event.target.value }))} placeholder="Unit" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input type="number" min="0" step="0.01" value={itemForm.reorderLevel} onChange={(event) => setItemForm((current) => ({ ...current, reorderLevel: event.target.value }))} placeholder="Reorder level" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <div className="lg:col-span-2"><button type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Create Consumable"}</button></div>
+            <input data-testid="inventory-item-code-input" value={itemForm.code} onChange={(event) => setItemForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="inventory-item-name-input" value={itemForm.name} onChange={(event) => setItemForm((current) => ({ ...current, name: event.target.value }))} placeholder="Consumable name" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
+            <input data-testid="inventory-item-category-input" value={itemForm.category} onChange={(event) => setItemForm((current) => ({ ...current, category: event.target.value }))} placeholder="Category" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="inventory-item-unit-input" value={itemForm.unit} onChange={(event) => setItemForm((current) => ({ ...current, unit: event.target.value }))} placeholder="Unit" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="inventory-item-reorder-level-input" type="number" min="0" step="0.01" value={itemForm.reorderLevel} onChange={(event) => setItemForm((current) => ({ ...current, reorderLevel: event.target.value }))} placeholder="Reorder level" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <div className="lg:col-span-2"><button data-testid="inventory-item-submit-button" type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Create Consumable"}</button></div>
           </form>
         </section>
       )}
 
       {showMovementForm && (
-        <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <section data-testid="inventory-movement-form" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Ledger</p>
@@ -275,18 +276,18 @@ export default function InventoryPage() {
             <button type="button" onClick={() => setShowMovementForm(false)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Close</button>
           </div>
           <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitMovement}>
-            <select value={movementForm.itemId} onChange={(event) => setMovementForm((current) => ({ ...current, itemId: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
+            <select data-testid="inventory-movement-item-select" value={movementForm.itemId} onChange={(event) => setMovementForm((current) => ({ ...current, itemId: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
               <option value="">Select consumable</option>
               {items.map((item) => <option key={item.id} value={item.id}>{item.name} | {item.current_stock} {item.unit}</option>)}
             </select>
-            <select value={movementForm.movementType} onChange={(event) => setMovementForm((current) => ({ ...current, movementType: event.target.value as InventoryMovement["movement_type"] }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <select data-testid="inventory-movement-type-select" value={movementForm.movementType} onChange={(event) => setMovementForm((current) => ({ ...current, movementType: event.target.value as InventoryMovement["movement_type"] }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
               {Object.entries(movementLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
-            <input type="number" min="0.01" step="0.01" value={movementForm.quantity} onChange={(event) => setMovementForm((current) => ({ ...current, quantity: event.target.value }))} placeholder="Quantity" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
-            <input type="number" min="0" step="0.01" value={movementForm.unitCost} onChange={(event) => setMovementForm((current) => ({ ...current, unitCost: event.target.value }))} placeholder="Unit cost" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input type="date" value={movementForm.movementDate} onChange={(event) => setMovementForm((current) => ({ ...current, movementDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
-            <input value={movementForm.notes} onChange={(event) => setMovementForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Notes or reason" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <div className="lg:col-span-2"><button type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Record Movement"}</button></div>
+            <input data-testid="inventory-movement-quantity-input" type="number" min="0.01" step="0.01" value={movementForm.quantity} onChange={(event) => setMovementForm((current) => ({ ...current, quantity: event.target.value }))} placeholder="Quantity" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
+            <input data-testid="inventory-movement-unit-cost-input" type="number" min="0" step="0.01" value={movementForm.unitCost} onChange={(event) => setMovementForm((current) => ({ ...current, unitCost: event.target.value }))} placeholder="Unit cost" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="inventory-movement-date-input" type="date" value={movementForm.movementDate} onChange={(event) => setMovementForm((current) => ({ ...current, movementDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
+            <input data-testid="inventory-movement-notes-input" value={movementForm.notes} onChange={(event) => setMovementForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Notes or reason" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <div className="lg:col-span-2"><button data-testid="inventory-movement-submit-button" type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Record Movement"}</button></div>
           </form>
         </section>
       )}
@@ -377,7 +378,7 @@ export default function InventoryPage() {
           <div className="rounded-3xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">No inventory movements matched the current filters.</div>
         ) : (
           movements.map((movement) => (
-            <article key={movement.id} className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+            <article key={movement.id} data-testid="inventory-movement-card" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-3">
                   <div className="flex flex-wrap gap-2">

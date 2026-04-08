@@ -30,6 +30,11 @@ type PatientsResponse = {
   };
 };
 
+type PatientResponse = {
+  success: boolean;
+  data: Patient;
+};
+
 type DoctorsResponse = {
   success: boolean;
   data: {
@@ -205,15 +210,24 @@ export default function LabPage() {
       const meResponse = await apiRequest<MeResponse>("/auth/me", { authenticated: true });
       setCurrentUser(meResponse.data);
 
-      const [patientsResponse, doctorsResponse, testsResponse] = await Promise.all([
+      const [patientsResult, doctorsResult, testsResult] = await Promise.allSettled([
         apiRequest<PatientsResponse>("/patients?limit=100", { authenticated: true }),
         apiRequest<DoctorsResponse>("/doctors?limit=100", { authenticated: true }),
         apiRequest<LabTestsResponse>("/lab/tests?limit=200", { authenticated: true })
       ]);
 
-      setPatients(patientsResponse.data.items || []);
-      setDoctors(doctorsResponse.data.items || []);
-      setTests(testsResponse.data.items || []);
+      if (patientsResult.status === "fulfilled") {
+        setPatients(patientsResult.value.data.items || []);
+      }
+
+      if (doctorsResult.status === "fulfilled") {
+        setDoctors(doctorsResult.value.data.items || []);
+      }
+
+      if (testsResult.status === "fulfilled") {
+        setTests(testsResult.value.data.items || []);
+      }
+
       await loadOrders();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to load lab workspace");
@@ -229,6 +243,24 @@ export default function LabPage() {
   useEffect(() => {
     setOrderForm(buildInitialOrderForm(patientFilterId));
   }, [patientFilterId]);
+
+  useEffect(() => {
+    if (!patientFilterId || patients.some((patient) => patient.id === patientFilterId)) {
+      return;
+    }
+
+    apiRequest<PatientResponse>(`/patients/${patientFilterId}`, { authenticated: true })
+      .then((response) => {
+        setPatients((current) => {
+          if (current.some((patient) => patient.id === response.data.id)) {
+            return current;
+          }
+
+          return [response.data, ...current];
+        });
+      })
+      .catch(() => undefined);
+  }, [patientFilterId, patients]);
 
   const activeTests = useMemo(() => tests.filter((test) => test.is_active), [tests]);
   const orderSummary = useMemo(() => ({
@@ -293,7 +325,7 @@ export default function LabPage() {
     setError("");
 
     try {
-      await apiRequest<LabTestMutationResponse>("/lab/tests", {
+      const response = await apiRequest<LabTestMutationResponse>("/lab/tests", {
         method: "POST",
         authenticated: true,
         body: {
@@ -308,8 +340,7 @@ export default function LabPage() {
 
       setTestForm(buildInitialTestForm());
       setShowTestForm(false);
-      const testsResponse = await apiRequest<LabTestsResponse>("/lab/tests?limit=200", { authenticated: true });
-      setTests(testsResponse.data.items || []);
+      setTests((current) => [response.data, ...current.filter((test) => test.id !== response.data.id)]);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to save lab test");
     } finally {
@@ -323,15 +354,16 @@ export default function LabPage() {
     setError("");
 
     try {
-      await apiRequest<LabOrderMutationResponse>("/lab/orders", {
+      const response = await apiRequest<LabOrderMutationResponse>("/lab/orders", {
         method: "POST",
         authenticated: true,
         body: buildOrderPayload(orderForm)
       });
 
+      setOrders((current) => [response.data, ...current.filter((order) => order.id !== response.data.id)]);
       setOrderForm(buildInitialOrderForm(patientFilterId));
       setShowOrderForm(false);
-      await loadOrders();
+      void loadOrders().catch(() => undefined);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to create lab order");
     } finally {
@@ -479,6 +511,7 @@ export default function LabPage() {
           </button>
           {canManageLabCatalog(currentUser?.role) && (
             <button
+              data-testid="lab-add-test-button"
               type="button"
               onClick={() => setShowTestForm((current) => !current)}
               className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50"
@@ -488,6 +521,7 @@ export default function LabPage() {
             </button>
           )}
           <button
+            data-testid="lab-book-order-button"
             type="button"
             onClick={() => setShowOrderForm((current) => !current)}
             className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
@@ -524,7 +558,7 @@ export default function LabPage() {
       </section>
 
       {showTestForm && canManageLabCatalog(currentUser?.role) && (
-        <section className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
+        <section data-testid="lab-test-form" className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Catalog</p>
@@ -542,30 +576,30 @@ export default function LabPage() {
           <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitTest}>
             <label className="space-y-2">
               <span className="text-sm text-gray-700">Code</span>
-              <input value={testForm.code} onChange={(event) => setTestForm((current) => ({ ...current, code: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
+              <input data-testid="lab-test-code-input" value={testForm.code} onChange={(event) => setTestForm((current) => ({ ...current, code: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
             </label>
             <label className="space-y-2">
               <span className="text-sm text-gray-700">Test Name</span>
-              <input value={testForm.name} onChange={(event) => setTestForm((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" required />
+              <input data-testid="lab-test-name-input" value={testForm.name} onChange={(event) => setTestForm((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" required />
             </label>
             <label className="space-y-2">
               <span className="text-sm text-gray-700">Department</span>
-              <input value={testForm.department} onChange={(event) => setTestForm((current) => ({ ...current, department: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
+              <input data-testid="lab-test-department-input" value={testForm.department} onChange={(event) => setTestForm((current) => ({ ...current, department: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
             </label>
             <label className="space-y-2">
               <span className="text-sm text-gray-700">Price</span>
-              <input type="number" min="0" step="0.01" value={testForm.price} onChange={(event) => setTestForm((current) => ({ ...current, price: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" required />
+              <input data-testid="lab-test-price-input" type="number" min="0" step="0.01" value={testForm.price} onChange={(event) => setTestForm((current) => ({ ...current, price: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" required />
             </label>
             <label className="space-y-2">
               <span className="text-sm text-gray-700">Turnaround Hours</span>
-              <input type="number" min="0" step="1" value={testForm.turnaroundHours} onChange={(event) => setTestForm((current) => ({ ...current, turnaroundHours: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
+              <input data-testid="lab-test-turnaround-input" type="number" min="0" step="1" value={testForm.turnaroundHours} onChange={(event) => setTestForm((current) => ({ ...current, turnaroundHours: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
             </label>
             <label className="space-y-2 lg:col-span-2">
               <span className="text-sm text-gray-700">Instructions</span>
-              <textarea rows={3} value={testForm.instructions} onChange={(event) => setTestForm((current) => ({ ...current, instructions: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
+              <textarea data-testid="lab-test-instructions-input" rows={3} value={testForm.instructions} onChange={(event) => setTestForm((current) => ({ ...current, instructions: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
             </label>
             <div className="lg:col-span-2">
-              <button type="submit" disabled={isSubmitting} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
+              <button data-testid="lab-test-submit-button" type="submit" disabled={isSubmitting} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
                 {isSubmitting ? "Saving..." : "Create Test"}
               </button>
             </div>
@@ -574,7 +608,7 @@ export default function LabPage() {
       )}
 
       {showOrderForm && (
-        <section className="rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm">
+        <section data-testid="lab-order-form" className="rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Booking</p>
@@ -589,7 +623,7 @@ export default function LabPage() {
             <div className="grid gap-4 lg:grid-cols-2">
               <label className="space-y-2">
                 <span className="text-sm text-gray-700">Patient</span>
-                <select value={orderForm.patientId} onChange={(event) => setOrderForm((current) => ({ ...current, patientId: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" required>
+                <select data-testid="lab-order-patient-select" value={orderForm.patientId} onChange={(event) => setOrderForm((current) => ({ ...current, patientId: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" required>
                   <option value="">Select patient</option>
                   {patientOptions.map((patient) => (
                     <option key={patient.id} value={patient.id}>{patient.label}</option>
@@ -598,7 +632,7 @@ export default function LabPage() {
               </label>
               <label className="space-y-2">
                 <span className="text-sm text-gray-700">Doctor</span>
-                <select value={orderForm.doctorId} onChange={(event) => setOrderForm((current) => ({ ...current, doctorId: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring">
+                <select data-testid="lab-order-doctor-select" value={orderForm.doctorId} onChange={(event) => setOrderForm((current) => ({ ...current, doctorId: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring">
                   <option value="">Unassigned</option>
                   {doctors.map((doctor) => (
                     <option key={doctor.id} value={doctor.id}>{doctor.full_name} | {doctor.specialty}</option>
@@ -607,11 +641,11 @@ export default function LabPage() {
               </label>
               <label className="space-y-2">
                 <span className="text-sm text-gray-700">Ordered Date</span>
-                <input type="date" value={orderForm.orderedDate} onChange={(event) => setOrderForm((current) => ({ ...current, orderedDate: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" required />
+                <input data-testid="lab-order-ordered-date-input" type="date" value={orderForm.orderedDate} onChange={(event) => setOrderForm((current) => ({ ...current, orderedDate: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" required />
               </label>
               <label className="space-y-2">
                 <span className="text-sm text-gray-700">Due Date</span>
-                <input type="date" value={orderForm.dueDate} onChange={(event) => setOrderForm((current) => ({ ...current, dueDate: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
+                <input data-testid="lab-order-due-date-input" type="date" value={orderForm.dueDate} onChange={(event) => setOrderForm((current) => ({ ...current, dueDate: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
               </label>
             </div>
 
@@ -628,14 +662,14 @@ export default function LabPage() {
 
               {orderForm.items.map((item, index) => (
                 <div key={`new-item-${index}`} className="grid gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-4 lg:grid-cols-[1.2fr_1fr_0.7fr_auto]">
-                  <select value={item.labTestId} onChange={(event) => setOrderForm((current) => ({ ...current, items: applyTestSelection(current.items, index, event.target.value) }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring">
+                  <select data-testid={index === 0 ? "lab-order-item-test-select" : undefined} value={item.labTestId} onChange={(event) => setOrderForm((current) => ({ ...current, items: applyTestSelection(current.items, index, event.target.value) }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring">
                     <option value="">Custom test</option>
                     {activeTests.map((test) => (
                       <option key={test.id} value={test.id}>{test.name} {test.code ? `| ${test.code}` : ""}</option>
                     ))}
                   </select>
-                  <input value={item.testName} onChange={(event) => setOrderForm((current) => ({ ...current, items: current.items.map((entry, entryIndex) => entryIndex === index ? { ...entry, testName: event.target.value } : entry) }))} placeholder="Test name" className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
-                  <input type="number" min="0" step="0.01" value={item.price} onChange={(event) => setOrderForm((current) => ({ ...current, items: current.items.map((entry, entryIndex) => entryIndex === index ? { ...entry, price: event.target.value } : entry) }))} placeholder="Price" className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
+                  <input data-testid={index === 0 ? "lab-order-item-name-input" : undefined} value={item.testName} onChange={(event) => setOrderForm((current) => ({ ...current, items: current.items.map((entry, entryIndex) => entryIndex === index ? { ...entry, testName: event.target.value } : entry) }))} placeholder="Test name" className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
+                  <input data-testid={index === 0 ? "lab-order-item-price-input" : undefined} type="number" min="0" step="0.01" value={item.price} onChange={(event) => setOrderForm((current) => ({ ...current, items: current.items.map((entry, entryIndex) => entryIndex === index ? { ...entry, price: event.target.value } : entry) }))} placeholder="Price" className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
                   <button type="button" onClick={() => setOrderForm((current) => ({ ...current, items: current.items.length === 1 ? [buildEmptyOrderItem()] : current.items.filter((_, itemIndex) => itemIndex !== index) }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-white">
                     Remove
                   </button>
@@ -645,11 +679,11 @@ export default function LabPage() {
 
             <label className="space-y-2">
               <span className="text-sm text-gray-700">Notes</span>
-              <textarea rows={3} value={orderForm.notes} onChange={(event) => setOrderForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Clinical note or collection instruction" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
+              <textarea data-testid="lab-order-notes-input" rows={3} value={orderForm.notes} onChange={(event) => setOrderForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Clinical note or collection instruction" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring" />
             </label>
 
             <div>
-              <button type="submit" disabled={isSubmitting} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
+              <button data-testid="lab-order-submit-button" type="submit" disabled={isSubmitting} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
                 {isSubmitting ? "Saving..." : "Create Lab Order"}
               </button>
             </div>
@@ -717,7 +751,7 @@ export default function LabPage() {
           </div>
         ) : (
           orders.map((order) => (
-            <article key={order.id} className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+            <article key={order.id} data-testid="lab-order-card" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">

@@ -11,6 +11,7 @@ import { AuthUser, Doctor, MedicalRecord, Medicine, MedicineBatch, Patient, Phar
 type ListResponse<T> = { success: boolean; data: { items: T[] } };
 type SingleResponse<T> = { success: boolean; data: T };
 type MeResponse = { success: boolean; data: AuthUser };
+type PatientResponse = { success: boolean; data: Patient };
 type PharmacyInsightItem = Medicine & {
   severity: "critical" | "high" | "medium";
 };
@@ -296,6 +297,24 @@ export default function PharmacyPage() {
   }, [patientFilterId, loadPatientRecords]);
 
   useEffect(() => {
+    if (!patientFilterId || patients.some((patient) => patient.id === patientFilterId)) {
+      return;
+    }
+
+    apiRequest<PatientResponse>(`/patients/${patientFilterId}`, { authenticated: true })
+      .then((response) => {
+        setPatients((current) => {
+          if (current.some((patient) => patient.id === response.data.id)) {
+            return current;
+          }
+
+          return [response.data, ...current];
+        });
+      })
+      .catch(() => undefined);
+  }, [patientFilterId, patients]);
+
+  useEffect(() => {
     void loadDispenses();
   }, [loadDispenses]);
 
@@ -481,17 +500,17 @@ export default function PharmacyPage() {
           </button>
           {canManagePharmacyCatalog(currentUser?.role) && (
             <>
-              <button type="button" onClick={() => setShowMedicineForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
+              <button data-testid="pharmacy-add-medicine-button" type="button" onClick={() => setShowMedicineForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
                 <Pill className="h-4 w-4" />
                 Add Medicine
               </button>
-              <button type="button" onClick={() => setShowBatchForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
+              <button data-testid="pharmacy-add-batch-button" type="button" onClick={() => setShowBatchForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
                 <Package className="h-4 w-4" />
                 Add Batch
               </button>
             </>
           )}
-          <button type="button" onClick={() => setShowDispenseForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">
+          <button data-testid="pharmacy-dispense-button" type="button" onClick={() => setShowDispenseForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">
             <Plus className="h-4 w-4" />
             Dispense
           </button>
@@ -566,7 +585,7 @@ export default function PharmacyPage() {
       </section>
 
       {showMedicineForm && canManagePharmacyCatalog(currentUser?.role) && (
-        <section className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
+        <section data-testid="pharmacy-medicine-form" className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Catalog</p>
@@ -575,20 +594,20 @@ export default function PharmacyPage() {
             <button type="button" onClick={() => setShowMedicineForm(false)} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm text-emerald-800 hover:bg-white">Close</button>
           </div>
           <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitMedicine}>
-            <input value={medicineForm.code} onChange={(event) => setMedicineForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input value={medicineForm.name} onChange={(event) => setMedicineForm((current) => ({ ...current, name: event.target.value }))} placeholder="Medicine name" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
-            <input value={medicineForm.genericName} onChange={(event) => setMedicineForm((current) => ({ ...current, genericName: event.target.value }))} placeholder="Generic name" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input value={medicineForm.dosageForm} onChange={(event) => setMedicineForm((current) => ({ ...current, dosageForm: event.target.value }))} placeholder="Dosage form" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input value={medicineForm.strength} onChange={(event) => setMedicineForm((current) => ({ ...current, strength: event.target.value }))} placeholder="Strength" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input value={medicineForm.unit} onChange={(event) => setMedicineForm((current) => ({ ...current, unit: event.target.value }))} placeholder="Unit" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input type="number" min="0" step="0.01" value={medicineForm.reorderLevel} onChange={(event) => setMedicineForm((current) => ({ ...current, reorderLevel: event.target.value }))} placeholder="Reorder level" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <div className="lg:col-span-2"><button type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Create Medicine"}</button></div>
+            <input data-testid="pharmacy-medicine-code-input" value={medicineForm.code} onChange={(event) => setMedicineForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="pharmacy-medicine-name-input" value={medicineForm.name} onChange={(event) => setMedicineForm((current) => ({ ...current, name: event.target.value }))} placeholder="Medicine name" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
+            <input data-testid="pharmacy-medicine-generic-name-input" value={medicineForm.genericName} onChange={(event) => setMedicineForm((current) => ({ ...current, genericName: event.target.value }))} placeholder="Generic name" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="pharmacy-medicine-dosage-form-input" value={medicineForm.dosageForm} onChange={(event) => setMedicineForm((current) => ({ ...current, dosageForm: event.target.value }))} placeholder="Dosage form" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="pharmacy-medicine-strength-input" value={medicineForm.strength} onChange={(event) => setMedicineForm((current) => ({ ...current, strength: event.target.value }))} placeholder="Strength" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="pharmacy-medicine-unit-input" value={medicineForm.unit} onChange={(event) => setMedicineForm((current) => ({ ...current, unit: event.target.value }))} placeholder="Unit" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="pharmacy-medicine-reorder-level-input" type="number" min="0" step="0.01" value={medicineForm.reorderLevel} onChange={(event) => setMedicineForm((current) => ({ ...current, reorderLevel: event.target.value }))} placeholder="Reorder level" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <div className="lg:col-span-2"><button data-testid="pharmacy-medicine-submit-button" type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Create Medicine"}</button></div>
           </form>
         </section>
       )}
 
       {showBatchForm && canManagePharmacyCatalog(currentUser?.role) && (
-        <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <section data-testid="pharmacy-batch-form" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Inventory</p>
@@ -597,24 +616,24 @@ export default function PharmacyPage() {
             <button type="button" onClick={() => setShowBatchForm(false)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Close</button>
           </div>
           <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitBatch}>
-            <select value={batchForm.medicineId} onChange={(event) => setBatchForm((current) => ({ ...current, medicineId: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
+            <select data-testid="pharmacy-batch-medicine-select" value={batchForm.medicineId} onChange={(event) => setBatchForm((current) => ({ ...current, medicineId: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
               <option value="">Select medicine</option>
               {medicines.map((medicine) => <option key={medicine.id} value={medicine.id}>{medicine.name} {medicine.code ? `| ${medicine.code}` : ""}</option>)}
             </select>
-            <input value={batchForm.batchNumber} onChange={(event) => setBatchForm((current) => ({ ...current, batchNumber: event.target.value }))} placeholder="Batch number" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
-            <input value={batchForm.manufacturer} onChange={(event) => setBatchForm((current) => ({ ...current, manufacturer: event.target.value }))} placeholder="Manufacturer" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input type="date" value={batchForm.expiryDate} onChange={(event) => setBatchForm((current) => ({ ...current, expiryDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
-            <input type="number" min="0.01" step="0.01" value={batchForm.receivedQuantity} onChange={(event) => setBatchForm((current) => ({ ...current, receivedQuantity: event.target.value }))} placeholder="Received quantity" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
-            <input type="number" min="0" step="0.01" value={batchForm.purchasePrice} onChange={(event) => setBatchForm((current) => ({ ...current, purchasePrice: event.target.value }))} placeholder="Purchase price" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input type="number" min="0" step="0.01" value={batchForm.salePrice} onChange={(event) => setBatchForm((current) => ({ ...current, salePrice: event.target.value }))} placeholder="Sale price" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <input type="date" value={batchForm.receivedDate} onChange={(event) => setBatchForm((current) => ({ ...current, receivedDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <div className="lg:col-span-2"><button type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Create Batch"}</button></div>
+            <input data-testid="pharmacy-batch-number-input" value={batchForm.batchNumber} onChange={(event) => setBatchForm((current) => ({ ...current, batchNumber: event.target.value }))} placeholder="Batch number" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
+            <input data-testid="pharmacy-batch-manufacturer-input" value={batchForm.manufacturer} onChange={(event) => setBatchForm((current) => ({ ...current, manufacturer: event.target.value }))} placeholder="Manufacturer" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="pharmacy-batch-expiry-date-input" type="date" value={batchForm.expiryDate} onChange={(event) => setBatchForm((current) => ({ ...current, expiryDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
+            <input data-testid="pharmacy-batch-received-quantity-input" type="number" min="0.01" step="0.01" value={batchForm.receivedQuantity} onChange={(event) => setBatchForm((current) => ({ ...current, receivedQuantity: event.target.value }))} placeholder="Received quantity" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
+            <input data-testid="pharmacy-batch-purchase-price-input" type="number" min="0" step="0.01" value={batchForm.purchasePrice} onChange={(event) => setBatchForm((current) => ({ ...current, purchasePrice: event.target.value }))} placeholder="Purchase price" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="pharmacy-batch-sale-price-input" type="number" min="0" step="0.01" value={batchForm.salePrice} onChange={(event) => setBatchForm((current) => ({ ...current, salePrice: event.target.value }))} placeholder="Sale price" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <input data-testid="pharmacy-batch-received-date-input" type="date" value={batchForm.receivedDate} onChange={(event) => setBatchForm((current) => ({ ...current, receivedDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <div className="lg:col-span-2"><button data-testid="pharmacy-batch-submit-button" type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Create Batch"}</button></div>
           </form>
         </section>
       )}
 
       {showDispenseForm && (
-        <section className="rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm">
+        <section data-testid="pharmacy-dispense-form" className="rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Dispense</p>
@@ -624,18 +643,19 @@ export default function PharmacyPage() {
           </div>
           <form className="mt-6 grid gap-4" onSubmit={submitDispense}>
             <div className="grid gap-4 lg:grid-cols-2">
-              <select value={dispenseForm.patientId} onChange={(event) => {
+              <select data-testid="pharmacy-dispense-patient-select" value={dispenseForm.patientId} onChange={(event) => {
                 setAssistMessage("");
                 setDispenseForm((current) => ({ ...current, patientId: event.target.value, medicalRecordId: "", prescriptionSnapshot: "", items: [emptyDispenseItem()] }));
               }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
                 <option value="">Select patient</option>
                 {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name} | {patient.patient_code || patient.phone}</option>)}
               </select>
-              <select value={dispenseForm.doctorId} onChange={(event) => setDispenseForm((current) => ({ ...current, doctorId: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+              <select data-testid="pharmacy-dispense-doctor-select" value={dispenseForm.doctorId} onChange={(event) => setDispenseForm((current) => ({ ...current, doctorId: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
                 <option value="">Unassigned doctor</option>
                 {doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.full_name} | {doctor.specialty}</option>)}
               </select>
               <select
+                data-testid="pharmacy-dispense-medical-record-select"
                 value={dispenseForm.medicalRecordId}
                 onChange={(event) => {
                   const record = patientRecords.find((entry) => entry.id === event.target.value);
@@ -652,7 +672,7 @@ export default function PharmacyPage() {
                 <option value="">No linked medical record</option>
                 {patientRecords.map((record) => <option key={record.id} value={record.id}>{formatDate(record.record_date)} | {record.record_type}</option>)}
               </select>
-              <input type="date" value={dispenseForm.dispensedDate} onChange={(event) => setDispenseForm((current) => ({ ...current, dispensedDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
+              <input data-testid="pharmacy-dispense-date-input" type="date" value={dispenseForm.dispensedDate} onChange={(event) => setDispenseForm((current) => ({ ...current, dispensedDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
             </div>
 
             {selectedPatient && (
@@ -665,7 +685,7 @@ export default function PharmacyPage() {
             )}
 
             <div className="space-y-3">
-              <textarea value={dispenseForm.prescriptionSnapshot} onChange={(event) => {
+              <textarea data-testid="pharmacy-dispense-prescription-input" value={dispenseForm.prescriptionSnapshot} onChange={(event) => {
                 setAssistMessage("");
                 setDispenseForm((current) => ({ ...current, prescriptionSnapshot: event.target.value }));
               }} placeholder="Prescription snapshot" rows={3} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
@@ -693,25 +713,25 @@ export default function PharmacyPage() {
               </div>
               {dispenseForm.items.map((item, index) => (
                 <div key={`item-${index}`} className="grid gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-4 lg:grid-cols-[1.4fr_0.5fr_0.6fr_1fr_auto]">
-                  <select value={item.medicineBatchId} onChange={(event) => applyBatch(index, event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
+                  <select data-testid={index === 0 ? "pharmacy-dispense-batch-select" : undefined} value={item.medicineBatchId} onChange={(event) => applyBatch(index, event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
                     <option value="">Select batch</option>
                     {activeBatches.map((batch) => <option key={batch.id} value={batch.id}>{batch.medicine_name} | {batch.batch_number} | Stock {batch.available_quantity} | Exp {formatDate(batch.expiry_date)}</option>)}
                   </select>
-                  <input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(event) => setDispenseForm((current) => ({ ...current, items: current.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, quantity: event.target.value } : entry) }))} placeholder="Qty" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
-                  <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => setDispenseForm((current) => ({ ...current, items: current.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, unitPrice: event.target.value } : entry) }))} placeholder="Price" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-                  <input value={item.directions} onChange={(event) => setDispenseForm((current) => ({ ...current, items: current.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, directions: event.target.value } : entry) }))} placeholder="Directions" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                  <input data-testid={index === 0 ? "pharmacy-dispense-quantity-input" : undefined} type="number" min="0.01" step="0.01" value={item.quantity} onChange={(event) => setDispenseForm((current) => ({ ...current, items: current.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, quantity: event.target.value } : entry) }))} placeholder="Qty" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
+                  <input data-testid={index === 0 ? "pharmacy-dispense-unit-price-input" : undefined} type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => setDispenseForm((current) => ({ ...current, items: current.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, unitPrice: event.target.value } : entry) }))} placeholder="Price" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                  <input data-testid={index === 0 ? "pharmacy-dispense-directions-input" : undefined} value={item.directions} onChange={(event) => setDispenseForm((current) => ({ ...current, items: current.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, directions: event.target.value } : entry) }))} placeholder="Directions" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
                   <button type="button" onClick={() => setDispenseForm((current) => ({ ...current, items: current.items.length === 1 ? [emptyDispenseItem()] : current.items.filter((_, itemIndex) => itemIndex !== index) }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-white">Remove</button>
                 </div>
               ))}
             </div>
 
             <label className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-              <input type="checkbox" checked={dispenseForm.createInvoice} onChange={(event) => setDispenseForm((current) => ({ ...current, createInvoice: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-emerald-600" />
+              <input data-testid="pharmacy-dispense-create-invoice-checkbox" type="checkbox" checked={dispenseForm.createInvoice} onChange={(event) => setDispenseForm((current) => ({ ...current, createInvoice: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-emerald-600" />
               Create linked invoice in billing
             </label>
 
-            <textarea value={dispenseForm.notes} onChange={(event) => setDispenseForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Dispense notes" rows={3} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <div><button type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Dispense Medicines"}</button></div>
+            <textarea data-testid="pharmacy-dispense-notes-input" value={dispenseForm.notes} onChange={(event) => setDispenseForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Dispense notes" rows={3} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <div><button data-testid="pharmacy-dispense-submit-button" type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Dispense Medicines"}</button></div>
           </form>
         </section>
       )}
@@ -816,7 +836,7 @@ export default function PharmacyPage() {
           <div className="rounded-3xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">No pharmacy dispenses matched the current filters.</div>
         ) : (
           dispenses.map((dispense) => (
-            <article key={dispense.id} className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+            <article key={dispense.id} data-testid="pharmacy-dispense-card" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-3">
                   <div className="flex flex-wrap gap-2">

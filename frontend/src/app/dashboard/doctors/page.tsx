@@ -408,6 +408,7 @@ export default function DoctorsPage() {
         {canCreateDoctors && (
           <button
             data-tour-id="tour-doctors-add"
+            data-testid="add-doctor-button"
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
           >
@@ -437,6 +438,7 @@ export default function DoctorsPage() {
           <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2 flex-1">
             <Search className="w-4 h-4 text-gray-500" />
             <input
+              data-testid="doctor-search-input"
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -457,7 +459,7 @@ export default function DoctorsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {doctors.map((doctor) => (
-          <div key={doctor.id} className="bg-white rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-shadow">
+          <div key={doctor.id} data-testid="doctor-card" className="bg-white rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-shadow">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-start gap-4">
                 <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-full flex items-center justify-center text-white text-xl">
@@ -579,11 +581,12 @@ export default function DoctorsPage() {
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateDoctor} className="bg-white rounded-xl p-6 w-full max-w-xl space-y-4 max-h-[90vh] overflow-y-auto">
+          <form data-testid="doctor-form-modal" onSubmit={handleCreateDoctor} className="bg-white rounded-xl p-6 w-full max-w-xl space-y-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg text-gray-900">Add New Doctor</h2>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Linked Login Account</label>
               <select
+                data-testid="doctor-user-select"
                 value={form.userId}
                 onChange={(e) => handleFormChange("userId", e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
@@ -605,6 +608,7 @@ export default function DoctorsPage() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Full Name</label>
                 <input
+                  data-testid="doctor-full-name-input"
                   type="text"
                   value={form.fullName}
                   onChange={(e) => handleFormChange("fullName", e.target.value)}
@@ -615,6 +619,7 @@ export default function DoctorsPage() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Specialty</label>
                 <input
+                  data-testid="doctor-specialty-input"
                   type="text"
                   value={form.specialty}
                   onChange={(e) => handleFormChange("specialty", e.target.value)}
@@ -627,6 +632,7 @@ export default function DoctorsPage() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Experience (Years)</label>
                 <input
+                  data-testid="doctor-experience-years-input"
                   type="text"
                   inputMode="numeric"
                   pattern="\d*"
@@ -638,6 +644,7 @@ export default function DoctorsPage() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Availability</label>
                 <select
+                  data-testid="doctor-availability-select"
                   value={form.availability}
                   onChange={(e) => handleFormChange("availability", e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
@@ -701,6 +708,7 @@ export default function DoctorsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-1">Holidays</label>
               <input
+                data-testid="doctor-holiday-dates-input"
                 type="text"
                 value={form.holidayDates}
                 onChange={(e) => handleFormChange("holidayDates", e.target.value)}
@@ -712,6 +720,7 @@ export default function DoctorsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-1">Consultation Fee</label>
               <input
+                data-testid="doctor-consultation-fee-input"
                 type="text"
                 inputMode="decimal"
                 value={form.consultationFee}
@@ -729,6 +738,7 @@ export default function DoctorsPage() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Phone</label>
                 <input
+                  data-testid="doctor-phone-input"
                   type="text"
                   inputMode="numeric"
                   value={form.phone}
@@ -740,6 +750,7 @@ export default function DoctorsPage() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Email</label>
                 <input
+                  data-testid="doctor-email-input"
                   type="email"
                   value={form.email}
                   onChange={(e) => handleFormChange("email", e.target.value)}
@@ -755,6 +766,7 @@ export default function DoctorsPage() {
             )}
             <div className="flex justify-end gap-3">
               <button
+                data-testid="doctor-cancel-button"
                 type="button"
                 onClick={() => {
                   setShowCreate(false);
@@ -765,6 +777,7 @@ export default function DoctorsPage() {
                 Cancel
               </button>
               <button
+                data-testid="doctor-submit-button"
                 type="submit"
                 disabled={isSubmitting}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-lg disabled:opacity-60"

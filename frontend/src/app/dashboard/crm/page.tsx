@@ -31,9 +31,16 @@ type PatientsResponse = {
   };
 };
 
+type PatientResponse = {
+  success: boolean;
+  data: Patient;
+};
+
 type UsersResponse = {
   success: boolean;
-  data: AuthUser[];
+  data: {
+    items: AuthUser[];
+  };
 };
 
 type MeResponse = {
@@ -323,6 +330,7 @@ export default function CrmPage() {
     try {
       const meResponse = await apiRequest<MeResponse>("/auth/me", { authenticated: true });
       setCurrentUser(meResponse.data);
+      const shouldLoadUsers = isFullAccessRole(meResponse.data.role);
 
       const requests: Array<Promise<unknown>> = [
         loadTasks(),
@@ -330,13 +338,25 @@ export default function CrmPage() {
         apiRequest<PatientsResponse>("/patients?limit=100", { authenticated: true })
       ];
 
-      if (isFullAccessRole(meResponse.data.role)) {
+      if (shouldLoadUsers) {
         requests.push(apiRequest<UsersResponse>("/auth/users", { authenticated: true }));
       }
 
-      const [, , patientsResponse, usersResponse] = await Promise.all(requests);
-      setPatients((patientsResponse as PatientsResponse).data.items || []);
-      setUsers((usersResponse as UsersResponse | undefined)?.data || []);
+      const results = await Promise.allSettled(requests);
+
+      const patientsResult = results[2];
+      if (patientsResult.status === "fulfilled") {
+        setPatients((patientsResult.value as PatientsResponse).data.items || []);
+      }
+
+      if (shouldLoadUsers) {
+        const usersResult = results[3];
+        if (usersResult.status === "fulfilled") {
+          setUsers((usersResult.value as UsersResponse).data.items || []);
+        }
+      } else {
+        setUsers([]);
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to load CRM workspace");
     } finally {
@@ -351,6 +371,24 @@ export default function CrmPage() {
   useEffect(() => {
     setCreateForm(buildDefaultCreateForm(patientFilterId));
   }, [patientFilterId]);
+
+  useEffect(() => {
+    if (!patientFilterId || patients.some((patient) => patient.id === patientFilterId)) {
+      return;
+    }
+
+    apiRequest<PatientResponse>(`/patients/${patientFilterId}`, { authenticated: true })
+      .then((response) => {
+        setPatients((current) => {
+          if (current.some((patient) => patient.id === response.data.id)) {
+            return current;
+          }
+
+          return [response.data, ...current];
+        });
+      })
+      .catch(() => undefined);
+  }, [patientFilterId, patients]);
 
   const resetEditForm = (task: CrmTask) => {
     setEditingTask(task);
@@ -455,6 +493,7 @@ export default function CrmPage() {
             Refresh
           </button>
           <button
+            data-testid="crm-create-task-button"
             type="button"
             onClick={() => setShowCreateForm((current) => !current)}
             className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
@@ -865,7 +904,7 @@ export default function CrmPage() {
       </section>
 
       {showCreateForm && (
-        <section className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
+        <section data-testid="crm-create-form" className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">New Task</p>
@@ -884,6 +923,7 @@ export default function CrmPage() {
             <label className="space-y-2 lg:col-span-2">
               <span className="text-sm text-gray-700">Patient</span>
               <select
+                data-testid="crm-patient-select"
                 value={createForm.patientId}
                 onChange={(event) => setCreateForm((current) => ({ ...current, patientId: event.target.value }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
@@ -901,6 +941,7 @@ export default function CrmPage() {
             <label className="space-y-2">
               <span className="text-sm text-gray-700">Task Type</span>
               <select
+                data-testid="crm-task-type-select"
                 value={createForm.taskType}
                 onChange={(event) =>
                   setCreateForm((current) => ({ ...current, taskType: event.target.value as CreateTaskForm["taskType"] }))
@@ -918,6 +959,7 @@ export default function CrmPage() {
             <label className="space-y-2">
               <span className="text-sm text-gray-700">Due Date</span>
               <input
+                data-testid="crm-due-date-input"
                 type="date"
                 value={createForm.dueDate}
                 onChange={(event) => setCreateForm((current) => ({ ...current, dueDate: event.target.value }))}
@@ -929,6 +971,7 @@ export default function CrmPage() {
             <label className="space-y-2">
               <span className="text-sm text-gray-700">Priority</span>
               <select
+                data-testid="crm-priority-select"
                 value={createForm.priority}
                 onChange={(event) =>
                   setCreateForm((current) => ({ ...current, priority: event.target.value as CreateTaskForm["priority"] }))
@@ -947,6 +990,7 @@ export default function CrmPage() {
               <label className="space-y-2">
                 <span className="text-sm text-gray-700">Assign To</span>
                 <select
+                  data-testid="crm-assignee-select"
                   value={createForm.assignedUserId}
                   onChange={(event) => setCreateForm((current) => ({ ...current, assignedUserId: event.target.value }))}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
@@ -964,6 +1008,7 @@ export default function CrmPage() {
             <label className="space-y-2 lg:col-span-2">
               <span className="text-sm text-gray-700">Task Title</span>
               <input
+                data-testid="crm-title-input"
                 value={createForm.title}
                 onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))}
                 placeholder="Optional custom title"
@@ -974,6 +1019,7 @@ export default function CrmPage() {
             <label className="space-y-2 lg:col-span-2">
               <span className="text-sm text-gray-700">Notes</span>
               <textarea
+                data-testid="crm-notes-input"
                 rows={3}
                 value={createForm.outcomeNotes}
                 onChange={(event) => setCreateForm((current) => ({ ...current, outcomeNotes: event.target.value }))}
@@ -984,6 +1030,7 @@ export default function CrmPage() {
 
             <div className="lg:col-span-2">
               <button
+                data-testid="crm-submit-button"
                 type="submit"
                 disabled={isSubmitting}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1006,7 +1053,7 @@ export default function CrmPage() {
           </div>
         ) : (
           tasks.map((task) => (
-            <article key={task.id} className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+            <article key={task.id} data-testid="crm-task-card" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">

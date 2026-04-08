@@ -68,6 +68,11 @@ type PatientsResponse = {
   };
 };
 
+type PatientResponse = {
+  success: boolean;
+  data: Patient;
+};
+
 type MeResponse = {
   success: boolean;
   data: {
@@ -692,6 +697,24 @@ export default function AppointmentsPage() {
   }, [fetchPatients]);
 
   useEffect(() => {
+    if (!patientFilterId || patients.some((patient) => patient.id === patientFilterId)) {
+      return;
+    }
+
+    apiRequest<PatientResponse>(`/patients/${patientFilterId}`, { authenticated: true })
+      .then((response) => {
+        setPatients((current) => {
+          if (current.some((patient) => patient.id === response.data.id)) {
+            return current;
+          }
+
+          return [response.data, ...current];
+        });
+      })
+      .catch(() => undefined);
+  }, [patientFilterId, patients]);
+
+  useEffect(() => {
     void fetchCurrentUser();
   }, [fetchCurrentUser]);
 
@@ -1239,6 +1262,39 @@ export default function AppointmentsPage() {
         }));
       });
   }, [showConsultationModal, selectedAppointment, selectedConsultationRecord]);
+
+  useEffect(() => {
+    if (!showModal || editingAppointmentId || !patientFilterId) {
+      return;
+    }
+
+    const patient = patients.find((item) => item.id === patientFilterId);
+    if (!patient) {
+      return;
+    }
+
+    setPatientSearch((current) => (current.trim() ? current : patient.full_name));
+    setForm((current) => {
+      if (
+        current.patientId === patient.id &&
+        current.patientCode === (patient.patient_code || "") &&
+        current.patientName === patient.full_name &&
+        current.mobileNumber === (patient.phone || "") &&
+        current.email === (patient.email || "")
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        patientId: patient.id,
+        patientCode: patient.patient_code || "",
+        patientName: patient.full_name,
+        mobileNumber: patient.phone || "",
+        email: patient.email || ""
+      };
+    });
+  }, [editingAppointmentId, patientFilterId, patients, showModal]);
 
   const openEdit = (appointment: Appointment) => {
     setSelectedAppointment(null);
@@ -1939,6 +1995,7 @@ export default function AppointmentsPage() {
             )}
             {canManageCalendar && (
               <button
+                data-testid="add-appointment-button"
                 data-tour-id="tour-appointments-add"
                 onClick={() => openCreate(selectedDay)}
                 className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
@@ -2354,7 +2411,7 @@ export default function AppointmentsPage() {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
-          <form onSubmit={submitAppointment} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white">
+          <form data-testid="appointment-form-modal" onSubmit={submitAppointment} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white">
             <div className="border-b border-gray-200 p-6">
               <h2 className="text-lg text-gray-900">{editingAppointmentId ? "Edit Appointment" : "Add Appointment"}</h2>
             </div>
@@ -2363,6 +2420,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Find Patient *</span>
                 <input
+                  data-testid="appointment-find-patient-input"
                   type="text"
                   value={patientSearch}
                   onChange={(e) => handlePatientSearchChange(e.target.value)}
@@ -2375,6 +2433,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Select Patient *</span>
                 <select
+                  data-testid="appointment-patient-select"
                   value={form.patientId}
                   onChange={(e) => selectPatient(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2"
@@ -2531,6 +2590,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Patient Name *</span>
                 <input
+                  data-testid="appointment-patient-name-input"
                   type="text"
                   value={form.patientName}
                   readOnly
@@ -2542,6 +2602,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Patient ID *</span>
                 <input
+                  data-testid="appointment-patient-id-input"
                   type="text"
                   value={form.patientCode}
                   readOnly
@@ -2553,6 +2614,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Mobile Number</span>
                 <input
+                  data-testid="appointment-mobile-number-input"
                   type="text"
                   value={form.mobileNumber}
                   onChange={(e) => setForm((prev) => ({ ...prev, mobileNumber: e.target.value }))}
@@ -2564,6 +2626,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Email ID</span>
                 <input
+                  data-testid="appointment-email-input"
                   type="email"
                   value={form.email}
                   onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
@@ -2575,6 +2638,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Doctor *</span>
                 <select
+                  data-testid="appointment-doctor-select"
                   value={form.doctorId}
                   onChange={(e) =>
                     setForm((prev) => {
@@ -2606,6 +2670,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Category *</span>
                 <select
+                  data-testid="appointment-category-select"
                   value={form.category}
                   onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2"
@@ -2622,6 +2687,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Status *</span>
                 <select
+                  data-testid="appointment-status-select"
                   value={form.status}
                   onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2"
@@ -2639,6 +2705,7 @@ export default function AppointmentsPage() {
                 <label className="block space-y-2">
                   <span className="text-sm text-gray-700">Scheduled On *</span>
                   <input
+                    data-testid="appointment-date-input"
                     type="date"
                     value={form.appointmentDate}
                     onChange={(e) =>
@@ -2663,6 +2730,7 @@ export default function AppointmentsPage() {
                 <label className="block space-y-2">
                   <span className="text-sm text-gray-700">Time *</span>
                   <select
+                    data-testid="appointment-time-select"
                     value={form.appointmentTime}
                     onChange={(e) => setForm((prev) => ({ ...prev, appointmentTime: e.target.value }))}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2"
@@ -2680,6 +2748,7 @@ export default function AppointmentsPage() {
                 <label className="block space-y-2">
                   <span className="text-sm text-gray-700">Duration</span>
                   <select
+                    data-testid="appointment-duration-select"
                     value={form.durationMinutes}
                     onChange={(e) =>
                       setForm((prev) => {
@@ -2707,6 +2776,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Planned Procedures</span>
                 <textarea
+                  data-testid="appointment-procedures-input"
                   rows={4}
                   value={form.plannedProcedures}
                   onChange={(e) => setForm((prev) => ({ ...prev, plannedProcedures: e.target.value }))}
@@ -2718,6 +2788,7 @@ export default function AppointmentsPage() {
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Notes</span>
                 <textarea
+                  data-testid="appointment-notes-input"
                   rows={4}
                   value={form.notes}
                   onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
@@ -2729,6 +2800,7 @@ export default function AppointmentsPage() {
 
             <div className="flex justify-end gap-3 border-t border-gray-200 p-6">
               <button
+                data-testid="appointment-cancel-button"
                 type="button"
                 onClick={() => {
                   setShowModal(false);
@@ -2740,6 +2812,7 @@ export default function AppointmentsPage() {
                 Cancel
               </button>
               <button
+                data-testid="appointment-submit-button"
                 type="submit"
                 disabled={isSubmitting}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"

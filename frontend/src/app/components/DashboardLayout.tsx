@@ -23,7 +23,7 @@ import {
   LogOut
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiRequest } from "@/lib/api";
+import { ApiRequestError, apiRequest } from "@/lib/api";
 import { clearAuthToken, getAuthToken } from "@/lib/auth";
 import { clearLoginIntroPending, shouldShowLoginIntro } from "@/lib/onboarding";
 import {
@@ -203,9 +203,13 @@ export default function DashboardLayout({
           setShowTour(true);
         }
       })
-      .catch(() => {
-        clearAuthToken();
-        router.replace("/auth/signin");
+      .catch((error) => {
+        // Only clear the session on real auth failures. Transient API errors like
+        // rate-limits should not force the user back to sign-in.
+        if (error instanceof ApiRequestError && [401, 403].includes(error.status)) {
+          clearAuthToken();
+          router.replace("/auth/signin");
+        }
       })
       .finally(() => {
         setIsCheckingAuth(false);

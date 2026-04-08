@@ -36,6 +36,11 @@ type PatientsResponse = {
   };
 };
 
+type PatientResponse = {
+  success: boolean;
+  data: Patient;
+};
+
 type MedicalRecordPayload = {
   patientId: string;
   doctorId: string;
@@ -275,22 +280,58 @@ export default function MedicalRecordsPage() {
   }, [patientFilterId]);
 
   const loadMetadata = () => {
-    Promise.all([
-      apiRequest<DoctorsResponse>("/doctors?limit=100", { authenticated: true }),
-      apiRequest<PatientsResponse>("/patients?limit=100", { authenticated: true }),
-      apiRequest<MeResponse>("/auth/me", { authenticated: true })
-    ])
-      .then(([doctorsRes, patientsRes, meRes]) => {
-        setDoctors(doctorsRes.data.items || []);
-        setPatients(patientsRes.data.items || []);
+    apiRequest<MeResponse>("/auth/me", { authenticated: true })
+      .then((meRes) => {
         setCurrentRole(meRes.data.role || "");
       })
       .catch((err: Error) => setError(err.message || "Failed to load form options"));
   };
 
+  const loadFormOptions = useCallback(async () => {
+    const [doctorsResult, patientsResult] = await Promise.allSettled([
+      apiRequest<DoctorsResponse>("/doctors?limit=100", { authenticated: true }),
+      patientFilterId
+        ? apiRequest<PatientResponse>(`/patients/${patientFilterId}`, { authenticated: true })
+        : apiRequest<PatientsResponse>("/patients?limit=100", { authenticated: true })
+    ]);
+
+    if (doctorsResult.status === "fulfilled") {
+      setDoctors(doctorsResult.value.data.items || []);
+    }
+
+    if (patientsResult.status === "fulfilled") {
+      if (patientFilterId) {
+        const patient = patientsResult.value.data as Patient;
+        setPatients((current) => {
+          if (current.some((item) => item.id === patient.id)) {
+            return current;
+          }
+
+          return [patient, ...current];
+        });
+      } else {
+        const patientList = patientsResult.value.data as PatientsResponse["data"];
+        setPatients(patientList.items || []);
+      }
+    }
+
+    if (doctorsResult.status === "rejected" && patientsResult.status === "rejected") {
+      const reason = doctorsResult.reason instanceof Error ? doctorsResult.reason : patientsResult.reason;
+      setError(reason instanceof Error ? reason.message : "Failed to load form options");
+    }
+  }, [patientFilterId]);
+
   useEffect(() => {
     loadMetadata();
   }, []);
+
+  useEffect(() => {
+    if (!showFormModal) {
+      return;
+    }
+
+    void loadFormOptions();
+  }, [loadFormOptions, showFormModal]);
 
   useEffect(() => {
     loadRecords();
@@ -750,6 +791,7 @@ export default function MedicalRecordsPage() {
         </div>
         {(isFullAccessRole(currentRole) || currentRole === "doctor") && (
           <button
+            data-testid="add-medical-record-button"
             onClick={() => {
               resetForm();
               setShowFormModal(true);
@@ -902,12 +944,13 @@ export default function MedicalRecordsPage() {
 
       {showFormModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
-          <form onSubmit={handleSubmit} className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
+          <form data-testid="medical-record-form-modal" onSubmit={handleSubmit} className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <h2 className="text-lg text-gray-900">{editingRecordId ? "Edit Medical Record" : "Add Medical Record"}</h2>
 
             <div>
               <label className="block text-sm text-gray-700 mb-2">Patient</label>
               <select
+                data-testid="medical-record-patient-select"
                 value={form.patientId}
                 onChange={(e) => setForm({ ...form, patientId: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
@@ -925,6 +968,7 @@ export default function MedicalRecordsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-2">Doctor</label>
               <select
+                data-testid="medical-record-doctor-select"
                 value={form.doctorId}
                 onChange={(e) => setForm({ ...form, doctorId: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
@@ -942,6 +986,7 @@ export default function MedicalRecordsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-2">Record Type</label>
               <input
+                data-testid="medical-record-type-input"
                 type="text"
                 value={form.recordType}
                 onChange={(e) => setForm({ ...form, recordType: e.target.value })}
@@ -953,6 +998,7 @@ export default function MedicalRecordsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-2">Symptoms</label>
               <textarea
+                data-testid="medical-record-symptoms-input"
                 rows={2}
                 value={form.symptoms}
                 onChange={(e) => setForm({ ...form, symptoms: e.target.value })}
@@ -963,6 +1009,7 @@ export default function MedicalRecordsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-2">Diagnosis</label>
               <textarea
+                data-testid="medical-record-diagnosis-input"
                 rows={2}
                 value={form.diagnosis}
                 onChange={(e) => setForm({ ...form, diagnosis: e.target.value })}
@@ -1098,6 +1145,7 @@ export default function MedicalRecordsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-2">Prescription</label>
               <textarea
+                data-testid="medical-record-prescription-input"
                 rows={2}
                 value={form.prescription}
                 onChange={(e) => setForm({ ...form, prescription: e.target.value })}
@@ -1105,20 +1153,23 @@ export default function MedicalRecordsPage() {
               />
             </div>
 
-            <DoctorSpeedTools
-              patientId={form.patientId || null}
-              doctorId={form.doctorId || null}
-              prescription={form.prescription}
-              notes={form.notes}
-              diagnosis={form.diagnosis}
-              onPrescriptionChange={(value) => setForm((current) => ({ ...current, prescription: value }))}
-              onNotesChange={(value) => setForm((current) => ({ ...current, notes: value }))}
-            />
+            {form.patientId && form.doctorId && (
+              <DoctorSpeedTools
+                patientId={form.patientId}
+                doctorId={form.doctorId}
+                prescription={form.prescription}
+                notes={form.notes}
+                diagnosis={form.diagnosis}
+                onPrescriptionChange={(value) => setForm((current) => ({ ...current, prescription: value }))}
+                onNotesChange={(value) => setForm((current) => ({ ...current, notes: value }))}
+              />
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-gray-700 mb-2">Status</label>
                 <select
+                  data-testid="medical-record-status-select"
                   value={form.status}
                   onChange={(e) => setForm({ ...form, status: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg"
@@ -1131,6 +1182,7 @@ export default function MedicalRecordsPage() {
               <div>
                 <label className="block text-sm text-gray-700 mb-2">Record Date</label>
                 <input
+                  data-testid="medical-record-date-input"
                   type="date"
                   value={form.recordDate}
                   onChange={(e) => setForm({ ...form, recordDate: e.target.value })}
@@ -1143,6 +1195,7 @@ export default function MedicalRecordsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-2">Attachment (photo or PDF)</label>
               <input
+                data-testid="medical-record-file-input"
                 type="file"
                 accept="image/*,.pdf"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
@@ -1172,6 +1225,7 @@ export default function MedicalRecordsPage() {
             <div>
               <label className="block text-sm text-gray-700 mb-2">Notes</label>
               <textarea
+                data-testid="medical-record-notes-input"
                 rows={3}
                 value={form.notes}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
@@ -1181,6 +1235,7 @@ export default function MedicalRecordsPage() {
 
             <div className="flex justify-end gap-3">
               <button
+                data-testid="medical-record-cancel-button"
                 type="button"
                 onClick={() => {
                   setShowFormModal(false);
@@ -1191,6 +1246,7 @@ export default function MedicalRecordsPage() {
                 Cancel
               </button>
               <button
+                data-testid="medical-record-submit-button"
                 type="submit"
                 disabled={isSubmitting}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-lg disabled:opacity-60"
