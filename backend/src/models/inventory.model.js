@@ -416,6 +416,7 @@ const createInventoryMovement = async (organizationId, payload, actor = null) =>
       `
         INSERT INTO inventory_movements (
           organization_id,
+          branch_id,
           item_id,
           movement_type,
           quantity,
@@ -425,11 +426,12 @@ const createInventoryMovement = async (organizationId, payload, actor = null) =>
           movement_date,
           performed_by_user_id
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
         RETURNING id
       `,
       [
         organizationId,
+        payload.branchId,
         payload.itemId,
         payload.movementType,
         quantity,

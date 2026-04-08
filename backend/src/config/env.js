@@ -2,6 +2,9 @@ const dotenv = require("dotenv");
 
 dotenv.config();
 
+const resolvedNodeEnv = process.env.NODE_ENV || "development";
+const isProduction = resolvedNodeEnv === "production";
+
 const parseBoolean = (value, defaultValue = false) => {
   if (value === undefined) {
     return defaultValue;
@@ -18,7 +21,7 @@ if (missing.length > 0) {
 }
 
 const env = {
-  nodeEnv: process.env.NODE_ENV || "development",
+  nodeEnv: resolvedNodeEnv,
   port: Number(process.env.PORT || 5000),
   databaseUrl: process.env.DATABASE_URL,
   dbApplicationName: process.env.DB_APPLICATION_NAME || "medsyra-api",
@@ -48,7 +51,7 @@ const env = {
   unusualTrafficThresholdPerMinute: Number(process.env.UNUSUAL_TRAFFIC_THRESHOLD_PER_MINUTE || 120),
   maxUrlLength: Number(process.env.MAX_URL_LENGTH || 2048),
   apiRateLimitWindowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
-  apiRateLimitMax: Number(process.env.API_RATE_LIMIT_MAX || 300),
+  apiRateLimitMax: Number(process.env.API_RATE_LIMIT_MAX || (isProduction ? 300 : 5000)),
   loginRateLimitWindowMs: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
   loginRateLimitMax: Number(process.env.LOGIN_RATE_LIMIT_MAX || 10),
   signupRateLimitWindowMs: Number(process.env.SIGNUP_RATE_LIMIT_WINDOW_MS || 60 * 60 * 1000),
@@ -56,9 +59,9 @@ const env = {
   recoveryRateLimitWindowMs: Number(process.env.RECOVERY_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
   recoveryRateLimitMax: Number(process.env.RECOVERY_RATE_LIMIT_MAX || 10),
   readRateLimitWindowMs: Number(process.env.READ_RATE_LIMIT_WINDOW_MS || 60 * 1000),
-  readRateLimitMax: Number(process.env.READ_RATE_LIMIT_MAX || 120),
+  readRateLimitMax: Number(process.env.READ_RATE_LIMIT_MAX || (isProduction ? 120 : 5000)),
   writeRateLimitWindowMs: Number(process.env.WRITE_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
-  writeRateLimitMax: Number(process.env.WRITE_RATE_LIMIT_MAX || 90),
+  writeRateLimitMax: Number(process.env.WRITE_RATE_LIMIT_MAX || (isProduction ? 90 : 2000)),
   aiRateLimitWindowMs: Number(process.env.AI_RATE_LIMIT_WINDOW_MS || 60 * 1000),
   aiRateLimitMax: Number(process.env.AI_RATE_LIMIT_MAX || 20),
   blockAutomationUserAgents: parseBoolean(

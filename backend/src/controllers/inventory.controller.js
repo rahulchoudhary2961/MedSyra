@@ -33,7 +33,8 @@ const createInventoryMovement = asyncHandler(async (req, res) => {
     req.user.organizationId,
     req.body,
     req.user,
-    getRequestMeta(req)
+    getRequestMeta(req),
+    req.branchContext
   );
   res.status(201).json({ success: true, message: "Inventory movement recorded", data });
 });

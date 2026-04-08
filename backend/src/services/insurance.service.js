@@ -9,6 +9,8 @@ const billingsModel = require("../models/billings.model");
 const { logAuditEventSafe } = require("./audit.service");
 
 const APPROVAL_STATUSES = new Set(["approved", "partially_approved"]);
+const resolveBranchScopeId = (branchContext = null, fallback = null) =>
+  branchContext?.readBranchId || branchContext?.writeBranchId || fallback || null;
 
 const todayDateKey = () => new Date().toISOString().slice(0, 10);
 
@@ -117,7 +119,12 @@ const resolveClaimReferences = async (organizationId, payload, current = null) =
     doctor,
     appointment,
     medicalRecord,
-    invoice
+    invoice,
+    branchId:
+      appointment?.branch_id ||
+      medicalRecord?.branch_id ||
+      invoice?.branch_id ||
+      null
   };
 };
 
@@ -287,9 +294,16 @@ const getInsuranceClaimById = async (organizationId, id) => {
   return claim;
 };
 
-const createInsuranceClaim = async (organizationId, payload, actor = null, requestMeta = null) => {
+const createInsuranceClaim = async (organizationId, payload, actor = null, requestMeta = null, branchContext = null) => {
   const references = await resolveClaimReferences(organizationId, payload);
-  const normalizedPayload = deriveClaimPayload({ payload, references, actor });
+  const normalizedPayload = {
+    ...deriveClaimPayload({ payload, references, actor }),
+    branchId: references.branchId || resolveBranchScopeId(branchContext, actor?.branchId)
+  };
+
+  if (!normalizedPayload.branchId) {
+    throw new ApiError(400, "A branch must be selected before creating an insurance claim");
+  }
 
   const client = await pool.connect();
   try {

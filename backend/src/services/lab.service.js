@@ -13,6 +13,8 @@ const { logAuditEventSafe } = require("./audit.service");
 const patientProfileCachePrefix = (organizationId) => `patients:profile:${organizationId}`;
 const dashboardSummaryCachePrefix = (organizationId) => `dashboard:summary:${organizationId}`;
 const dashboardReportsCachePrefix = (organizationId) => `dashboard:reports:${organizationId}`;
+const resolveBranchScopeId = (branchContext = null, fallback = null) =>
+  branchContext?.readBranchId || branchContext?.writeBranchId || fallback || null;
 
 const invalidateLabRelatedCaches = async (organizationId) => {
   await Promise.all([
@@ -167,7 +169,7 @@ const buildStatusTimelineFields = (status, currentOrder = null) => {
   return fields;
 };
 
-const validateOrderReferences = async (organizationId, payload) => {
+const validateOrderReferences = async (organizationId, payload, branchContext = null) => {
   const patient = await patientsModel.getPatientById(organizationId, payload.patientId);
   if (!patient) {
     throw new ApiError(404, "Patient not found");
@@ -183,7 +185,11 @@ const validateOrderReferences = async (organizationId, payload) => {
 
   let appointment = null;
   if (payload.appointmentId) {
-    appointment = await appointmentsModel.getAppointmentById(organizationId, payload.appointmentId);
+    appointment = await appointmentsModel.getAppointmentById(
+      organizationId,
+      payload.appointmentId,
+      payload.branchId || resolveBranchScopeId(branchContext)
+    );
     if (!appointment) {
       throw new ApiError(404, "Appointment not found");
     }
@@ -272,15 +278,20 @@ const getLabOrderById = async (organizationId, id, actor = null) => {
   return order;
 };
 
-const createLabOrder = async (organizationId, payload, actor = null, requestMeta = null) => {
+const createLabOrder = async (organizationId, payload, actor = null, requestMeta = null, branchContext = null) => {
   const scopedDoctorId = await ensureLabDoctorAccess(organizationId, actor, payload.doctorId || null);
   const normalizedPayload = {
     ...payload,
     doctorId: scopedDoctorId || payload.doctorId || null,
-    orderedByUserId: actor?.sub || null
+    orderedByUserId: actor?.sub || null,
+    branchId: payload.branchId || resolveBranchScopeId(branchContext, actor?.branchId)
   };
 
-  await validateOrderReferences(organizationId, normalizedPayload);
+  if (!normalizedPayload.branchId) {
+    throw new ApiError(400, "A branch must be selected before creating a lab order");
+  }
+
+  await validateOrderReferences(organizationId, normalizedPayload, branchContext);
 
   const resolvedItems = await resolveOrderItems(organizationId, normalizedPayload.items || []);
   normalizedPayload.items = resolvedItems.items;

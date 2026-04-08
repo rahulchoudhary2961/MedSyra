@@ -30,7 +30,13 @@ const listLabOrders = asyncHandler(async (req, res) => {
 });
 
 const createLabOrder = asyncHandler(async (req, res) => {
-  const data = await labService.createLabOrder(req.user.organizationId, req.body, req.user, getRequestMeta(req));
+  const data = await labService.createLabOrder(
+    req.user.organizationId,
+    req.body,
+    req.user,
+    getRequestMeta(req),
+    req.branchContext
+  );
   res.status(201).json({ success: true, message: "Lab order created", data });
 });
 

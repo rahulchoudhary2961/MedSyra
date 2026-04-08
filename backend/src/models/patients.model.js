@@ -1,24 +1,61 @@
+const crypto = require("crypto");
 const pool = require("../config/db");
 
 const PHONE_NORMALIZE_SQL = "regexp_replace(phone, '[^0-9]', '', 'g')";
 
-const getNextPatientCode = async (db, organizationId) => {
-  await db.query("SELECT id FROM organizations WHERE id = $1 FOR UPDATE", [organizationId]);
+const generatePatientCode = () => {
+  const timePart = Date.now().toString(36).toUpperCase();
+  const entropyPart = crypto.randomBytes(6).toString("hex").toUpperCase();
+  return `PAT-${timePart}-${entropyPart}`;
+};
 
-  const result = await db.query(
-    `
-      SELECT patient_code
-      FROM patients
-      WHERE organization_id = $1
-      ORDER BY created_at DESC, id DESC
-      LIMIT 1
-    `,
-    [organizationId]
-  );
+const isPatientCodeConflict = (error) =>
+  error?.code === "23505" && String(error?.constraint || "").toLowerCase() === "uq_patients_org_code";
 
-  const lastCode = result.rows[0]?.patient_code || "PAT-0000";
-  const numeric = Number.parseInt(String(lastCode).split("-")[1], 10) || 0;
-  return `PAT-${String(numeric + 1).padStart(4, "0")}`;
+const withPatientCodeRetry = async (client, organizationId, payload, maxAttempts = 3) => {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await client.query("BEGIN");
+
+      const patientCode = generatePatientCode();
+      const query = `
+        INSERT INTO patients (
+          organization_id, patient_code, full_name, age, date_of_birth, gender, phone, email,
+          blood_type, emergency_contact, address, status, last_visit_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        RETURNING id, patient_code, full_name, age, date_of_birth, gender, phone, email, blood_type, emergency_contact,
+                  address, status, last_visit_at, created_at, updated_at
+      `;
+
+      const values = [
+        organizationId,
+        patientCode,
+        payload.fullName,
+        payload.age,
+        payload.dateOfBirth || null,
+        payload.gender,
+        payload.phone,
+        payload.email,
+        payload.bloodType,
+        payload.emergencyContact,
+        payload.address,
+        payload.status || "active",
+        payload.lastVisitAt || null
+      ];
+
+      const { rows } = await client.query(query, values);
+      await client.query("COMMIT");
+      return rows[0];
+    } catch (error) {
+      await client.query("ROLLBACK");
+      if (isPatientCodeConflict(error) && attempt < maxAttempts) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error("Unable to generate a unique patient code");
 };
 
 const listPatients = async ({ organizationId, search, status, limit, offset }) => {
@@ -65,40 +102,7 @@ const createPatient = async (organizationId, payload) => {
   const client = await pool.connect();
 
   try {
-    await client.query("BEGIN");
-    const patientCode = await getNextPatientCode(client, organizationId);
-
-    const query = `
-      INSERT INTO patients (
-        organization_id, patient_code, full_name, age, date_of_birth, gender, phone, email,
-        blood_type, emergency_contact, address, status, last_visit_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-      RETURNING id, patient_code, full_name, age, date_of_birth, gender, phone, email, blood_type, emergency_contact,
-                address, status, last_visit_at, created_at, updated_at
-    `;
-
-    const values = [
-      organizationId,
-      patientCode,
-      payload.fullName,
-      payload.age,
-      payload.dateOfBirth || null,
-      payload.gender,
-      payload.phone,
-      payload.email,
-      payload.bloodType,
-      payload.emergencyContact,
-      payload.address,
-      payload.status || "active",
-      payload.lastVisitAt || null
-    ];
-
-    const { rows } = await client.query(query, values);
-    await client.query("COMMIT");
-    return rows[0];
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
+    return await withPatientCodeRetry(client, organizationId, payload);
   } finally {
     client.release();
   }

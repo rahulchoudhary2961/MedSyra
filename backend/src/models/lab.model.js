@@ -421,6 +421,7 @@ const createLabOrder = async (organizationId, payload) => {
       `
         INSERT INTO lab_orders (
           organization_id,
+          branch_id,
           order_number,
           patient_id,
           doctor_id,
@@ -436,11 +437,12 @@ const createLabOrder = async (organizationId, payload) => {
           report_ready_at,
           completed_at
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
         RETURNING id
       `,
       [
         organizationId,
+        payload.branchId,
         orderNumber,
         payload.patientId,
         payload.doctorId || null,

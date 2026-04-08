@@ -248,6 +248,7 @@ const getClaimByIdWithDb = async (db, organizationId, id) => {
       SELECT
         ic.id,
         ic.organization_id,
+        ic.branch_id,
         ic.claim_number,
         ic.provider_id,
         ip.name AS provider_name,
@@ -389,11 +390,12 @@ const listInsuranceClaims = async (organizationId, query = {}) => {
   const whereClause = conditions.join(" AND ");
 
   const rowsSql = `
-    SELECT
-      ic.id,
-      ic.organization_id,
-      ic.claim_number,
-      ic.provider_id,
+      SELECT
+        ic.id,
+        ic.organization_id,
+        ic.branch_id,
+        ic.claim_number,
+        ic.provider_id,
       ip.name AS provider_name,
       ip.payer_code,
       ic.patient_id,
@@ -497,6 +499,7 @@ const createInsuranceClaimWithDb = async (db, organizationId, payload) => {
     `
       INSERT INTO insurance_claims (
         organization_id,
+        branch_id,
         claim_number,
         provider_id,
         patient_id,
@@ -521,13 +524,14 @@ const createInsuranceClaimWithDb = async (db, organizationId, payload) => {
         notes,
         last_status_changed_at
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,NOW())
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,NOW())
       RETURNING id
     `,
-    [
-      organizationId,
-      claimNumber,
-      payload.providerId,
+      [
+        organizationId,
+        payload.branchId,
+        claimNumber,
+        payload.providerId,
       payload.patientId,
       payload.doctorId || null,
       payload.appointmentId || null,
