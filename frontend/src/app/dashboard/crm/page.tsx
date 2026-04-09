@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CalendarDays, HeartPulse, Phone, Plus, RefreshCcw, Stethoscope, Users } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { canAccessCrm, isFullAccessRole } from "@/lib/roles";
@@ -284,6 +284,9 @@ export default function CrmPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingTask, setEditingTask] = useState<CrmTask | null>(null);
   const [createForm, setCreateForm] = useState<CreateTaskForm>(buildDefaultCreateForm(patientFilterId));
+  const [patientSearch, setPatientSearch] = useState("");
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
+  const patientSearchRef = useRef<HTMLDivElement | null>(null);
   const [editForm, setEditForm] = useState<EditTaskForm>({
     status: "open",
     priority: "medium",
@@ -296,6 +299,18 @@ export default function CrmPage() {
     () => patients.map((patient) => ({ id: patient.id, label: `${patient.full_name} | ${patient.patient_code || patient.phone}` })),
     [patients]
   );
+  const selectedCreatePatient = useMemo(
+    () => patients.find((patient) => patient.id === createForm.patientId) || null,
+    [createForm.patientId, patients]
+  );
+  const filteredPatientOptions = useMemo(() => {
+    const query = patientSearch.trim().toLowerCase();
+    if (!query) {
+      return patientOptions;
+    }
+
+    return patientOptions.filter((patient) => patient.label.toLowerCase().includes(query));
+  }, [patientOptions, patientSearch]);
 
   const loadTasks = useCallback(async () => {
     const params = new URLSearchParams();
@@ -373,6 +388,36 @@ export default function CrmPage() {
   }, [patientFilterId]);
 
   useEffect(() => {
+    if (!showCreateForm) {
+      setPatientSearch("");
+      setShowPatientDropdown(false);
+      return;
+    }
+
+    setPatientSearch(selectedCreatePatient?.full_name || "");
+  }, [selectedCreatePatient, showCreateForm]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!patientSearchRef.current) {
+        return;
+      }
+
+      if (!patientSearchRef.current.contains(event.target as Node)) {
+        setShowPatientDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!patientFilterId || patients.some((patient) => patient.id === patientFilterId)) {
       return;
     }
@@ -403,6 +448,11 @@ export default function CrmPage() {
 
   const submitCreateTask = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!createForm.patientId) {
+      setError("Select a patient from the dropdown.");
+      return;
+    }
+
     setIsSubmitting(true);
     setError("");
 
@@ -423,6 +473,8 @@ export default function CrmPage() {
 
       setShowCreateForm(false);
       setCreateForm(buildDefaultCreateForm(patientFilterId));
+      setPatientSearch("");
+      setShowPatientDropdown(false);
       await Promise.all([loadTasks(), loadSmartFollowUp()]);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to create CRM task");
@@ -466,7 +518,31 @@ export default function CrmPage() {
       ...buildDefaultCreateForm(payload.patientId),
       ...payload
     });
+    setPatientSearch("");
+    setShowPatientDropdown(false);
     setShowCreateForm(true);
+  };
+
+  const selectCreatePatient = (patientId: string) => {
+    const patient = patients.find((item) => item.id === patientId);
+    if (!patient) {
+      return;
+    }
+
+    setPatientSearch(patient.full_name);
+    setCreateForm((current) => ({ ...current, patientId: patient.id }));
+    setShowPatientDropdown(false);
+  };
+
+  const handlePatientSearchChange = (value: string) => {
+    setPatientSearch(value);
+    setShowPatientDropdown(true);
+
+    if (!value.trim()) {
+      setCreateForm((current) => ({ ...current, patientId: "" }));
+    } else if (selectedCreatePatient && value.trim().toLowerCase() !== selectedCreatePatient.full_name.toLowerCase()) {
+      setCreateForm((current) => ({ ...current, patientId: "" }));
+    }
   };
 
   if (currentUser && !canAccessCrm(currentUser.role)) {
@@ -904,142 +980,166 @@ export default function CrmPage() {
       </section>
 
       {showCreateForm && (
-        <section data-testid="crm-create-form" className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">New Task</p>
-              <h2 className="mt-2 text-xl text-gray-900">Create CRM Task</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
+          <section
+            data-testid="crm-create-form"
+            className="w-full max-w-4xl rounded-3xl border border-emerald-200 bg-emerald-50/95 p-6 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">New Task</p>
+                <h2 className="mt-2 text-xl text-gray-900">Create CRM Task</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(false)}
+                className="rounded-lg border border-emerald-200 px-3 py-2 text-sm text-emerald-800 hover:bg-white"
+              >
+                Close
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowCreateForm(false)}
-              className="rounded-lg border border-emerald-200 px-3 py-2 text-sm text-emerald-800 hover:bg-white"
-            >
-              Close
-            </button>
-          </div>
 
-          <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitCreateTask}>
-            <label className="space-y-2 lg:col-span-2">
-              <span className="text-sm text-gray-700">Patient</span>
-              <select
-                data-testid="crm-patient-select"
-                value={createForm.patientId}
-                onChange={(event) => setCreateForm((current) => ({ ...current, patientId: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
-                required
-              >
-                <option value="">Select patient</option>
-                {patientOptions.map((patient) => (
-                  <option key={patient.id} value={patient.id}>
-                    {patient.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitCreateTask}>
+              <div ref={patientSearchRef} className="relative space-y-2 lg:col-span-2">
+                <span className="text-sm text-gray-700">Patient</span>
+                <input
+                  data-testid="crm-patient-search-input"
+                  type="text"
+                  value={patientSearch}
+                  onFocus={() => setShowPatientDropdown(true)}
+                  onChange={(event) => handlePatientSearchChange(event.target.value)}
+                  placeholder="Search patient by name"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
+                  required
+                />
+                {showPatientDropdown && filteredPatientOptions.length > 0 && (
+                  <div
+                    data-testid="crm-patient-dropdown"
+                    className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg"
+                  >
+                    {filteredPatientOptions.map((patient) => (
+                      <button
+                        key={patient.id}
+                        type="button"
+                        onClick={() => selectCreatePatient(patient.id)}
+                        className="flex w-full flex-col gap-1 border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-emerald-50"
+                      >
+                        <span className="text-sm font-medium text-gray-900">{patient.label.split(" | ")[0]}</span>
+                        <span className="text-xs text-gray-500">{patient.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {showPatientDropdown && patientSearch.trim() && filteredPatientOptions.length === 0 && (
+                  <div className="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 shadow-lg">
+                    No patient matched the search.
+                  </div>
+                )}
+              </div>
 
-            <label className="space-y-2">
-              <span className="text-sm text-gray-700">Task Type</span>
-              <select
-                data-testid="crm-task-type-select"
-                value={createForm.taskType}
-                onChange={(event) =>
-                  setCreateForm((current) => ({ ...current, taskType: event.target.value as CreateTaskForm["taskType"] }))
-                }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
-              >
-                {taskTypes.map((taskType) => (
-                  <option key={taskType} value={taskType}>
-                    {formatTaskType(taskType)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm text-gray-700">Due Date</span>
-              <input
-                data-testid="crm-due-date-input"
-                type="date"
-                value={createForm.dueDate}
-                onChange={(event) => setCreateForm((current) => ({ ...current, dueDate: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
-                required
-              />
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm text-gray-700">Priority</span>
-              <select
-                data-testid="crm-priority-select"
-                value={createForm.priority}
-                onChange={(event) =>
-                  setCreateForm((current) => ({ ...current, priority: event.target.value as CreateTaskForm["priority"] }))
-                }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
-              >
-                {taskPriorities.map((priority) => (
-                  <option key={priority} value={priority}>
-                    {priority}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {isFullAccessRole(currentUser?.role) && (
               <label className="space-y-2">
-                <span className="text-sm text-gray-700">Assign To</span>
+                <span className="text-sm text-gray-700">Task Type</span>
                 <select
-                  data-testid="crm-assignee-select"
-                  value={createForm.assignedUserId}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, assignedUserId: event.target.value }))}
+                  data-testid="crm-task-type-select"
+                  value={createForm.taskType}
+                  onChange={(event) =>
+                    setCreateForm((current) => ({ ...current, taskType: event.target.value as CreateTaskForm["taskType"] }))
+                  }
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
                 >
-                  <option value="">Unassigned</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.full_name} | {user.role}
+                  {taskTypes.map((taskType) => (
+                    <option key={taskType} value={taskType}>
+                      {formatTaskType(taskType)}
                     </option>
                   ))}
                 </select>
               </label>
-            )}
 
-            <label className="space-y-2 lg:col-span-2">
-              <span className="text-sm text-gray-700">Task Title</span>
-              <input
-                data-testid="crm-title-input"
-                value={createForm.title}
-                onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))}
-                placeholder="Optional custom title"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
-              />
-            </label>
+              <label className="space-y-2">
+                <span className="text-sm text-gray-700">Due Date</span>
+                <input
+                  data-testid="crm-due-date-input"
+                  type="date"
+                  value={createForm.dueDate}
+                  onChange={(event) => setCreateForm((current) => ({ ...current, dueDate: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
+                  required
+                />
+              </label>
 
-            <label className="space-y-2 lg:col-span-2">
-              <span className="text-sm text-gray-700">Notes</span>
-              <textarea
-                data-testid="crm-notes-input"
-                rows={3}
-                value={createForm.outcomeNotes}
-                onChange={(event) => setCreateForm((current) => ({ ...current, outcomeNotes: event.target.value }))}
-                placeholder="Optional handoff notes or outreach context"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
-              />
-            </label>
+              <label className="space-y-2">
+                <span className="text-sm text-gray-700">Priority</span>
+                <select
+                  data-testid="crm-priority-select"
+                  value={createForm.priority}
+                  onChange={(event) =>
+                    setCreateForm((current) => ({ ...current, priority: event.target.value as CreateTaskForm["priority"] }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
+                >
+                  {taskPriorities.map((priority) => (
+                    <option key={priority} value={priority}>
+                      {priority}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <div className="lg:col-span-2">
-              <button
-                data-testid="crm-submit-button"
-                type="submit"
-                disabled={isSubmitting}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSubmitting ? "Saving..." : "Create Task"}
-              </button>
-            </div>
-          </form>
-        </section>
+              {isFullAccessRole(currentUser?.role) && (
+                <label className="space-y-2">
+                  <span className="text-sm text-gray-700">Assign To</span>
+                  <select
+                    data-testid="crm-assignee-select"
+                    value={createForm.assignedUserId}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, assignedUserId: event.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
+                  >
+                    <option value="">Unassigned</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.full_name} | {user.role}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label className="space-y-2 lg:col-span-2">
+                <span className="text-sm text-gray-700">Task Title</span>
+                <input
+                  data-testid="crm-title-input"
+                  value={createForm.title}
+                  onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="Optional custom title"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
+                />
+              </label>
+
+              <label className="space-y-2 lg:col-span-2">
+                <span className="text-sm text-gray-700">Notes</span>
+                <textarea
+                  data-testid="crm-notes-input"
+                  rows={3}
+                  value={createForm.outcomeNotes}
+                  onChange={(event) => setCreateForm((current) => ({ ...current, outcomeNotes: event.target.value }))}
+                  placeholder="Optional handoff notes or outreach context"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
+                />
+              </label>
+
+              <div className="lg:col-span-2">
+                <button
+                  data-testid="crm-submit-button"
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSubmitting ? "Saving..." : "Create Task"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
       )}
 
       <section className="space-y-4">

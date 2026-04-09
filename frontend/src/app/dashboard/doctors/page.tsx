@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Clock, Link as LinkIcon, Mail, Phone, Plus, Search, Star, Trash2 } from "lucide-react";
+import { Clock, Link as LinkIcon, Mail, Phone, Plus, Star, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { canAccessDoctors, canManageDoctors, isFullAccessRole } from "@/lib/roles";
 import { Doctor } from "@/types/api";
@@ -433,21 +433,19 @@ export default function DoctorsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl p-4 border border-gray-200">
-        <div className="flex gap-3">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2 flex-1">
-            <Search className="w-4 h-4 text-gray-500" />
-            <input
-              data-testid="doctor-search-input"
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, specialty, email or phone"
-              className="bg-transparent border-none outline-none flex-1 text-sm"
-            />
-          </div>
-        </div>
-      </div>
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <label className="space-y-2">
+          <span className="text-sm text-gray-700">Search</span>
+          <input
+            data-testid="doctor-search-input"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, specialty, email or phone"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
+          />
+        </label>
+      </section>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       {loading && <p className="text-sm text-gray-500">Loading doctors...</p>}

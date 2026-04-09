@@ -482,7 +482,15 @@ const sendMedicalRecordFollowUpReminder = async (organizationId, id, actor = nul
 
   const hasSuccessfulDelivery = deliveries.some((item) => item.status === "sent");
   if (!hasSuccessfulDelivery) {
-    throw new ApiError(502, "Failed to send follow-up reminder using the configured channels");
+    const details = deliveries
+      .map((item) => `${item.channel}: ${item.error || item.status}`)
+      .join("; ");
+    throw new ApiError(
+      502,
+      details
+        ? `Failed to send follow-up reminder using the configured channels (${details})`
+        : "Failed to send follow-up reminder using the configured channels"
+    );
   }
 
   const updated = await medicalRecordsRepository.updateMedicalRecord(organizationId, id, {

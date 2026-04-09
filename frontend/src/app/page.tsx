@@ -1,180 +1,106 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
-  Bot,
   BellRing,
   CalendarDays,
-  CreditCard,
-  ClipboardList,
-  LayoutDashboard,
   CheckCircle2,
+  ClipboardList,
+  CreditCard,
+  FileText,
+  Boxes,
+  FlaskConical,
+  MessageSquareText,
+  ShieldCheck,
   Sparkles,
-  TrendingUp,
+  Users
 } from "lucide-react";
 import BrandLogo from "./components/BrandLogo";
 import { getAuthToken } from "@/lib/auth";
 import { apiRequest } from "@/lib/api";
 
-const solutionItems = [
-  "Appointments",
-  "Billing",
-  "Patient records",
-  "Reports",
-  "WhatsApp reminders",
-  "AI assistant",
-];
-
-const featureSections = [
+const whatItDoes = [
+  {
+    title: "Patients",
+    icon: Users,
+    description: "Keep patient details, visit history, and contact information in one place."
+  },
   {
     title: "Appointments",
     icon: CalendarDays,
-    points: [
-      "Book appointments",
-      "Add walk-in patients",
-      "View daily schedule",
-    ],
+    description: "Book consultations, walk-ins, and follow-ups without manual registers."
+  },
+  {
+    title: "Medical Records",
+    icon: FileText,
+    description: "Store consultation notes, prescriptions, and reports together."
   },
   {
     title: "Billing",
     icon: CreditCard,
-    points: [
-      "Generate invoices",
-      "Track payments",
-      "See pending dues",
-    ],
-  },
-  {
-    title: "Patient History",
-    icon: ClipboardList,
-    points: [
-      "View past visits",
-      "Access records",
-      "Track patient details",
-    ],
-  },
-  {
-    title: "Dashboard",
-    icon: LayoutDashboard,
-    points: [
-      "Today appointments",
-      "Today revenue",
-      "Pending payments",
-      "Clinic reports",
-    ],
-  },
-  {
-    title: "AI Assistant",
-    icon: Bot,
-    points: [
-      "Ask operational questions in plain English",
-      "Get answers from your real data",
-      "Patient-aware assistant context",
-    ],
+    description: "Generate bills, track payments, and see pending dues quickly."
   },
   {
     title: "Reminders",
     icon: BellRing,
-    points: [
-      "One-click WhatsApp reminders",
-      "Follow-up tracking",
-      "Appointment reminder flow",
-    ],
+    description: "Send appointment and follow-up reminders to reduce missed visits."
   },
   {
-    title: "Smart Insights",
-    icon: TrendingUp,
-    points: [
-      "Patients who did not return",
-      "Most common issue",
-      "Weekly and monthly revenue",
-    ],
-  },
-];
-
-const flowSteps = [
-  "Add patient",
-  "Book appointment / walk-in",
-  "Complete consultation",
-  "Send reminder",
-  "Generate bill",
-  "Ask AI assistant",
-];
-
-const reasons = [
-  "Easy to use",
-  "No training required",
-  "Saves time",
-  "Works on any device",
-];
-
-const aiHighlights = [
-  {
-    title: "AI Patient Summary",
+    title: "Smart Assistant",
     icon: Sparkles,
-    description: "Give doctors a quick view of last visit, recurring issue, follow-up status, and last prescription."
-  },
-  {
-    title: "One-click Reminders",
-    icon: BellRing,
-    description: "Open WhatsApp with a ready reminder message for follow-up and appointment communication."
-  },
-  {
-    title: "Smart Insights",
-    icon: TrendingUp,
-    description: "See return gaps, common issues, revenue, and follow-ups due without opening multiple screens."
-  },
-  {
-    title: "MedSyra Copilot",
-    icon: Bot,
-    description: "Ask questions like total income this month or unpaid invoices and get a direct answer from your data."
+    description: "Ask simple questions like revenue, unpaid bills, or today's workload."
   }
 ];
 
-const pricingPlans = [
+const moreTools = [
   {
-    name: "Starter",
-    price: "Rs. 799 / month",
-    description: "Entry plan for solo doctors and small clinics that need the full operating workflow without a heavy monthly commitment.",
-    points: [
-      "Appointments, patients, billing, reminders, and core reports",
-      "Designed for one doctor with a light staff setup",
-      "Simple monthly plan for smaller practices"
-    ]
+    title: "CRM",
+    icon: MessageSquareText,
+    image: "/pexels-saulozayas-4966406.jpg",
+    description: "Track follow-ups, tasks, and reminders so the front desk can stay organized."
   },
   {
-    name: "Growth",
-    price: "Rs. 1499 / month",
-    description: "For growing clinics with multiple doctors, more staff coordination, and higher reporting and automation needs.",
-    points: [
-      "Advanced reporting, MedSyra Copilot, and fuller staff workflows",
-      "Built for multi-doctor practices and busier front desks",
-      "Best fit for clinics ready to scale daily operations"
-    ]
+    title: "Lab",
+    icon: FlaskConical,
+    image: "/pexels-tima-miroshnichenko-6010795.jpg",
+    description: "Create lab tests and keep orders connected to the patient record."
   },
   {
-    name: "Enterprise",
-    price: "Custom",
-    description: "For hospital groups, chains, or multi-location setups that need onboarding support, custom rollout, and tailored commercials.",
-    points: [
-      "Custom pricing, onboarding, and operational setup",
-      "Flexible commercials for larger account structures",
-      "Best for chains, hospital groups, and special integrations"
-    ]
+    title: "Pharmacy",
+    icon: ClipboardList,
+    image: "/pexels-alejandro-j-paredes-perez-633417416-36897678.jpg",
+    description: "Manage medicine stock and dispensing without separate registers."
   },
   {
-    name: "Usage Credits",
-    price: "Upsell as needed",
-    description: "Keep AI and messaging monetization separate from the core subscription so clinics only pay more when usage expands.",
-    points: [
-      "One shared wallet across AI and messaging features",
-      "Top up credits only when usage grows beyond the included bundle",
-      "Simple rule: metered automation consumes credits from the same wallet"
-    ]
+    title: "Inventory",
+    icon: Boxes,
+    image: "/pexels-gorden-murah-surabaya-28799425-7563452.jpg",
+    description: "Monitor stock movements and keep supplies available for daily work."
+  },
+  {
+    title: "Insurance",
+    icon: ShieldCheck,
+    image: "/pediatrician-doctor-nurse-sitting-desk-medical-office-talking-with-child-healthcare-practitioner-specialist-medicine-providing-professional-radiographic-treatment-hospital-clinic.jpg",
+    description: "Record claims and approvals in the same workflow as the patient visit."
   }
+];
+
+const simpleSteps = [
+  "Add a patient",
+  "Book an appointment",
+  "Complete the visit",
+  "Send a reminder",
+  "Generate the bill"
+];
+
+const trustPoints = [
+  "Easy for doctors and reception staff",
+  "Works on desktop and mobile",
+  "Built for daily clinic operations"
 ];
 
 type ActivationMode = "demo" | "trial";
@@ -313,28 +239,28 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4fbf8_0%,#ffffff_38%,#eef6f2_100%)] text-slate-900">
+    <main className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f5fbf8_0%,#ffffff_42%,#eef6f2_100%)] text-slate-900">
       <section className="relative isolate">
-        <div className="absolute inset-x-0 top-0 -z-10 h-[34rem] bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_28%)]" />
+        <div className="absolute inset-x-0 top-0 -z-10 h-[32rem] bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(20,184,166,0.14),transparent_30%)]" />
         <div className="mx-auto w-full max-w-7xl px-6 pb-16 pt-6 lg:px-10">
           <header className="animate-fade-in flex items-center justify-between py-4">
             <div className="flex items-center gap-3">
               <BrandLogo size={48} className="rounded-2xl shadow-[0_14px_40px_rgba(16,185,129,0.18)]" priority />
               <div>
                 <p className="text-lg font-semibold tracking-[0.18em] text-emerald-700 uppercase">MedSyra</p>
-                <p className="text-sm text-slate-600">Clinic management software for India</p>
+                <p className="text-sm text-slate-600">Simple clinic software for doctors and staff</p>
               </div>
             </div>
 
             <nav className="hidden items-center gap-3 md:flex">
               <Link
                 href="/auth/signin"
-                className="rounded-full border border-emerald-200 bg-white/85 px-5 py-2 text-sm font-medium text-slate-700 transition hover:border-emerald-300 hover:text-emerald-700"
+                className="rounded-full border border-emerald-200 bg-white/90 px-5 py-2 text-sm font-medium text-slate-700 transition hover:border-emerald-300 hover:text-emerald-700"
               >
                 Sign In
               </Link>
               <Link
-                href="#demo-form"
+                href="#contact-form"
                 onClick={() => setActivationMode("demo")}
                 className="rounded-full bg-slate-950 px-5 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
               >
@@ -343,21 +269,21 @@ export default function Home() {
             </nav>
           </header>
 
-          <div className="grid items-center gap-16 py-14 lg:min-h-[calc(100vh-6rem)] lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="grid items-center gap-12 py-12 lg:min-h-[calc(100vh-6rem)] lg:grid-cols-[1.02fr_0.98fr]">
             <div className="max-w-3xl">
-              <div className="animate-fade-up mb-6 inline-flex items-center rounded-full border border-emerald-200 bg-white/80 px-4 py-2 text-sm text-emerald-800 shadow-sm backdrop-blur">
-                For independent doctors, clinics, and hospitals
+              <div className="animate-fade-up mb-6 inline-flex items-center rounded-full border border-emerald-200 bg-white/85 px-4 py-2 text-sm text-emerald-800 shadow-sm backdrop-blur">
+                Built for independent doctors, clinics, and small hospitals
               </div>
-              <h1 className="animate-fade-up animation-delay-100 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.04em] text-slate-950 md:text-6xl lg:text-7xl">
-                Run your practice smoothly, without registers or manual work
+              <h1 className="animate-fade-up animation-delay-100 max-w-4xl text-5xl font-semibold leading-[1.03] tracking-[-0.04em] text-slate-950 md:text-6xl lg:text-7xl">
+                One simple place for patients, appointments, billing, and records
               </h1>
               <p className="animate-fade-up animation-delay-200 mt-6 max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
-                Manage appointments, billing, reminders, patient records, reports, and AI workflows in one simple system.
+                MedSyra helps your clinic run without paper registers and scattered spreadsheets. Your team can book visits, keep records, send reminders, and track payments in one system.
               </p>
 
               <div className="animate-fade-up animation-delay-300 mt-10 flex flex-col gap-4 sm:flex-row">
                 <Link
-                  href="#demo-form"
+                  href="#contact-form"
                   onClick={() => setActivationMode("demo")}
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-7 py-4 text-base font-semibold text-white transition hover:bg-emerald-700"
                 >
@@ -365,7 +291,7 @@ export default function Home() {
                   <ArrowRight className="h-4 w-4" />
                 </Link>
                 <Link
-                  href="#demo-form"
+                  href="#contact-form"
                   onClick={() => setActivationMode("trial")}
                   className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-7 py-4 text-base font-semibold text-slate-800 transition hover:border-emerald-300 hover:text-emerald-700"
                 >
@@ -374,62 +300,50 @@ export default function Home() {
               </div>
 
               <div className="animate-fade-up animation-delay-400 mt-8 flex flex-wrap gap-3 text-sm text-slate-600">
-                <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Easy for doctors and reception</div>
-                <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Works on laptop and mobile</div>
-                <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">Built for daily healthcare operations</div>
-                <div className="hover-lift rounded-full border border-emerald-100 bg-white/80 px-4 py-2">AI summaries and reminders built in</div>
+                {trustPoints.map((point) => (
+                  <div key={point} className="hover-lift rounded-full border border-emerald-100 bg-white/85 px-4 py-2">
+                    {point}
+                  </div>
+                ))}
               </div>
             </div>
 
             <div className="animate-slide-in-right animation-delay-200 relative">
-              <div className="animate-pulse-soft absolute -left-6 top-12 hidden h-24 w-24 rounded-full bg-emerald-200/50 blur-2xl lg:block" />
-              <div className="animate-float-soft rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_30px_120px_rgba(15,23,42,0.12)] backdrop-blur">
-                <div className="rounded-[1.5rem] bg-slate-950 p-6 text-white">
-                  <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                    <div>
-                      <p className="text-sm uppercase tracking-[0.24em] text-emerald-300">Operations dashboard</p>
-                      <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">See today clearly</h2>
-                    </div>
-                    <div className="rounded-2xl bg-white/10 px-3 py-2 text-right">
-                      <p className="text-xs text-slate-300">Today</p>
-                      <p className="text-lg font-semibold">18 patients</p>
-                    </div>
+              <div className="animate-pulse-soft absolute -left-6 top-8 hidden h-24 w-24 rounded-full bg-emerald-200/50 blur-2xl lg:block" />
+              <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+                <div className="overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.12)]">
+                  <Image
+                    src="/physician-meeting-with-patient-discuss-medical-test-results-cabinet.jpg"
+                    alt="Doctor discussing patient test results"
+                    width={900}
+                    height={1100}
+                    priority
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                <div className="grid gap-5">
+                  <div className="overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.12)]">
+                    <Image
+                      src="/pediatrician-doctor-nurse-sitting-desk-medical-office-talking-with-child-healthcare-practitioner-specialist-medicine-providing-professional-radiographic-treatment-hospital-clinic.jpg"
+                      alt="Clinic staff speaking with a child and family"
+                      width={900}
+                      height={700}
+                      className="h-full w-full object-cover"
+                    />
                   </div>
-
-                  <div className="mt-6 grid gap-4 md:grid-cols-2">
-                    <div className="hover-lift rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <p className="text-sm text-slate-300">Today appointments</p>
-                      <p className="mt-2 text-3xl font-semibold text-white">24</p>
-                    </div>
-                    <div className="hover-lift rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <p className="text-sm text-slate-300">Today revenue</p>
-                      <p className="mt-2 text-3xl font-semibold text-white">Rs. 18,500</p>
-                    </div>
-                    <div className="hover-lift rounded-2xl border border-white/10 bg-white/5 p-4 md:col-span-2">
-                      <div className="flex items-start gap-4">
-                        <div className="rounded-2xl bg-emerald-400/15 p-3 text-emerald-300">
-                          <ClipboardList className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <p className="text-base font-medium text-white">Pending payments</p>
-                          <p className="mt-2 text-sm leading-6 text-slate-300">
-                            6 bills need follow-up today.
-                          </p>
-                        </div>
+                  <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+                    <div className="flex items-center gap-3">
+                      <BrandLogo size={42} className="rounded-xl" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-500">Clinic operations</p>
+                        <p className="text-lg font-semibold text-slate-950">Everything stays connected</p>
                       </div>
                     </div>
-                    <div className="hover-lift rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-4 md:col-span-2">
-                      <div className="flex items-start gap-4">
-                        <div className="rounded-2xl bg-white/10 p-3 text-emerald-200">
-                          <Bot className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <p className="text-base font-medium text-white">MedSyra Copilot</p>
-                          <p className="mt-2 text-sm leading-6 text-slate-300">
-                            Ask: What is this month revenue? Who needs follow-up today? Which patient did not return?
-                          </p>
-                        </div>
-                      </div>
+                    <div className="mt-5 grid grid-cols-2 gap-3 text-sm text-slate-600">
+                      <div className="rounded-2xl bg-emerald-50 px-4 py-3">Patients</div>
+                      <div className="rounded-2xl bg-emerald-50 px-4 py-3">Appointments</div>
+                      <div className="rounded-2xl bg-emerald-50 px-4 py-3">Billing</div>
+                      <div className="rounded-2xl bg-emerald-50 px-4 py-3">Reminders</div>
                     </div>
                   </div>
                 </div>
@@ -439,240 +353,148 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-5xl px-6 py-18 lg:px-10">
+      <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-10">
         <div className="animate-fade-up mx-auto max-w-3xl text-center">
-          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Problem</p>
+          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">What it does</p>
           <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
-            Common healthcare workflow problems, every day
+            Built around the daily work of a clinic
           </h2>
-          <div className="mt-8 space-y-3 text-lg text-slate-600">
-            <p>Managing patients on paper or in registers?</p>
-            <p>Losing track of payments and follow-ups?</p>
-            <p>Doing too much work manually every day?</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-6 pb-20 lg:px-10">
-        <div className="animate-fade-up rounded-[2rem] bg-slate-950 px-8 py-12 text-white md:px-12">
-          <p className="text-sm uppercase tracking-[0.24em] text-emerald-300">Solution</p>
-          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">
-            One place to handle the full healthcare workflow
-          </h2>
-          <p className="mt-4 max-w-2xl text-base leading-8 text-slate-300">
-            MedSyra keeps appointments, billing, patient records, and reports together so your team can work faster and stay organized.
+          <p className="mt-4 text-base leading-8 text-slate-600">
+            The product is organized around the things staff actually do every day, not around technical menus.
           </p>
-          <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {solutionItems.map((item) => (
-              <div key={item} className="hover-lift rounded-2xl border border-white/10 bg-white/5 px-5 py-5">
-                <p className="text-lg font-medium">{item}</p>
-              </div>
-            ))}
-          </div>
         </div>
-      </section>
 
-      <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-10">
-        <div className="animate-fade-up mx-auto max-w-3xl text-center">
-          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Core features</p>
-          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
-            Simple tools healthcare teams will actually use
-          </h2>
-        </div>
-        <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-          {featureSections.map((section, index) => (
+        <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {whatItDoes.map((item, index) => (
             <div
-              key={section.title}
+              key={item.title}
               className="animate-fade-up hover-lift rounded-[1.75rem] border border-slate-200 bg-white p-7 shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
-              style={{ animationDelay: `${index * 0.08 + 0.12}s` }}
+              style={{ animationDelay: `${index * 0.07 + 0.1}s` }}
             >
               <div className="inline-flex rounded-2xl bg-emerald-50 p-3 text-emerald-700">
-                <section.icon className="h-5 w-5" />
+                <item.icon className="h-5 w-5" />
               </div>
-              <h3 className="mt-5 text-xl font-semibold tracking-[-0.03em] text-slate-950">{section.title}</h3>
-              <ul className="mt-4 space-y-3">
-                {section.points.map((point) => (
-                  <li key={point} className="flex items-start gap-2 text-sm leading-7 text-slate-600">
-                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    <span>{point}</span>
-                  </li>
-                ))}
-              </ul>
+              <h3 className="mt-5 text-xl font-semibold tracking-[-0.03em] text-slate-950">{item.title}</h3>
+              <p className="mt-3 text-sm leading-7 text-slate-600">{item.description}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-10">
-        <div className="animate-fade-up rounded-[2rem] border border-emerald-100 bg-[linear-gradient(135deg,#f2fff8_0%,#ffffff_46%,#ecfeff_100%)] px-8 py-12 md:px-12">
-          <div className="max-w-3xl">
-            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">AI + Automation</p>
-            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-4xl">
-              Modern healthcare workflows without extra complexity
-            </h2>
-            <p className="mt-4 text-base leading-8 text-slate-600">
-              MedSyra now includes doctor-friendly AI summaries, reminder workflows, smart insights, and an assistant that answers questions from your real data.
-            </p>
-          </div>
-
-          <div className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-            {aiHighlights.map((item, index) => (
-              <div
-                key={item.title}
-                className="animate-fade-up hover-lift rounded-[1.5rem] border border-white/80 bg-white/90 p-6 shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
-                style={{ animationDelay: `${index * 0.08 + 0.12}s` }}
-              >
-                <div className="inline-flex rounded-2xl bg-emerald-50 p-3 text-emerald-700">
-                  <item.icon className="h-5 w-5" />
+      <section className="mx-auto max-w-6xl px-6 pb-20 lg:px-10">
+        <div className="rounded-[2rem] bg-slate-950 px-8 py-12 text-white md:px-12">
+          <p className="text-sm uppercase tracking-[0.24em] text-emerald-300">How it works</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">
+            A simple flow your staff can remember
+          </h2>
+          <div className="mt-8 grid gap-4 md:grid-cols-5">
+            {simpleSteps.map((step, index) => (
+              <div key={step} className="rounded-2xl border border-white/10 bg-white/5 px-5 py-5">
+                <div className="mb-4 inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-sm font-semibold text-slate-950">
+                  {index + 1}
                 </div>
-                <h3 className="mt-5 text-xl font-semibold tracking-[-0.03em] text-slate-950">{item.title}</h3>
-                <p className="mt-3 text-sm leading-7 text-slate-600">{item.description}</p>
+                <p className="text-sm font-medium">{step}</p>
               </div>
             ))}
           </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-6 pb-20 lg:px-10">
-        <div className="animate-fade-up mx-auto max-w-3xl text-center">
-          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">How it works</p>
-          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
-            A simple flow from patient entry to billing
-          </h2>
-        </div>
-        <div className="mt-12 grid gap-4 md:grid-cols-5">
-          {flowSteps.map((step, index) => (
-            <div
-              key={step}
-              className="animate-fade-up hover-lift relative rounded-[1.5rem] border border-slate-200 bg-white p-6 text-center shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
-              style={{ animationDelay: `${index * 0.07 + 0.12}s` }}
-            >
-              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-sm font-semibold text-emerald-700">
-                {index + 1}
-              </div>
-              <p className="mt-4 text-sm font-medium leading-6 text-slate-700">{step}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-6 pb-20 lg:px-10">
-        <div className="animate-fade-up mx-auto max-w-3xl text-center">
-          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Why choose this</p>
-          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
-            Made to reduce operational stress, not add to it
-          </h2>
-        </div>
-        <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-          {reasons.map((reason, index) => (
-            <div
-              key={reason}
-              className="animate-fade-up hover-lift rounded-[1.75rem] border border-slate-200 bg-white p-7 shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
-              style={{ animationDelay: `${index * 0.08 + 0.1}s` }}
-            >
-              <div className="inline-flex rounded-2xl bg-emerald-50 p-3 text-emerald-700">
-                <CheckCircle2 className="h-5 w-5" />
-              </div>
-              <h3 className="mt-5 text-xl font-semibold tracking-[-0.03em] text-slate-950">{reason}</h3>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
-                {reason === "Easy to use" && "Clean screens and simple actions for busy healthcare staff."}
-                {reason === "No training required" && "Your team can start using it without long onboarding."}
-                {reason === "Saves time" && "Reduce repetitive front-desk work and manual tracking."}
-                {reason === "Works on any device" && "Use it on laptop, desktop, or mobile during the day."}
-              </p>
-            </div>
-          ))}
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-10">
         <div className="grid gap-6 lg:grid-cols-2">
-          <div className="animate-fade-up hover-lift rounded-[2rem] border border-emerald-100 bg-emerald-50 p-8">
-            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Trust</p>
-            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950">
-              Built for doctors, clinics, and hospitals
-            </h2>
-            <p className="mt-4 text-base leading-8 text-slate-600">
-              Designed for daily use by doctors, reception, and staff.
-            </p>
+          <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.04)]">
+            <Image
+              src="/physician-meeting-with-patient-discuss-medical-test-results-cabinet.jpg"
+              alt="Clinic consultation scene"
+              width={1200}
+              height={800}
+              className="h-72 w-full object-cover"
+            />
+            <div className="p-6">
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-700">For doctors</p>
+              <p className="mt-3 text-lg font-semibold text-slate-950">See the patient story in one place</p>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                Open the latest visit, review notes, and continue care without searching through registers or paper files.
+              </p>
+            </div>
           </div>
-          <div className="animate-fade-up hover-lift animation-delay-150 rounded-[2rem] border border-slate-200 bg-white p-8">
-            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Pricing</p>
-            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950">
-              Start with a free trial
-            </h2>
-            <p className="mt-4 text-base leading-8 text-slate-600">
-              Free trial available with simple clinic plans and optional usage add-ons.
-            </p>
+
+          <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.04)]">
+            <Image
+              src="/pediatrician-doctor-nurse-sitting-desk-medical-office-talking-with-child-healthcare-practitioner-specialist-medicine-providing-professional-radiographic-treatment-hospital-clinic.jpg"
+              alt="Reception and care team at a clinic"
+              width={1200}
+              height={800}
+              className="h-72 w-full object-cover"
+            />
+            <div className="p-6">
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-700">For staff</p>
+              <p className="mt-3 text-lg font-semibold text-slate-950">Handle bookings, reminders, and payments faster</p>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                Reception and billing staff can work from one screen instead of switching between separate tools.
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-10">
         <div className="animate-fade-up mx-auto max-w-3xl text-center">
-          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Pricing Logic</p>
+          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">More tools</p>
           <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
-            Simple plans for every clinic stage
+            CRM, Lab, Pharmacy, Inventory, and Insurance are included too
           </h2>
           <p className="mt-4 text-base leading-8 text-slate-600">
-            Choose Starter, Growth, or Enterprise based on your clinic size. AI and messaging usage can be added separately as your workflow expands.
+            These modules stay simple for the user, but they still connect back to the same patient and appointment data.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
-          {pricingPlans.map((plan, index) => (
+        <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-5">
+          {moreTools.map((tool, index) => (
             <div
-              key={plan.name}
-              className="animate-fade-up hover-lift rounded-[1.75rem] border border-slate-200 bg-white p-7 shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
-              style={{ animationDelay: `${index * 0.08 + 0.1}s` }}
+              key={tool.title}
+              className="animate-fade-up overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.04)]"
+              style={{ animationDelay: `${index * 0.06 + 0.1}s` }}
             >
-              <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-700">{plan.name}</p>
-              <h3 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950">{plan.price}</h3>
-              <p className="mt-4 text-sm leading-7 text-slate-600">{plan.description}</p>
-              <ul className="mt-6 space-y-3">
-                {plan.points.map((point) => (
-                  <li key={point} className="flex items-start gap-2 text-sm leading-7 text-slate-600">
-                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    <span>{point}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="relative h-40 overflow-hidden">
+                <Image src={tool.image} alt={tool.title} fill className="object-cover" />
+              </div>
+              <div className="p-6">
+                <div className="inline-flex rounded-2xl bg-emerald-50 p-3 text-emerald-700">
+                  <tool.icon className="h-5 w-5" />
+                </div>
+                <h3 className="mt-4 text-lg font-semibold text-slate-950">{tool.title}</h3>
+                <p className="mt-2 text-sm leading-7 text-slate-600">{tool.description}</p>
+              </div>
             </div>
           ))}
-        </div>
-
-        <div className="mt-8 animate-fade-up rounded-[1.5rem] border border-emerald-100 bg-emerald-50 px-6 py-5 text-center">
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-700">Usage Add-On</p>
-          <p className="mt-3 text-base leading-7 text-slate-700">
-            Optional credits are available for higher AI and messaging usage, so clinics only pay more when they actually need more automation.
-          </p>
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-6 pb-24 lg:px-10">
-        <div className="animate-fade-up rounded-[2rem] bg-slate-950 px-8 py-12 text-white md:px-12">
-          <p className="text-sm uppercase tracking-[0.24em] text-emerald-300">Get started</p>
-          <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <div className="rounded-[2rem] border border-emerald-100 bg-[linear-gradient(135deg,#f2fff8_0%,#ffffff_46%,#ecfeff_100%)] px-8 py-12 md:px-12">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <h2 className="text-3xl font-semibold tracking-[-0.04em] md:text-4xl">
-                Make your practice easier to manage
+              <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Get started</p>
+              <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-4xl">
+                Keep the clinic simple for everyone on the team
               </h2>
-              <p className="mt-4 text-base leading-8 text-slate-300">
-                Book a free demo or start your free trial today.
+              <p className="mt-4 text-base leading-8 text-slate-600">
+                Book a free demo if you want us to walk you through the product. Start a free trial if you want to explore it yourself.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <Link
-                href="#demo-form"
+                href="#contact-form"
                 onClick={() => setActivationMode("demo")}
-                className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
+                className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700"
               >
                 Book a Free Demo
               </Link>
               <Link
-                href="#demo-form"
+                href="#contact-form"
                 onClick={() => setActivationMode("trial")}
-                className="inline-flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white transition hover:border-emerald-300 hover:text-emerald-300"
+                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-800 transition hover:border-emerald-300 hover:text-emerald-700"
               >
                 Start Free Trial
               </Link>
@@ -681,23 +503,23 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="demo-form" className="mx-auto max-w-6xl scroll-mt-24 px-6 pb-28 lg:px-10">
+      <section id="contact-form" className="mx-auto max-w-6xl scroll-mt-24 px-6 pb-28 lg:px-10">
         <div className="animate-fade-up grid gap-8 rounded-[2rem] border border-slate-200 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.06)] lg:grid-cols-[0.9fr_1.1fr] md:p-10">
           <div>
-            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Activation flow</p>
+            <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Start here</p>
             <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-4xl">
               {activationMode === "demo"
-                ? "Pick a demo slot and we will confirm it"
-                : "Start a clinic trial immediately"}
+                ? "Tell us a little about your clinic and we will schedule a demo"
+                : "Create your clinic trial account"}
             </h2>
             <p className="mt-4 text-base leading-8 text-slate-600">
               {activationMode === "demo"
-                ? "Choose your preferred demo date and time. We will record it, schedule follow-up automatically, and confirm the session on email or phone."
-                : "Create your clinic admin account here. Your trial is provisioned immediately and you only need to verify your email to continue."}
+                ? "Choose a preferred date and time, and we will follow up with confirmation."
+                : "Use the trial if you want to try the product directly with your team."}
             </p>
             <div className="mt-8 space-y-3 text-sm text-slate-600">
-              <p>Best for independent doctors, clinics, and small multi-doctor practices.</p>
-              <p>{activationMode === "demo" ? "Use this if you want a guided walkthrough first." : "Use this if you want direct product access without waiting for a callback."}</p>
+              <p>Best for doctors, receptionists, billing staff, and clinic owners.</p>
+              <p>{activationMode === "demo" ? "A demo is useful if you want someone to show the workflow first." : "A trial is useful if you want to explore it on your own."}</p>
             </div>
           </div>
 
@@ -815,13 +637,13 @@ export default function Home() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm text-slate-700">What do you want to see in the demo?</label>
+                  <label className="mb-2 block text-sm text-slate-700">What would you like to see?</label>
                   <textarea
                     rows={4}
                     value={demoForm.message}
                     onChange={(e) => setDemoForm((current) => ({ ...current, message: e.target.value }))}
                     className="theme-input w-full rounded-xl px-4 py-3"
-                    placeholder="Appointments, billing, reminders, doctor workflows, or multi-doctor reporting."
+                    placeholder="Appointments, billing, records, reminders, or reporting."
                   />
                 </div>
 
@@ -929,7 +751,7 @@ export default function Home() {
                     value={trialForm.message}
                     onChange={(e) => setTrialForm((current) => ({ ...current, message: e.target.value }))}
                     className="theme-input w-full rounded-xl px-4 py-3"
-                    placeholder="Tell us about your clinic size or any onboarding help you need."
+                    placeholder="Tell us about your clinic size or onboarding help."
                   />
                 </div>
 

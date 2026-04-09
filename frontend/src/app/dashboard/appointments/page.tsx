@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, Sparkles } from "lucide-react";
 import DoctorSpeedTools from "@/app/components/DoctorSpeedTools";
@@ -594,6 +594,9 @@ export default function AppointmentsPage() {
   const [currentRole, setCurrentRole] = useState("");
   const [organizationName, setOrganizationName] = useState("ABC Clinic");
   const [patientSearch, setPatientSearch] = useState("");
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
+  const [doctorSearch, setDoctorSearch] = useState("");
+  const [showDoctorDropdown, setShowDoctorDropdown] = useState(false);
   const [showInlinePatientForm, setShowInlinePatientForm] = useState(false);
   const [inlinePatientForm, setInlinePatientForm] = useState(initialInlinePatientForm);
   const [form, setForm] = useState({
@@ -614,6 +617,8 @@ export default function AppointmentsPage() {
     sms: true,
     email: true
   });
+  const patientSearchRef = useRef<HTMLDivElement | null>(null);
+  const doctorSearchRef = useRef<HTMLDivElement | null>(null);
 
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
@@ -968,6 +973,39 @@ export default function AppointmentsPage() {
       })
       .slice(0, 50);
   }, [patientSearch, patients]);
+  const filteredDoctors = useMemo(() => {
+    const query = doctorSearch.trim().toLowerCase();
+    if (!query) {
+      return doctors.slice(0, 50);
+    }
+
+    return doctors
+      .filter((doctor) => {
+        const haystack = `${doctor.full_name} ${doctor.specialty || ""} ${doctor.phone || ""} ${doctor.email || ""}`.toLowerCase();
+        return haystack.includes(query);
+      })
+      .slice(0, 50);
+  }, [doctorSearch, doctors]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      if (patientSearchRef.current && !patientSearchRef.current.contains(target)) {
+        setShowPatientDropdown(false);
+      }
+      if (doctorSearchRef.current && !doctorSearchRef.current.contains(target)) {
+        setShowDoctorDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, []);
 
   const filteredByDate = useMemo(() => {
     const grouped = new Map<string, Appointment[]>();
@@ -1084,7 +1122,7 @@ export default function AppointmentsPage() {
 
   const validFormTimeOptions = useMemo(() => {
     const duration = Number(form.durationMinutes) || 15;
-    return TIME_SLOTS.filter(
+    const options = TIME_SLOTS.filter(
       (slot) =>
         isDoctorAvailableForSlot(formDoctor, form.appointmentDate, slot.minutes, duration) &&
         !isPastSlot(form.appointmentDate, slot.minutes)
@@ -1092,6 +1130,15 @@ export default function AppointmentsPage() {
       value: `${pad(Math.floor(slot.minutes / 60))}:${pad(slot.minutes % 60)}`,
       label: slot.label
     }));
+
+    if (form.appointmentTime && !options.some((option) => option.value === form.appointmentTime)) {
+      options.unshift({
+        value: form.appointmentTime,
+        label: formatAppointmentTime(form.appointmentTime)
+      });
+    }
+
+    return options;
   }, [form.appointmentDate, form.durationMinutes, formDoctor]);
 
   const movePeriod = (direction: -1 | 1) => {
@@ -1131,6 +1178,9 @@ export default function AppointmentsPage() {
     const selectedPatient = patients.find((item) => item.id === patientFilterId) || null;
     setEditingAppointmentId(null);
     setPatientSearch(selectedPatient?.full_name || "");
+    setShowPatientDropdown(false);
+    setDoctorSearch("");
+    setShowDoctorDropdown(false);
     setShowInlinePatientForm(false);
     setInlinePatientForm(initialInlinePatientForm);
     setAppointmentFormError("");
@@ -1300,6 +1350,9 @@ export default function AppointmentsPage() {
     setSelectedAppointment(null);
     setEditingAppointmentId(appointment.id);
     setPatientSearch(appointment.patient_name || appointment.title || "");
+    setShowPatientDropdown(false);
+    setDoctorSearch(appointment.doctor_name || "");
+    setShowDoctorDropdown(false);
     setShowInlinePatientForm(false);
     setInlinePatientForm(initialInlinePatientForm);
     setAppointmentFormError("");
@@ -1328,6 +1381,7 @@ export default function AppointmentsPage() {
     }
 
     setPatientSearch(patient.full_name);
+    setShowPatientDropdown(false);
     setForm((prev) => ({
       ...prev,
       patientId: patient.id,
@@ -1338,8 +1392,31 @@ export default function AppointmentsPage() {
     }));
   };
 
+  const selectDoctor = (doctorId: string) => {
+    const doctor = doctors.find((item) => item.id === doctorId);
+    if (!doctor) {
+      return;
+    }
+
+    setDoctorSearch(doctor.full_name);
+    setShowDoctorDropdown(false);
+    setForm((prev) => {
+      return { ...prev, doctorId: doctor.id };
+    });
+  };
+
+  const handleDoctorSearchChange = (value: string) => {
+    setDoctorSearch(value);
+    setShowDoctorDropdown(true);
+
+    if (!value.trim()) {
+      setForm((prev) => ({ ...prev, doctorId: "" }));
+    }
+  };
+
   const handlePatientSearchChange = (value: string) => {
     setPatientSearch(value);
+    setShowPatientDropdown(true);
 
     if (!value.trim()) {
       setForm((prev) => ({
@@ -1386,6 +1463,7 @@ export default function AppointmentsPage() {
       setShowInlinePatientForm(false);
       setInlinePatientForm(initialInlinePatientForm);
       setPatientSearch(createdPatient.full_name);
+      setShowPatientDropdown(false);
       setForm((prev) => ({
         ...prev,
         patientId: createdPatient.id,
@@ -1412,6 +1490,14 @@ export default function AppointmentsPage() {
 
     try {
       const wasEditing = Boolean(editingAppointmentId);
+      const resolvedAppointmentTime = form.appointmentTime || validFormTimeOptions[0]?.value || "";
+      if (!resolvedAppointmentTime) {
+        throw new Error("Select a valid appointment time");
+      }
+      if (!form.appointmentTime) {
+        setForm((prev) => ({ ...prev, appointmentTime: resolvedAppointmentTime }));
+      }
+
       const payload = {
         patientName: form.patientName,
         patientId: form.patientId,
@@ -1421,7 +1507,7 @@ export default function AppointmentsPage() {
         category: form.category,
         status: form.status,
         appointmentDate: form.appointmentDate,
-        appointmentTime: form.appointmentTime,
+        appointmentTime: resolvedAppointmentTime,
         durationMinutes: Number(form.durationMinutes),
         plannedProcedures: form.plannedProcedures || null,
         notes: form.notes || null
@@ -1453,6 +1539,9 @@ export default function AppointmentsPage() {
       setShowModal(false);
       setEditingAppointmentId(null);
       setPatientSearch("");
+      setShowPatientDropdown(false);
+      setDoctorSearch("");
+      setShowDoctorDropdown(false);
       setShowInlinePatientForm(false);
       setInlinePatientForm(initialInlinePatientForm);
       setForm({
@@ -2417,35 +2506,46 @@ export default function AppointmentsPage() {
             </div>
 
             <div className="grid gap-5 p-6 md:grid-cols-2">
-              <label className="block space-y-2">
+              <div ref={patientSearchRef} className="relative block space-y-2">
                 <span className="text-sm text-gray-700">Find Patient *</span>
                 <input
                   data-testid="appointment-find-patient-input"
                   type="text"
                   value={patientSearch}
                   onChange={(e) => handlePatientSearchChange(e.target.value)}
+                  onFocus={() => setShowPatientDropdown(true)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2"
-                  placeholder="Search by patient ID, name, phone, or email"
+                  placeholder="Search by patient name"
                   required
                 />
-              </label>
 
-              <label className="block space-y-2">
-                <span className="text-sm text-gray-700">Select Patient *</span>
-                <select
-                  data-testid="appointment-patient-select"
-                  value={form.patientId}
-                  onChange={(e) => selectPatient(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2"
-                  required
-                >
-                    <option value="">Select patient</option>
-                  {filteredPatients.map((patient) => (
-                    <option key={patient.id} value={patient.id}>
-                      {patient.full_name} | {patient.patient_code} | {patient.phone} {patient.email ? `| ${patient.email}` : ""}
-                    </option>
-                  ))}
-                </select>
+                {showPatientDropdown && filteredPatients.length > 0 && (
+                  <div
+                    data-testid="appointment-patient-dropdown"
+                    className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg"
+                  >
+                    {filteredPatients.map((patient) => (
+                      <button
+                        key={patient.id}
+                        type="button"
+                        onClick={() => selectPatient(patient.id)}
+                        className="flex w-full flex-col gap-1 border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-emerald-50"
+                      >
+                        <span className="text-sm font-medium text-gray-900">{patient.full_name}</span>
+                        <span className="text-xs text-gray-500">
+                          {patient.patient_code} | {patient.phone} {patient.email ? `| ${patient.email}` : ""}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {showPatientDropdown && patientSearch.trim() && filteredPatients.length === 0 && (
+                  <div className="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 shadow-lg">
+                    No patient matched the search.
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs text-gray-500">
                     {filteredPatients.length === 0
@@ -2460,7 +2560,7 @@ export default function AppointmentsPage() {
                     Create New Patient
                   </button>
                 </div>
-              </label>
+              </div>
 
               {selectedFormPatient && (
                 <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 md:col-span-2">
@@ -2635,37 +2735,47 @@ export default function AppointmentsPage() {
                 />
               </label>
 
-              <label className="block space-y-2">
+              <div ref={doctorSearchRef} className="relative block space-y-2">
                 <span className="text-sm text-gray-700">Doctor *</span>
-                <select
-                  data-testid="appointment-doctor-select"
-                  value={form.doctorId}
-                  onChange={(e) =>
-                    setForm((prev) => {
-                      const nextDoctorId = e.target.value;
-                      const nextDoctor = doctors.find((doctor) => doctor.id === nextDoctorId) || null;
-                      const currentSlotMinutes = prev.appointmentTime ? toMinutes(prev.appointmentTime) : null;
-                      const nextDuration = Number(prev.durationMinutes) || 15;
-                      const nextTime =
-                        currentSlotMinutes !== null &&
-                        isDoctorAvailableForSlot(nextDoctor, prev.appointmentDate, currentSlotMinutes, nextDuration)
-                          ? prev.appointmentTime
-                          : "";
-
-                      return { ...prev, doctorId: nextDoctorId, appointmentTime: nextTime };
-                    })
-                  }
+                <input
+                  data-testid="appointment-doctor-search-input"
+                  type="text"
+                  value={doctorSearch}
+                  onChange={(e) => handleDoctorSearchChange(e.target.value)}
+                  onFocus={() => setShowDoctorDropdown(true)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  placeholder="Search by doctor name, specialty, phone, or email"
                   required
-                >
-                  <option value="">Select Doctor</option>
-                  {doctors.map((doctor) => (
-                    <option key={doctor.id} value={doctor.id}>
-                      {doctor.full_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                />
+
+                {showDoctorDropdown && filteredDoctors.length > 0 && (
+                  <div
+                    data-testid="appointment-doctor-dropdown"
+                    className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg"
+                  >
+                    {filteredDoctors.map((doctor) => (
+                      <button
+                        key={doctor.id}
+                        type="button"
+                        onClick={() => selectDoctor(doctor.id)}
+                        className="flex w-full flex-col gap-1 border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-emerald-50"
+                      >
+                        <span className="text-sm font-medium text-gray-900">{doctor.full_name}</span>
+                        <span className="text-xs text-gray-500">
+                          {doctor.specialty || "Doctor"} {doctor.phone ? `| ${doctor.phone}` : ""}
+                          {doctor.email ? ` | ${doctor.email}` : ""}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {showDoctorDropdown && doctorSearch.trim() && filteredDoctors.length === 0 && (
+                  <div className="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 shadow-lg">
+                    No doctor matched the search.
+                  </div>
+                )}
+              </div>
 
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Category *</span>
@@ -2709,18 +2819,10 @@ export default function AppointmentsPage() {
                     type="date"
                     value={form.appointmentDate}
                     onChange={(e) =>
-                      setForm((prev) => {
-                        const nextDate = e.target.value;
-                        const currentSlotMinutes = prev.appointmentTime ? toMinutes(prev.appointmentTime) : null;
-                        const nextDuration = Number(prev.durationMinutes) || 15;
-                        const nextTime =
-                          currentSlotMinutes !== null &&
-                          isDoctorAvailableForSlot(formDoctor, nextDate, currentSlotMinutes, nextDuration)
-                            ? prev.appointmentTime
-                            : "";
-
-                        return { ...prev, appointmentDate: nextDate, appointmentTime: nextTime };
-                      })
+                      setForm((prev) => ({
+                        ...prev,
+                        appointmentDate: e.target.value
+                      }))
                     }
                     className="w-full rounded-lg border border-gray-300 px-3 py-2"
                     required
@@ -2736,7 +2838,7 @@ export default function AppointmentsPage() {
                     className="w-full rounded-lg border border-gray-300 px-3 py-2"
                     required
                   >
-                    <option value="">Select time</option>
+                    {!validFormTimeOptions.length && <option value="">Select time</option>}
                     {validFormTimeOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -2751,17 +2853,10 @@ export default function AppointmentsPage() {
                     data-testid="appointment-duration-select"
                     value={form.durationMinutes}
                     onChange={(e) =>
-                      setForm((prev) => {
-                        const nextDuration = e.target.value;
-                        const currentSlotMinutes = prev.appointmentTime ? toMinutes(prev.appointmentTime) : null;
-                        const nextTime =
-                          currentSlotMinutes !== null &&
-                          isDoctorAvailableForSlot(formDoctor, prev.appointmentDate, currentSlotMinutes, Number(nextDuration))
-                            ? prev.appointmentTime
-                            : "";
-
-                        return { ...prev, durationMinutes: nextDuration, appointmentTime: nextTime };
-                      })
+                      setForm((prev) => ({
+                        ...prev,
+                        durationMinutes: e.target.value
+                      }))
                     }
                     className="w-full rounded-lg border border-gray-300 px-3 py-2"
                   >
@@ -3383,7 +3478,7 @@ export default function AppointmentsPage() {
                   <button
                     type="button"
                     onClick={() => openEdit(selectedAppointment)}
-                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700"
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                   >
                     Edit
                   </button>
@@ -3392,7 +3487,7 @@ export default function AppointmentsPage() {
                   <button
                     type="button"
                     onClick={() => openConsultationCompletion(selectedAppointment)}
-                    className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-700"
+                    className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-700 hover:bg-sky-100"
                   >
                     Complete Consultation
                   </button>
@@ -3401,7 +3496,7 @@ export default function AppointmentsPage() {
                   <button
                     type="button"
                     onClick={() => openConsultationCompletion(selectedAppointment)}
-                    className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-700"
+                    className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-700 hover:bg-sky-100"
                   >
                     Update Consultation
                   </button>
@@ -3410,7 +3505,7 @@ export default function AppointmentsPage() {
                   <button
                     type="button"
                     onClick={() => void updateAppointmentStatus(selectedAppointment, "checked-in")}
-                    className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm text-violet-700"
+                    className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm text-violet-700 hover:bg-violet-100"
                   >
                     Check In
                   </button>
@@ -3422,7 +3517,7 @@ export default function AppointmentsPage() {
                       setNoShowNotificationOptions({ sms: true, email: true });
                       setNoShowTarget(selectedAppointment);
                     }}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700"
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
                   >
                     Mark No-show
                   </button>
@@ -3431,7 +3526,7 @@ export default function AppointmentsPage() {
                   <button
                     type="button"
                     onClick={() => openGenerateInvoice(selectedAppointment)}
-                    className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700"
+                    className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-100"
                   >
                     Generate Invoice
                   </button>
@@ -3440,7 +3535,7 @@ export default function AppointmentsPage() {
                   <button
                     type="button"
                     onClick={() => void updateAppointmentStatus(selectedAppointment, "cancelled")}
-                    className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
+                    className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 hover:bg-red-100"
                   >
                     Cancel Appointment
                   </button>
@@ -3536,7 +3631,7 @@ export default function AppointmentsPage() {
               </div>
 
               <p className="text-sm leading-7 text-gray-600">
-                Patient will be informed about no show. As the patient did not book via Practo.com,{" "}
+                Patient will be informed about no show. As the patient did not book via Medsyra.com,{" "}
                 <span className="text-sky-600 underline">PNS Policy</span> is not applicable for them.
               </p>
             </div>

@@ -83,7 +83,11 @@ const buildPreferencesResponse = async (organizationId) => {
       },
       sms: {
         enabled: env.smsReminderEnabled,
-        configured: !env.smsReminderEnabled || Boolean(env.twilioAccountSid && env.twilioAuthToken && env.twilioFromNumber)
+        configured:
+          !env.smsReminderEnabled ||
+          (env.smsProvider === "twilio"
+            ? Boolean(env.twilioAccountSid && env.twilioAuthToken && env.twilioFromNumber)
+            : Boolean(env.httpsmsApiKey && env.httpsmsFromNumber))
       },
       email: getMailConfigStatus()
     }

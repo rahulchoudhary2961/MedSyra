@@ -18,9 +18,21 @@ const ensureSmsConfig = () => {
     throw new ApiError(400, "SMS reminders are not enabled");
   }
 
-  if (!env.twilioAccountSid || !env.twilioAuthToken || !env.twilioFromNumber) {
-    throw new ApiError(500, "Twilio SMS configuration is incomplete");
+  if (env.smsProvider === "httpsms" || !env.smsProvider) {
+    if (!env.httpsmsApiKey || !env.httpsmsFromNumber) {
+      throw new ApiError(500, "httpSMS configuration is incomplete");
+    }
+    return "httpsms";
   }
+
+  if (env.smsProvider === "twilio") {
+    if (!env.twilioAccountSid || !env.twilioAuthToken || !env.twilioFromNumber) {
+      throw new ApiError(500, "Twilio SMS configuration is incomplete");
+    }
+    return "twilio";
+  }
+
+  throw new ApiError(500, `Unsupported SMS provider: ${env.smsProvider}`);
 };
 
 const sendSmsText = async ({
@@ -32,7 +44,7 @@ const sendSmsText = async ({
   referenceId = null,
   note = null
 }) => {
-  ensureSmsConfig();
+  const provider = ensureSmsConfig();
 
   if (organizationId) {
     await commercialService.ensureUsageAllowed(organizationId, {
@@ -45,32 +57,51 @@ const sendSmsText = async ({
     throw new ApiError(400, "Phone number is missing or invalid for SMS notifications");
   }
 
-  const encoded = new URLSearchParams({
-    To: to,
-    From: env.twilioFromNumber,
-    Body: body
-  });
+  let response;
+  let payload;
 
-  const response = await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${env.twilioAccountSid}/Messages.json`,
-    {
+  if (provider === "httpsms") {
+    response = await fetch("https://api.httpsms.com/v1/messages/send", {
       method: "POST",
       headers: {
-        Authorization: `Basic ${Buffer.from(`${env.twilioAccountSid}:${env.twilioAuthToken}`).toString("base64")}`,
-        "Content-Type": "application/x-www-form-urlencoded"
+        "x-api-key": env.httpsmsApiKey,
+        "Content-Type": "application/json"
       },
-      body: encoded.toString()
-    }
-  );
+      body: JSON.stringify({
+        from: env.httpsmsFromNumber,
+        to,
+        content: body
+      })
+    });
+    payload = await response.json().catch(() => null);
+  } else {
+    const encoded = new URLSearchParams({
+      To: to,
+      From: env.twilioFromNumber,
+      Body: body
+    });
 
-  const payload = await response.json().catch(() => null);
+    response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${env.twilioAccountSid}/Messages.json`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${env.twilioAccountSid}:${env.twilioAuthToken}`).toString("base64")}`,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: encoded.toString()
+      }
+    );
+    payload = await response.json().catch(() => null);
+  }
+
   if (!response.ok) {
     const reason = payload?.message || payload?.error_message || "Failed to send SMS notification";
     throw new ApiError(response.status >= 400 && response.status < 500 ? response.status : 502, reason, payload);
   }
 
   const result = {
-    provider: "twilio",
+    provider,
     recipient: to,
     message: body,
     providerResponse: payload

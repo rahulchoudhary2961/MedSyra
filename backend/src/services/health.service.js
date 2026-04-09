@@ -28,8 +28,16 @@ const getHealthStatus = async () => {
   };
   const sms = {
     enabled: env.smsReminderEnabled,
-    configured: !env.smsReminderEnabled || Boolean(env.twilioAccountSid && env.twilioAuthToken && env.twilioFromNumber)
+    configured:
+      !env.smsReminderEnabled ||
+      (env.smsProvider === "twilio"
+        ? Boolean(env.twilioAccountSid && env.twilioAuthToken && env.twilioFromNumber)
+        : Boolean(env.httpsmsApiKey && env.httpsmsFromNumber))
   };
+
+  if (sms.enabled) {
+    sms.provider = env.smsProvider || "httpsms";
+  }
 
   return {
     ok: database.ok,

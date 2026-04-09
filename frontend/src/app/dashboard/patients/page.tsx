@@ -351,6 +351,12 @@ export default function PatientsPage() {
     if (!patientToDelete) return;
     setDeletingPatientId(patientToDelete.id);
     setError("");
+    const deletedPatientId = patientToDelete.id;
+    const previousPatients = patients;
+    const previousTotalPatients = totalPatients;
+
+    setPatients((currentPatients) => currentPatients.filter((patient) => patient.id !== deletedPatientId));
+    setTotalPatients((currentTotal) => Math.max(0, currentTotal - 1));
 
     try {
       await apiRequest<{ success: boolean; message: string }>(`/patients/${patientToDelete.id}`, {
@@ -358,8 +364,18 @@ export default function PatientsPage() {
         authenticated: true
       });
 
-      fetchPatients(page, query);
+      const hasOnlyOnePatientOnPage = previousPatients.length === 1;
+
+      if (hasOnlyOnePatientOnPage && page > 1) {
+        const previousPage = page - 1;
+        setPage(previousPage);
+        fetchPatients(previousPage, query);
+      } else {
+        fetchPatients(page, query);
+      }
     } catch (err) {
+      setPatients(previousPatients);
+      setTotalPatients(previousTotalPatients);
       const message = err instanceof Error ? err.message : "Failed to delete patient";
       setError(message);
     } finally {

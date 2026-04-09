@@ -17,7 +17,7 @@ const startServer = async () => {
     });
   } else {
     logInfo("mail_config_ok", {
-      provider: "resend",
+      provider: env.brevoApiKey && env.brevoFromEmail ? "brevo" : "resend",
       leadsEmailConfigured: Boolean(env.leadsEmailTo)
     });
   }

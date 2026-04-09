@@ -108,14 +108,12 @@ const createPatient = async (organizationId, payload) => {
   }
 };
 
-const findDuplicatePatient = async (organizationId, { phone, email, excludeId = null }) => {
-  const values = [organizationId, phone];
-  let emailCondition = "";
-
-  if (email) {
-    values.push(email);
-    emailCondition = `OR (email IS NOT NULL AND LOWER(email) = LOWER($${values.length}))`;
+const findDuplicatePatient = async (organizationId, { email, excludeId = null }) => {
+  if (!email) {
+    return null;
   }
+
+  const values = [organizationId, email];
 
   let excludeCondition = "";
   if (excludeId) {
@@ -129,8 +127,7 @@ const findDuplicatePatient = async (organizationId, { phone, email, excludeId = 
     WHERE organization_id = $1
       AND is_active = true
       AND (
-        ${PHONE_NORMALIZE_SQL} = regexp_replace($2, '[^0-9]', '', 'g')
-        ${emailCondition}
+        LOWER(email) = LOWER($2)
       )
       ${excludeCondition}
     ORDER BY created_at DESC

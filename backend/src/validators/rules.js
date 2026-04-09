@@ -4,7 +4,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
-const CONTROL_CHAR_REGEX = /[\u0000-\u001F\u007F]/;
+const CONTROL_CHAR_REGEX = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 const HTML_LIKE_REGEX = /<[^>]*>/;
 const SCRIPT_INJECTION_REGEX = /javascript\s*:|<\s*script|on\w+\s*=|data\s*:\s*text\/html/i;
 

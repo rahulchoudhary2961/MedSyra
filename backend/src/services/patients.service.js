@@ -342,7 +342,6 @@ const createPatient = async (organizationId, payload, actor = null, requestMeta 
   const normalizedPayload = normalizePatientPayload(payload);
 
   const duplicate = await patientsRepository.findDuplicatePatient(organizationId, {
-    phone: normalizedPayload.phone,
     email: normalizedPayload.email
   });
 
@@ -431,7 +430,6 @@ const updatePatient = async (organizationId, id, payload, actor = null, requestM
 
   if (normalizedPayload.phone || normalizedPayload.email) {
     const duplicate = await patientsRepository.findDuplicatePatient(organizationId, {
-      phone: normalizedPayload.phone || beforeState.phone,
       email: normalizedPayload.email || beforeState.email || null,
       excludeId: id
     });
