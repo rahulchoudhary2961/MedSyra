@@ -2,6 +2,7 @@ const asyncHandler = require("../utils/async-handler");
 const authService = require("../services/auth.service");
 const { logAuditEventSafe } = require("../services/audit.service");
 const { getRequestMeta, logInfo, logSecurity } = require("../utils/logger");
+const { clearAuthCookie, setAuthCookie } = require("../utils/auth-cookie");
 
 const normalizeEmail = (email) => (typeof email === "string" ? email.trim().toLowerCase() : null);
 
@@ -32,6 +33,7 @@ const signup = asyncHandler(async (req, res) => {
 const signin = asyncHandler(async (req, res) => {
   try {
     const result = await authService.signin(req.body);
+    setAuthCookie(res, result.token);
     logAuditEventSafe({
       organizationId: result.user.organization_id,
       actor: {
@@ -60,10 +62,13 @@ const signin = asyncHandler(async (req, res) => {
       email: normalizeEmail(req.body?.email)
     });
 
+    res.setHeader("Cache-Control", "no-store");
     res.json({
       success: true,
       message: "Signed in successfully",
-      data: result
+      data: {
+        user: result.user
+      }
     });
   } catch (error) {
     logSecurity("auth_signin_failed", {
@@ -74,6 +79,15 @@ const signin = asyncHandler(async (req, res) => {
     });
     throw error;
   }
+});
+
+const logout = asyncHandler(async (_req, res) => {
+  clearAuthCookie(res);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    success: true,
+    message: "Signed out successfully"
+  });
 });
 
 const verifyEmail = asyncHandler(async (req, res) => {
@@ -217,6 +231,7 @@ const updateStaffNotificationPreferences = asyncHandler(async (req, res) => {
 module.exports = {
   signup,
   signin,
+  logout,
   verifyEmail,
   resendVerificationEmail,
   requestPasswordReset,

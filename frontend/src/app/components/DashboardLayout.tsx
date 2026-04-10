@@ -24,7 +24,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiRequestError, apiRequest } from "@/lib/api";
-import { clearAuthToken, getAuthToken } from "@/lib/auth";
+import { clearAuthToken } from "@/lib/auth";
+import { clearGuestMode, isGuestModeEnabled } from "@/lib/guest-mode";
 import { clearLoginIntroPending, shouldShowLoginIntro } from "@/lib/onboarding";
 import {
   canAccessAssistant,
@@ -188,10 +189,19 @@ export default function DashboardLayout({
   const notificationsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const token = getAuthToken();
-
-    if (!token) {
-      router.replace("/auth/signin");
+    if (isGuestModeEnabled()) {
+      setCurrentUser({
+        id: "22222222-2222-2222-2222-222222222222",
+        organization_id: "11111111-1111-1111-1111-111111111111",
+        organization_name: "City General Hospital",
+        full_name: "Dr. Admin",
+        email: "admin@citygeneral.com",
+        phone: "(555) 101-0000",
+        role: "admin",
+        branch_id: null,
+        branch_name: null
+      });
+      setIsCheckingAuth(false);
       return;
     }
 
@@ -260,9 +270,18 @@ export default function DashboardLayout({
     return pathname.startsWith(path);
   };
 
-  const handleLogout = () => {
-    clearAuthToken();
-    router.replace("/auth/signin");
+  const handleLogout = async () => {
+    try {
+      await apiRequest<{ success: boolean; message: string }>("/auth/logout", {
+        method: "POST"
+      });
+    } catch {
+      // Clear any legacy client-side token state even if the network request fails.
+    } finally {
+      clearAuthToken();
+      clearGuestMode();
+      router.replace("/auth/signin");
+    }
   };
 
   const fetchUpcomingAppointmentsCount = useCallback(() => {
@@ -563,7 +582,9 @@ export default function DashboardLayout({
               </div>
             </div>
             <button
-              onClick={handleLogout}
+              onClick={() => {
+                void handleLogout();
+              }}
               className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-700 bg-white/4 text-sm text-slate-200 hover:bg-white/8 hover:text-white"
             >
               <LogOut className="w-4 h-4" />

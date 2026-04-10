@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, FileUp, FlaskConical, Plus, RefreshCcw } from "lucide-react";
-import { apiRequest } from "@/lib/api";
-import { getAuthToken } from "@/lib/auth";
+import { apiFetch, apiRequest } from "@/lib/api";
 import { canAccessLab, canManageLabCatalog } from "@/lib/roles";
 import { AuthUser, Doctor, LabOrder, LabTest, Patient } from "@/types/api";
 
@@ -156,11 +155,6 @@ const fileToBase64 = (file: File) =>
     reader.onerror = () => reject(new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
-
-const getLabReportEndpoint = (orderId: string) => {
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1";
-  return `${apiBaseUrl.replace(/\/$/, "")}/lab/orders/${orderId}/report`;
-};
 
 const extractFileNameFromDisposition = (headerValue: string | null, fallbackFileName: string) => {
   if (!headerValue) {
@@ -452,13 +446,9 @@ export default function LabPage() {
 
   const downloadReport = async (order: LabOrder) => {
     try {
-      const token = getAuthToken();
-      const headers: Record<string, string> = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
-
-      const response = await fetch(getLabReportEndpoint(order.id), {
+      const response = await apiFetch(`/lab/orders/${order.id}/report`, {
         method: "GET",
-        headers,
+        authenticated: true,
         cache: "no-store"
       });
 

@@ -4,9 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Eye, FileText, Pencil, Plus, Send, Sparkles, Trash2 } from "lucide-react";
-import DoctorSpeedTools from "@/app/components/DoctorSpeedTools";
-import { apiRequest } from "@/lib/api";
-import { getAuthToken } from "@/lib/auth";
+import { apiFetch, apiRequest } from "@/lib/api";
 import {
   canAccessMedicalRecords,
   canDeleteMedicalRecords,
@@ -186,11 +184,6 @@ export default function MedicalRecordsPage() {
     setAiSuggestionError("");
   };
 
-  const getAttachmentEndpoint = (recordId: string) => {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1";
-    return `${apiBaseUrl.replace(/\/$/, "")}/medical-records/${recordId}/attachment`;
-  };
-
   const getAttachmentFallbackFileName = (recordId: string, fileUrl?: string | null) => {
     const storedFileName = fileUrl?.split("/").pop();
     if (storedFileName) {
@@ -234,15 +227,9 @@ export default function MedicalRecordsPage() {
       };
     }
 
-    const token = getAuthToken();
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-
-    const response = await fetch(getAttachmentEndpoint(recordId), {
+    const response = await apiFetch(`/medical-records/${recordId}/attachment`, {
       method: "GET",
-      headers,
+      authenticated: true,
       cache: "no-store"
     });
 
@@ -1152,18 +1139,6 @@ export default function MedicalRecordsPage() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
               />
             </div>
-
-            {form.patientId && form.doctorId && (
-              <DoctorSpeedTools
-                patientId={form.patientId}
-                doctorId={form.doctorId}
-                prescription={form.prescription}
-                notes={form.notes}
-                diagnosis={form.diagnosis}
-                onPrescriptionChange={(value) => setForm((current) => ({ ...current, prescription: value }))}
-                onNotesChange={(value) => setForm((current) => ({ ...current, notes: value }))}
-              />
-            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>

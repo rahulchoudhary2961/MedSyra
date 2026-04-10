@@ -86,7 +86,9 @@ const downloadLabOrderReport = asyncHandler(async (req, res) => {
   });
 
   res.setHeader("Content-Type", attachment.contentType);
-  res.setHeader("Content-Length", String(attachment.size));
+  if (Number.isFinite(attachment.size)) {
+    res.setHeader("Content-Length", String(attachment.size));
+  }
   res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
   res.setHeader("Cache-Control", "private, no-store, max-age=0");
   res.setHeader("X-Content-Type-Options", "nosniff");

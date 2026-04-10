@@ -4,10 +4,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { CalendarDays, CreditCard, Download, Eye, FileText, Pencil, Pill, Search, Stethoscope, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiRequest } from "@/lib/api";
-import { getAuthToken } from "@/lib/auth";
+import { apiFetch, apiRequest } from "@/lib/api";
 import { isUuid } from "@/lib/uuid";
-import { LabOrder, MedicalRecord, Patient, PharmacyDispense, SmartSummaryItem } from "@/types/api";
+import { CrmTask, LabOrder, MedicalRecord, Patient, PharmacyDispense, SmartSummaryItem } from "@/types/api";
 
 type PatientVisit = {
   id: string;
@@ -47,6 +46,22 @@ type PatientProfileResponse = {
   };
 };
 
+type CrmTasksResponse = {
+  success: boolean;
+  data: {
+    items: CrmTask[];
+    summary: {
+      totalTasks: number;
+      openTasks: number;
+      contactedTasks: number;
+      scheduledTasks: number;
+      closedTasks: number;
+      overdueTasks: number;
+      dueTodayTasks: number;
+    };
+  };
+};
+
 type AttachmentPreview = {
   recordId: string;
   url: string | null;
@@ -73,7 +88,7 @@ type PatientTimelineItem = {
   subtitle: string;
   tags: string[];
   detailLines: string[];
-  href: string;
+  sectionId: string;
   ctaLabel: string;
   toneClass: string;
   searchText: string;
@@ -121,11 +136,6 @@ const getInitials = (value: string) =>
     .join("")
     .slice(0, 2)
     .toUpperCase();
-
-const getAttachmentEndpoint = (recordId: string) => {
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1";
-  return `${apiBaseUrl.replace(/\/$/, "")}/medical-records/${recordId}/attachment`;
-};
 
 const getAttachmentFileName = (recordId: string, fileUrl?: string | null) => {
   const storedFileName = fileUrl?.split("/").pop();
@@ -187,6 +197,7 @@ export default function PatientProfilePage() {
   const [invoices, setInvoices] = useState<PatientInvoiceHistoryItem[]>([]);
   const [labOrders, setLabOrders] = useState<LabOrder[]>([]);
   const [pharmacyDispenses, setPharmacyDispenses] = useState<PharmacyDispense[]>([]);
+  const [crmTasks, setCrmTasks] = useState<CrmTask[]>([]);
   const [smartSummary, setSmartSummary] = useState<SmartSummaryItem[]>([]);
   const [summary, setSummary] = useState<{
     totalVisits: number;
@@ -198,6 +209,13 @@ export default function PatientProfilePage() {
   const [historySearch, setHistorySearch] = useState("");
   const previewsRef = useRef<Record<string, AttachmentPreview>>({});
   const attachmentObjectUrlsRef = useRef<string[]>([]);
+
+  const scrollToSection = useCallback((sectionId: string) => {
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
 
   useEffect(() => {
     if (!patientId || hasInvalidPatientId) return;
@@ -215,6 +233,18 @@ export default function PatientProfilePage() {
       })
       .catch((err: Error) => setError(err.message || "Failed to load patient profile"))
       .finally(() => setLoading(false));
+  }, [patientId, hasInvalidPatientId]);
+
+  useEffect(() => {
+    if (!patientId || hasInvalidPatientId) {
+      return;
+    }
+
+    apiRequest<{ success: boolean; data: { items: CrmTask[] } }>(`/crm/tasks?patientId=${encodeURIComponent(patientId)}&limit=50`, {
+      authenticated: true
+    })
+      .then((response) => setCrmTasks(response.data.items || []))
+      .catch(() => setCrmTasks([]));
   }, [patientId, hasInvalidPatientId]);
 
   useEffect(() => {
@@ -250,15 +280,9 @@ export default function PatientProfilePage() {
       return preview;
     }
 
-    const token = getAuthToken();
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-
-    const response = await fetch(getAttachmentEndpoint(record.id), {
+    const response = await apiFetch(`/medical-records/${record.id}/attachment`, {
       method: "GET",
-      headers,
+      authenticated: true,
       cache: "no-store"
     });
 
@@ -296,12 +320,7 @@ export default function PatientProfilePage() {
     let cancelled = false;
 
     const loadPreviews = async () => {
-      const eagerRecords = attachmentRecords
-        .filter((record) => {
-          const fileUrl = record.file_url || "";
-          return /^https?:\/\//i.test(fileUrl) || isImageContentType(inferContentType(fileUrl));
-        })
-        .slice(0, MAX_INLINE_ATTACHMENT_PRELOAD);
+      const eagerRecords = attachmentRecords.slice(0, MAX_INLINE_ATTACHMENT_PRELOAD);
 
       const items = await Promise.all(
         eagerRecords.map(async (record) => {
@@ -393,7 +412,6 @@ export default function PatientProfilePage() {
       subtitle: visit.doctor_name ? `${visit.doctor_name} | ${formatTime(visit.appointment_time)}` : formatTime(visit.appointment_time),
       tags: ["Visit"],
       detailLines: [visit.planned_procedures || visit.notes || "Visit recorded in appointments", `Status: ${visit.status}`],
-      href: `/dashboard/appointments?patientId=${encodeURIComponent(patient.id)}`,
       ctaLabel: "Open Appointments",
       toneClass: getTimelineTone("visit"),
       searchText: buildTimelineSearchText(
@@ -404,7 +422,8 @@ export default function PatientProfilePage() {
         visit.notes,
         visit.appointment_date,
         visit.appointment_time
-      )
+      ),
+      sectionId: "appointments"
     }));
 
     const recordItems: PatientTimelineItem[] = records.map((record) => {
@@ -433,7 +452,7 @@ export default function PatientProfilePage() {
           record.notes || "",
           record.follow_up_date ? `Follow-up ${formatDate(record.follow_up_date)}` : ""
         ].filter(Boolean),
-        href: `/dashboard/medical-records?patientId=${encodeURIComponent(patient.id)}`,
+        sectionId: "medical-records",
         ctaLabel: "Open Medical Records",
         toneClass: getTimelineTone(type),
         searchText: buildTimelineSearchText(
@@ -460,7 +479,7 @@ export default function PatientProfilePage() {
         order.notes || "",
         order.due_date ? `Due ${formatDate(order.due_date)}` : ""
       ].filter(Boolean),
-      href: `/dashboard/lab?patientId=${encodeURIComponent(patient.id)}`,
+      sectionId: "lab",
       ctaLabel: "Open Lab",
       toneClass: getTimelineTone("report"),
       searchText: buildTimelineSearchText(
@@ -483,7 +502,7 @@ export default function PatientProfilePage() {
       detailLines: [
         invoice.balance_amount > 0 ? `Pending ${formatCurrency(invoice.balance_amount)}` : "Paid in full"
       ],
-      href: `/dashboard/billings?patientId=${encodeURIComponent(patient.id)}`,
+      sectionId: "billing",
       ctaLabel: "Open Billing",
       toneClass: getTimelineTone("invoice"),
       searchText: buildTimelineSearchText(
@@ -507,7 +526,7 @@ export default function PatientProfilePage() {
         dispense.prescription_snapshot || "",
         dispense.notes || ""
       ].filter(Boolean),
-      href: `/dashboard/pharmacy?patientId=${encodeURIComponent(patient.id)}`,
+      sectionId: "pharmacy",
       ctaLabel: "Open Pharmacy",
       toneClass: getTimelineTone("pharmacy"),
       searchText: buildTimelineSearchText(
@@ -577,7 +596,7 @@ export default function PatientProfilePage() {
         descriptionTone: "text-emerald-50"
       },
       {
-        href: `/dashboard/appointments?patientId=${encodeURIComponent(patient.id)}`,
+        sectionId: "appointments",
         label: "Appointments",
         description: "Open this patient's visits and book the next appointment.",
         icon: CalendarDays,
@@ -585,7 +604,7 @@ export default function PatientProfilePage() {
         descriptionTone: "text-gray-600"
       },
       {
-        href: `/dashboard/medical-records?patientId=${encodeURIComponent(patient.id)}`,
+        sectionId: "medical-records",
         label: "Medical Records",
         description: "View diagnosis, prescription, and follow-up history.",
         icon: FileText,
@@ -593,7 +612,7 @@ export default function PatientProfilePage() {
         descriptionTone: "text-gray-600"
       },
       {
-        href: `/dashboard/crm?patientId=${encodeURIComponent(patient.id)}`,
+        sectionId: "crm",
         label: "CRM",
         description: "Track follow-up ownership, recall status, and outreach notes.",
         icon: Users,
@@ -601,7 +620,7 @@ export default function PatientProfilePage() {
         descriptionTone: "text-gray-600"
       },
       {
-        href: `/dashboard/pharmacy?patientId=${encodeURIComponent(patient.id)}`,
+        sectionId: "pharmacy",
         label: "Pharmacy",
         description: "Review dispensed medicines, batch history, and linked pharmacy bills.",
         icon: Pill,
@@ -609,7 +628,7 @@ export default function PatientProfilePage() {
         descriptionTone: "text-gray-600"
       },
       {
-        href: `/dashboard/lab?patientId=${encodeURIComponent(patient.id)}`,
+        sectionId: "lab",
         label: "Lab & Diagnostics",
         description: "View diagnostic orders, report status, and completed lab work.",
         icon: Stethoscope,
@@ -617,7 +636,7 @@ export default function PatientProfilePage() {
         descriptionTone: "text-gray-600"
       },
       {
-        href: `/dashboard/billings?patientId=${encodeURIComponent(patient.id)}`,
+        sectionId: "billing",
         label: "Billing",
         description: "Check invoices, pending balance, and payment history.",
         icon: CreditCard,
@@ -710,6 +729,25 @@ export default function PatientProfilePage() {
           <div className="grid gap-4 sm:grid-cols-2">
             {actionCards.map((action) => {
               const Icon = action.icon;
+              if ("sectionId" in action) {
+                return (
+                  <button
+                    key={action.label}
+                    type="button"
+                    onClick={() => scrollToSection(action.sectionId ?? "overview")}
+                    className={`text-left rounded-2xl border p-5 transition ${action.tone}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-xl bg-black/5 p-2">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <p className="text-lg font-medium">{action.label}</p>
+                    </div>
+                    <p className={`mt-3 text-sm leading-6 ${action.descriptionTone}`}>{action.description}</p>
+                  </button>
+                );
+              }
+
               return (
                 <Link
                   key={action.label}
@@ -730,7 +768,31 @@ export default function PatientProfilePage() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: "overview", label: "Overview" },
+            { id: "crm", label: "CRM" },
+            { id: "appointments", label: "Appointments" },
+            { id: "medical-records", label: "Medical Records" },
+            { id: "lab", label: "Lab" },
+            { id: "pharmacy", label: "Pharmacy" },
+            { id: "billing", label: "Billing" },
+            { id: "attachments", label: "Attachments" }
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => scrollToSection(item.id)}
+              className="rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section id="overview" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 scroll-mt-24">
         {profileFields.map((field) => (
           <div key={field.label} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">{field.label}</p>
@@ -761,7 +823,7 @@ export default function PatientProfilePage() {
       )}
 
       {smartSummary.length > 0 && (
-        <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+        <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8 scroll-mt-24">
           <div>
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Snapshot</p>
             <h2 className="mt-2 text-xl text-gray-900">Patient Summary</h2>
@@ -776,6 +838,54 @@ export default function PatientProfilePage() {
           </div>
         </section>
       )}
+
+      <section id="crm" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8 scroll-mt-24">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">CRM</p>
+            <h2 className="mt-2 text-xl text-gray-900">Follow-up Tasks</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Follow-up, recall, and retention work tied to this patient.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => scrollToSection("appointments")}
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Jump to Appointments
+          </button>
+        </div>
+
+        {crmTasks.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-5 py-10 text-center text-sm text-gray-500">
+            No CRM tasks found for this patient yet.
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-4 lg:grid-cols-2">
+            {crmTasks.slice(0, 6).map((task) => (
+              <article key={task.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{task.title}</p>
+                    <p className="mt-1 text-sm text-gray-600">
+                      {task.task_type.replace(/_/g, " ")} | {task.status.replace(/_/g, " ")}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600 ring-1 ring-gray-200">
+                    {task.priority}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
+                  <span>Due {formatDate(task.due_date)}</span>
+                  <span>{task.assigned_user_name || "Unassigned"}</span>
+                </div>
+                {task.outcome_notes && <p className="mt-3 text-sm leading-6 text-gray-700">{task.outcome_notes}</p>}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -851,22 +961,23 @@ export default function PatientProfilePage() {
                         {item.subtitle ? ` | ${item.subtitle}` : ""}
                       </p>
                     </div>
-                    {item.detailLines.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        {item.detailLines.slice(0, 3).map((line) => (
-                          <p key={`${item.id}-${line}`} className="text-sm leading-6 text-gray-700">
-                            {line}
+                  {item.detailLines.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {item.detailLines.slice(0, 3).map((line) => (
+                        <p key={`${item.id}-${line}`} className="text-sm leading-6 text-gray-700">
+                          {line}
                           </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <Link
-                    href={item.href}
+                      ))}
+                    </div>
+                  )}
+                </div>
+                  <button
+                    type="button"
+                    onClick={() => scrollToSection(item.sectionId)}
                     className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                   >
                     {item.ctaLabel}
-                  </Link>
+                  </button>
                 </div>
               </article>
             ))}
@@ -874,18 +985,19 @@ export default function PatientProfilePage() {
         )}
       </section>
 
-      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+      <section id="pharmacy" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8 scroll-mt-24">
         <div className="flex items-end justify-between gap-3">
           <div>
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Dispensing</p>
             <h2 className="mt-2 text-xl text-gray-900">Pharmacy History</h2>
           </div>
-          <Link
-            href={`/dashboard/pharmacy?patientId=${encodeURIComponent(patient.id)}`}
+          <button
+            type="button"
+            onClick={() => scrollToSection("billing")}
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
           >
-            Open Pharmacy
-          </Link>
+            Jump to Billing
+          </button>
         </div>
 
         {pharmacyDispenses.length === 0 ? (
@@ -922,18 +1034,19 @@ export default function PatientProfilePage() {
         )}
       </section>
 
-      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+      <section id="appointments" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8 scroll-mt-24">
         <div className="flex items-end justify-between gap-3">
           <div>
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">History</p>
             <h2 className="mt-2 text-xl text-gray-900">Visit History</h2>
           </div>
-          <Link
-            href={`/dashboard/appointments?patientId=${encodeURIComponent(patient.id)}`}
+          <button
+            type="button"
+            onClick={() => scrollToSection("medical-records")}
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
           >
-            Open Appointments
-          </Link>
+            Jump to Medical Records
+          </button>
         </div>
 
         {visits.length === 0 ? (
@@ -966,18 +1079,19 @@ export default function PatientProfilePage() {
         )}
       </section>
 
-      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+      <section id="medical-records" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8 scroll-mt-24">
         <div className="flex items-end justify-between gap-3">
           <div>
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">EHR-Lite</p>
             <h2 className="mt-2 text-xl text-gray-900">Clinical Notes</h2>
           </div>
-          <Link
-            href={`/dashboard/medical-records?patientId=${encodeURIComponent(patient.id)}`}
+          <button
+            type="button"
+            onClick={() => scrollToSection("lab")}
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
           >
-            Open Medical Records
-          </Link>
+            Jump to Lab
+          </button>
         </div>
 
         {records.length === 0 ? (
@@ -1013,18 +1127,19 @@ export default function PatientProfilePage() {
         )}
       </section>
 
-      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+      <section id="lab" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8 scroll-mt-24">
         <div className="flex items-end justify-between gap-3">
           <div>
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Diagnostics</p>
             <h2 className="mt-2 text-xl text-gray-900">Lab Orders</h2>
           </div>
-          <Link
-            href={`/dashboard/lab?patientId=${encodeURIComponent(patient.id)}`}
+          <button
+            type="button"
+            onClick={() => scrollToSection("attachments")}
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
           >
-            Open Lab
-          </Link>
+            Jump to Attachments
+          </button>
         </div>
 
         {labOrders.length === 0 ? (
@@ -1064,7 +1179,51 @@ export default function PatientProfilePage() {
         )}
       </section>
 
-      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+      <section id="billing" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8 scroll-mt-24">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Billing</p>
+            <h2 className="mt-2 text-xl text-gray-900">Invoice History</h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => scrollToSection("attachments")}
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Jump to Attachments
+          </button>
+        </div>
+
+        {invoices.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-5 py-10 text-center text-sm text-gray-500">
+            No billing records found for this patient yet.
+          </div>
+        ) : (
+          <div className="mt-6 space-y-3">
+            {invoices.slice(0, 6).map((invoice) => (
+              <article key={invoice.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{invoice.invoice_number}</p>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Issued {formatDate(invoice.issue_date)} | {invoice.status.replace(/_/g, " ")}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600 ring-1 ring-gray-200">
+                    {formatCurrency(invoice.balance_amount)}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
+                  <span>Total {formatCurrency(invoice.total_amount)}</span>
+                  <span>Balance {formatCurrency(invoice.balance_amount)}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section id="attachments" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8 scroll-mt-24">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Reports & Notes</p>
@@ -1073,12 +1232,13 @@ export default function PatientProfilePage() {
               Photos and documents attached to this patient&apos;s medical records.
             </p>
           </div>
-          <Link
-            href={`/dashboard/medical-records?patientId=${encodeURIComponent(patient.id)}`}
+          <button
+            type="button"
+            onClick={() => scrollToSection("overview")}
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
           >
-            View All Records
-          </Link>
+            Back to Overview
+          </button>
         </div>
 
         {attachmentRecords.length === 0 ? (
@@ -1086,11 +1246,13 @@ export default function PatientProfilePage() {
             No uploaded photos or documents for this patient yet.
           </div>
         ) : (
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {attachmentRecords.map((record) => {
               const preview = previews[record.id];
               const previewUrl = preview?.url || "";
-              const isImage = isImageContentType(preview?.contentType || inferContentType(record.file_url));
+              const contentType = preview?.contentType || inferContentType(record.file_url);
+              const isImage = isImageContentType(contentType);
+              const isPdf = contentType.includes("pdf");
 
               return (
                 <article key={record.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -1103,6 +1265,12 @@ export default function PatientProfilePage() {
                         decoding="async"
                         className="h-full w-full object-cover"
                       />
+                    ) : previewUrl && isPdf ? (
+                      <iframe
+                        src={previewUrl}
+                        title={record.record_type || "Medical record attachment"}
+                        className="h-full w-full border-0 bg-white"
+                      />
                     ) : (
                       <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-br from-stone-50 via-white to-emerald-50 px-4 text-center">
                         <div className="rounded-2xl bg-white p-3 text-emerald-600 shadow-sm ring-1 ring-gray-200">
@@ -1111,7 +1279,7 @@ export default function PatientProfilePage() {
                         <div>
                           <p className="text-sm font-medium text-gray-900">{record.record_type || "Document"}</p>
                           <p className="mt-1 text-xs uppercase tracking-[0.14em] text-gray-500">
-                            {(preview?.contentType || inferContentType(record.file_url)).includes("pdf") ? "PDF file" : "Attachment"}
+                            {isPdf ? "PDF file" : "Attachment"}
                           </p>
                         </div>
                       </div>

@@ -20,7 +20,6 @@ import {
   Users
 } from "lucide-react";
 import BrandLogo from "./components/BrandLogo";
-import { getAuthToken } from "@/lib/auth";
 import { apiRequest } from "@/lib/api";
 
 const whatItDoes = [
@@ -117,6 +116,13 @@ type LeadActivationResponse = {
   };
 };
 
+type MeResponse = {
+  success: boolean;
+  data: {
+    id: string;
+  };
+};
+
 export default function Home() {
   const router = useRouter();
   const [isReady, setIsReady] = useState(false);
@@ -147,18 +153,25 @@ export default function Home() {
   const [activationError, setActivationError] = useState("");
 
   useEffect(() => {
-    const token = getAuthToken();
+    let cancelled = false;
 
-    if (token) {
-      router.replace("/dashboard");
-      return;
-    }
+    apiRequest<MeResponse>("/auth/me", { authenticated: true })
+      .then(() => {
+        if (!cancelled) {
+          router.replace("/dashboard");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          window.requestAnimationFrame(() => {
+            setIsReady(true);
+          });
+        }
+      });
 
-    const frame = window.requestAnimationFrame(() => {
-      setIsReady(true);
-    });
-
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   if (!isReady) {

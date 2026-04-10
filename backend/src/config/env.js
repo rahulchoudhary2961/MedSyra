@@ -42,6 +42,18 @@ const env = {
   webhookJsonBodyLimit: process.env.WEBHOOK_JSON_BODY_LIMIT || "1mb",
   trustProxy: parseBoolean(process.env.TRUST_PROXY, process.env.NODE_ENV === "production"),
   requireHttps: parseBoolean(process.env.REQUIRE_HTTPS, process.env.NODE_ENV === "production"),
+  authCookieName: process.env.AUTH_COOKIE_NAME || "medsyra_session",
+  authCookieSameSite: String(process.env.AUTH_COOKIE_SAME_SITE || "lax").toLowerCase(),
+  authCookieSecure: parseBoolean(process.env.AUTH_COOKIE_SECURE, process.env.NODE_ENV === "production"),
+  authCookieDomain: process.env.AUTH_COOKIE_DOMAIN || "",
+  authCookiePath: process.env.AUTH_COOKIE_PATH || "/",
+  fileStorageProvider: String(process.env.FILE_STORAGE_PROVIDER || "local").toLowerCase(),
+  r2AccountId: process.env.R2_ACCOUNT_ID || "",
+  r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || "",
+  r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
+  r2BucketName: process.env.R2_BUCKET_NAME || "",
+  r2Endpoint: process.env.R2_ENDPOINT || "",
+  r2Region: process.env.R2_REGION || "auto",
   runtimeDiagnosticsEnabled: parseBoolean(process.env.RUNTIME_DIAGNOSTICS_ENABLED, true),
   slowRequestThresholdMs: Number(process.env.SLOW_REQUEST_THRESHOLD_MS || 750),
   diagnosticsLogIntervalMs: Number(process.env.DIAGNOSTICS_LOG_INTERVAL_MS || 5 * 60 * 1000),
@@ -103,6 +115,25 @@ if (env.nodeEnv === "production" && weakJwtSecret) {
 
 if (env.nodeEnv === "production" && env.corsOrigin === "*") {
   throw new Error("CORS_ORIGIN cannot be '*' in production");
+}
+
+if (!["lax", "strict", "none"].includes(env.authCookieSameSite)) {
+  throw new Error("AUTH_COOKIE_SAME_SITE must be one of: lax, strict, none");
+}
+
+if (env.authCookieSameSite === "none" && !env.authCookieSecure) {
+  throw new Error("AUTH_COOKIE_SECURE must be enabled when AUTH_COOKIE_SAME_SITE is 'none'");
+}
+
+if (!["local", "r2"].includes(env.fileStorageProvider)) {
+  throw new Error("FILE_STORAGE_PROVIDER must be either 'local' or 'r2'");
+}
+
+if (env.fileStorageProvider === "r2") {
+  const missingR2 = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME"].filter((key) => !process.env[key]);
+  if (missingR2.length > 0) {
+    throw new Error(`Missing required R2 environment variables: ${missingR2.join(", ")}`);
+  }
 }
 
 module.exports = env;

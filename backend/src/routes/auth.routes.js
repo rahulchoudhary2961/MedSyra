@@ -20,6 +20,7 @@ router.post(
   validateRequest({ body: authSchemas.signinBody }),
   controller.signin
 );
+router.post("/logout", controller.logout);
 router.post(
   "/verify-email",
   recoveryLimiter,

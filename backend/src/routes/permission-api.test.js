@@ -301,6 +301,7 @@ const run = async () => {
       [controllerPath]: buildOkController([
         "signup",
         "signin",
+        "logout",
         "verifyEmail",
         "resendVerificationEmail",
         "requestPasswordReset",

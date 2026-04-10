@@ -5,14 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, EyeOff, Eye } from "lucide-react";
 import { apiRequest } from "@/lib/api";
-import { setAuthToken } from "@/lib/auth";
+import { clearAuthToken } from "@/lib/auth";
+import { clearGuestMode, enableGuestMode } from "@/lib/guest-mode";
 import { markLoginIntroPending } from "@/lib/onboarding";
 import BrandLogo from "../../components/BrandLogo";
 
 type SigninResponse = {
   success: boolean;
   data: {
-    token: string;
     user: {
       full_name: string;
       role: string;
@@ -45,7 +45,8 @@ export default function LoginPage() {
         }
       });
 
-      setAuthToken(response.data.token);
+      clearGuestMode();
+      clearAuthToken();
       markLoginIntroPending();
       router.push("/dashboard");
     } catch (error) {
@@ -54,6 +55,13 @@ export default function LoginPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const continueAsGuest = () => {
+    enableGuestMode();
+    clearAuthToken();
+    markLoginIntroPending();
+    router.push("/dashboard");
   };
 
   return (
@@ -143,6 +151,14 @@ export default function LoginPage() {
               className="theme-button-primary w-full py-3 rounded-lg disabled:opacity-60"
             >
               {isSubmitting ? "Signing In..." : "Sign In"}
+            </button>
+
+            <button
+              type="button"
+              onClick={continueAsGuest}
+              className="w-full rounded-lg border border-emerald-200 bg-white py-3 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+            >
+              Continue as Guest
             </button>
           </form>
 

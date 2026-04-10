@@ -1,6 +1,4 @@
 "use client";
-
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Edit2, Eye, Plus, Trash2 } from "lucide-react";
@@ -459,7 +457,20 @@ export default function PatientsPage() {
               )}
 
               {patients.map((patient) => (
-                <tr key={patient.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                <tr
+                  key={patient.id}
+                  className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors cursor-pointer"
+                  onClick={() => handleViewPatient(patient)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      handleViewPatient(patient);
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open profile for ${patient.full_name}`}
+                >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white">
@@ -491,22 +502,32 @@ export default function PatientsPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => handleViewPatient(patient)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleViewPatient(patient);
+                        }}
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
                         title="View patient"
                       >
                         <Eye className="w-4 h-4" />
                       </button>
-                      <Link
-                        href={`/dashboard/patients/${patient.id}`}
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleViewPatient(patient);
+                        }}
                         className="p-1.5 rounded hover:bg-gray-100 text-emerald-700"
                         title="Open profile"
                       >
                         <span className="text-xs font-medium">Profile</span>
-                      </Link>
+                      </button>
                       <button
                         type="button"
-                        onClick={() => handleEditPatient(patient)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleEditPatient(patient);
+                        }}
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
                         title="Edit patient"
                       >
@@ -515,7 +536,10 @@ export default function PatientsPage() {
                       {canDeletePatients(currentRole) && (
                         <button
                           type="button"
-                          onClick={() => handleDeletePatient(patient)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleDeletePatient(patient);
+                          }}
                           disabled={deletingPatientId === patient.id}
                           className="p-1.5 rounded hover:bg-red-50 text-red-600 disabled:opacity-60"
                           title="Delete patient"

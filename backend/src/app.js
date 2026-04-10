@@ -23,7 +23,7 @@ const captureRawBody = (req, _res, buf) => {
 };
 
 const allowedOrigins = env.corsOrigin === "*"
-  ? true
+  ? null
   : env.corsOrigin
       .split(",")
       .map((origin) => origin.trim())
@@ -35,7 +35,24 @@ if (env.trustProxy) {
 
 app.use(requestPerformanceMonitor);
 app.use(helmet());
-app.use(cors({ origin: allowedOrigins }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (!allowedOrigins || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("CORS origin not allowed"));
+    },
+    credentials: true
+  })
+);
 app.use(enforceHttps);
 app.use(botProtection);
 app.use(requestSecurityMonitor);

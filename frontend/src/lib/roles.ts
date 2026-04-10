@@ -9,6 +9,7 @@ export const isReceptionistRole = (role?: string | null) => role === "receptioni
 export const isFrontDeskRole = (role?: string | null) => role === "nurse";
 
 export const isBillingRole = (role?: string | null) => role === "billing";
+export const isGuestRole = (role?: string | null) => role === "guest";
 
 export const isReceptionRole = (role?: string | null) => isReceptionistRole(role) || isFrontDeskRole(role);
 
@@ -18,57 +19,57 @@ export const canManageAppointments = (role?: string | null) =>
 export const canDeleteAppointments = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessAssistant = (role?: string | null) =>
-  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
+  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor" || isGuestRole(role);
 
 export const canUseAiPrescription = (role?: string | null) =>
   isFullAccessRole(role) || role === "doctor";
 
 export const canAccessPatients = (role?: string | null) =>
-  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
+  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor" || isGuestRole(role);
 
 export const canDeletePatients = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessBilling = (role?: string | null) =>
-  isFullAccessRole(role) || isBillingRole(role);
+  isFullAccessRole(role) || isBillingRole(role) || isGuestRole(role);
 
 export const canDeleteInvoices = (role?: string | null) => isFullAccessRole(role);
 
-export const canAccessReports = (role?: string | null) => isFullAccessRole(role);
+export const canAccessReports = (role?: string | null) => isFullAccessRole(role) || isGuestRole(role);
 
 export const canAccessSettings = (role?: string | null) => isFullAccessRole(role);
 
-export const canAccessBranches = (role?: string | null) => isFullAccessRole(role);
+export const canAccessBranches = (role?: string | null) => isFullAccessRole(role) || isGuestRole(role);
 
 export const canAccessDoctors = (role?: string | null) =>
-  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
+  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor" || isGuestRole(role);
 
 export const canManageDoctors = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessMedicalRecords = (role?: string | null) =>
-  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
+  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor" || isGuestRole(role);
 
 export const canDeleteMedicalRecords = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessCrm = (role?: string | null) =>
-  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
+  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor" || isGuestRole(role);
 
 export const canAccessLab = (role?: string | null) =>
-  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor";
+  isFullAccessRole(role) || isReceptionRole(role) || role === "doctor" || isGuestRole(role);
 
 export const canManageLabCatalog = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessPharmacy = (role?: string | null) =>
-  isFullAccessRole(role) || isReceptionRole(role) || isBillingRole(role) || role === "doctor";
+  isFullAccessRole(role) || isReceptionRole(role) || isBillingRole(role) || role === "doctor" || isGuestRole(role);
 
 export const canManagePharmacyCatalog = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessInventory = (role?: string | null) =>
-  isFullAccessRole(role) || isReceptionRole(role) || isBillingRole(role);
+  isFullAccessRole(role) || isReceptionRole(role) || isBillingRole(role) || isGuestRole(role);
 
 export const canManageInventory = (role?: string | null) => isFullAccessRole(role);
 
 export const canAccessInsurance = (role?: string | null) =>
-  isFullAccessRole(role) || isBillingRole(role);
+  isFullAccessRole(role) || isBillingRole(role) || isGuestRole(role);
 
 export const canManageInsuranceCatalog = (role?: string | null) =>
   isFullAccessRole(role) || isBillingRole(role);

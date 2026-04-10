@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, Sparkles } from "lucide-react";
-import DoctorSpeedTools from "@/app/components/DoctorSpeedTools";
 import { ApiRequestError, apiRequest } from "@/lib/api";
 import { canDeleteAppointments, canManageAppointments, canUseAiPrescription } from "@/lib/roles";
 import {
@@ -3236,18 +3235,6 @@ export default function AppointmentsPage() {
                   placeholder="Paracetamol 650 mg, hydration, follow-up in 3 days"
                 />
               </label>
-
-              <div className="md:col-span-2">
-                <DoctorSpeedTools
-                  patientId={selectedAppointment.patient_id}
-                  doctorId={selectedAppointment.doctor_id}
-                  prescription={consultationForm.prescription}
-                  notes={consultationForm.notes}
-                  diagnosis={consultationForm.diagnosis}
-                  onPrescriptionChange={(value) => setConsultationForm((prev) => ({ ...prev, prescription: value }))}
-                  onNotesChange={(value) => setConsultationForm((prev) => ({ ...prev, notes: value }))}
-                />
-              </div>
 
               <label className="block space-y-2">
                 <span className="text-sm text-gray-700">Follow-up in days</span>

@@ -80,7 +80,7 @@ const deriveFollowUpDate = (payload, baseDateValue) => {
 
 const deriveFollowUpReminderStatus = (payload, followUpDate, fallbackStatus = null) => {
   if (!followUpDate) {
-    return null;
+    return fallbackStatus ?? "pending";
   }
 
   if (typeof payload.sendFollowUpReminder === "boolean") {
@@ -261,11 +261,13 @@ const updateMedicalRecord = async (organizationId, id, payload, actor = null, re
     normalizedPayload.followUpDate = deriveFollowUpDate(payload, current.record_date);
   }
 
-  normalizedPayload.followUpReminderStatus = deriveFollowUpReminderStatus(
-    payload,
-    normalizedPayload.followUpDate,
-    current.follow_up_reminder_status
-  );
+  if ("followUpDate" in normalizedPayload || "followUpInDays" in payload || "sendFollowUpReminder" in payload) {
+    normalizedPayload.followUpReminderStatus = deriveFollowUpReminderStatus(
+      payload,
+      normalizedPayload.followUpDate,
+      current.follow_up_reminder_status
+    );
+  }
 
   if (normalizedPayload.patientId || normalizedPayload.doctorId) {
     const [patient, doctor] = await Promise.all([

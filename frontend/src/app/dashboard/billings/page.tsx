@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, Clock, Download, ExternalLink, IndianRupee, Link2, Plus, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react";
-import { apiRequest } from "@/lib/api";
-import { getAuthToken } from "@/lib/auth";
+import { apiFetch, apiRequest } from "@/lib/api";
 import { canAccessBilling } from "@/lib/roles";
 import { Doctor, Invoice, InvoicePaymentLink, Patient, ReconciliationReport } from "@/types/api";
 
@@ -491,10 +490,9 @@ export default function BillingsPage() {
   const handleDownloadInvoice = async (invoiceId: string) => {
     setError("");
     try {
-      const token = getAuthToken();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1"}/billings/${invoiceId}/pdf`, {
+      const res = await apiFetch(`/billings/${invoiceId}/pdf`, {
         method: "GET",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        authenticated: true
       });
       if (!res.ok) {
         throw new Error("Failed to download invoice PDF");

@@ -498,9 +498,17 @@ export default function SettingsPage() {
     showSaved("Local settings cleared");
   };
 
-  const handleLogout = () => {
-    clearAuthToken();
-    router.push("/auth/signin");
+  const handleLogout = async () => {
+    try {
+      await apiRequest<{ success: boolean; message: string }>("/auth/logout", {
+        method: "POST"
+      });
+    } catch {
+      // Clear any legacy client-side token state even if the network request fails.
+    } finally {
+      clearAuthToken();
+      router.push("/auth/signin");
+    }
   };
 
   const handleCreateStaff = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1870,7 +1878,9 @@ export default function SettingsPage() {
                     Clear Local Settings
                   </button>
                   <button
-                    onClick={handleLogout}
+                    onClick={() => {
+                      void handleLogout();
+                    }}
                     className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700"
                   >
                     <LogOut className="w-4 h-4" />
