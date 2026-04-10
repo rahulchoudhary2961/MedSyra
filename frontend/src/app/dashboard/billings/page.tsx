@@ -560,7 +560,7 @@ export default function BillingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-gray-900">Billing & Payments</h1>
           <p className="text-gray-600 mt-1">Manage invoices and payment records</p>
@@ -575,7 +575,7 @@ export default function BillingsPage() {
             });
             setShowCreate(true);
           }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700 sm:w-auto"
         >
           <Plus className="w-4 h-4" />
           Create Invoice

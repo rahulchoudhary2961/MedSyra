@@ -961,7 +961,7 @@ export default function ReportsPage() {
           <select
             value={period}
             onChange={(e) => handlePeriodChange(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700"
+            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 sm:w-auto"
           >
             {PERIOD_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -973,7 +973,7 @@ export default function ReportsPage() {
             type="button"
             onClick={exportCsv}
             disabled={!report}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60 sm:w-auto"
           >
             <Download className="h-4 w-4" />
             Export CSV
@@ -982,7 +982,7 @@ export default function ReportsPage() {
             type="button"
             onClick={exportPdf}
             disabled={!report}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 sm:w-auto"
           >
             <Download className="h-4 w-4" />
             Export PDF

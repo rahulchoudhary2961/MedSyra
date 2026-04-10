@@ -525,7 +525,7 @@ export default function DashboardLayout({
 
       <aside
         data-tour-id="tour-sidebar"
-        className={`theme-sidebar fixed top-0 left-0 h-full w-64 z-50 transition-transform duration-300 ${
+        className={`theme-sidebar fixed top-0 left-0 h-full w-[85vw] max-w-72 z-50 transition-transform duration-300 sm:w-72 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >

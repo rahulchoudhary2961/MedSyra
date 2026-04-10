@@ -291,6 +291,332 @@ const guestMedicalRecords = [
 const guestAppointment = guestAppointments[0];
 const guestMedicalRecord = guestMedicalRecords[0];
 
+const guestInvoices = [
+  {
+    id: "88888888-8888-8888-8888-888888888881",
+    branch_id: guestBranch.id,
+    invoice_number: "INV-2026-0001",
+    organization_name: "City General Hospital",
+    organization_id: guestBranch.organization_id,
+    patient_id: guestPatients[0].id,
+    patient_name: guestPatients[0].full_name,
+    doctor_id: guestDoctors[0].id,
+    doctor_name: guestDoctors[0].full_name,
+    appointment_id: null,
+    issue_date: guestToday,
+    due_date: guestToday,
+    status: "paid",
+    total_amount: 1500,
+    paid_amount: 1500,
+    balance_amount: 0,
+    currency: "INR",
+    notes: "Guest preview invoice",
+    items: [
+      { id: "88888888-8888-8888-8888-888888888882", description: "Consultation", quantity: 1, unit_price: 500, total_amount: 500 },
+      { id: "88888888-8888-8888-8888-888888888883", description: "Lab review", quantity: 1, unit_price: 1000, total_amount: 1000 }
+    ],
+    payments: [
+      { id: "88888888-8888-8888-8888-888888888884", amount: 1500, method: "cash", reference: null, status: "paid", paid_at: new Date().toISOString() }
+    ],
+    payment_links: [],
+    latest_payment_link: null
+  },
+  {
+    id: "88888888-8888-8888-8888-888888888885",
+    branch_id: guestBranch.id,
+    invoice_number: "INV-2026-0002",
+    organization_name: "City General Hospital",
+    organization_id: guestBranch.organization_id,
+    patient_id: guestPatients[2].id,
+    patient_name: guestPatients[2].full_name,
+    doctor_id: guestDoctors[2].id,
+    doctor_name: guestDoctors[2].full_name,
+    appointment_id: null,
+    issue_date: guestToday,
+    due_date: guestToday,
+    status: "issued",
+    total_amount: 950,
+    paid_amount: 0,
+    balance_amount: 950,
+    currency: "INR",
+    notes: "Guest preview pending invoice",
+    items: [
+      { id: "88888888-8888-8888-8888-888888888886", description: "Procedure charge", quantity: 1, unit_price: 950, total_amount: 950 }
+    ],
+    payments: [],
+    payment_links: [],
+    latest_payment_link: null
+  }
+];
+
+const guestBillingStats = {
+  totalRevenue: 1500,
+  paidInvoices: 1,
+  pendingInvoices: 1,
+  overdueInvoices: 0,
+  cashTotal: 1500,
+  upiTotal: 0,
+  cardTotal: 0
+};
+
+const guestBillingReconciliation = {
+  summary: {
+    totalInvoices: guestInvoices.length,
+    mismatchedInvoices: 0,
+    outstandingInvoices: 1,
+    refundedPayments: 0,
+    refundedAmount: 0
+  },
+  items: []
+};
+
+const guestReports = {
+  meta: {
+    period: "90d",
+    label: "Last 90 days"
+  },
+  stats: {
+    totalPatients: guestPatients.length,
+    totalMedicalRecords: guestMedicalRecords.length,
+    revenue: guestBillingStats.totalRevenue,
+    growthRate: 0,
+    totalAppointments: guestAppointments.length,
+    completedAppointments: 0,
+    noShows: 0,
+    pendingInvoices: guestBillingStats.pendingInvoices,
+    pendingAmount: 950,
+    averageInvoiceValue: 1225,
+    averagePaymentValue: 1500,
+    refundedAmount: 0,
+    completionRate: 0,
+    cancellationRate: 0,
+    collectionRate: 61.2
+  },
+  trendData: [
+    { label: "Week 1", appointments: 1, revenue: 1500, noShows: 0, records: 1 },
+    { label: "Week 2", appointments: 1, revenue: 0, noShows: 0, records: 1 },
+    { label: "Week 3", appointments: 0, revenue: 0, noShows: 0, records: 0 },
+    { label: "Week 4", appointments: 1, revenue: 0, noShows: 0, records: 0 }
+  ],
+  appointmentStatus: [
+    { name: "Scheduled", value: guestAppointments.length },
+    { name: "Completed", value: 0 },
+    { name: "No Show", value: 0 }
+  ],
+  paymentMethods: [
+    { method: "Cash", total: 1500 },
+    { method: "UPI", total: 0 },
+    { method: "Card", total: 0 }
+  ],
+  topDoctors: guestDoctors.map((doctor, index) => ({
+    id: doctor.id,
+    name: doctor.full_name,
+    specialty: doctor.specialty,
+    appointments: index === 0 ? 1 : index === 1 ? 1 : 1,
+    completed: 0,
+    noShows: 0,
+    uniquePatients: 1,
+    invoiceCount: index === 0 ? 1 : 0,
+    avgInvoiceValue: index === 0 ? 1500 : 0,
+    completionRate: 0,
+    noShowRate: 0,
+    avgRevenuePerCompleted: 0,
+    revenue: index === 0 ? 1500 : 0
+  })),
+  outstandingInvoices: [
+    {
+      id: guestInvoices[1].id,
+      invoiceNumber: guestInvoices[1].invoice_number,
+      patientName: guestInvoices[1].patient_name,
+      doctorName: guestInvoices[1].doctor_name || "",
+      issueDate: guestInvoices[1].issue_date,
+      balanceAmount: guestInvoices[1].balance_amount,
+      status: guestInvoices[1].status
+    }
+  ],
+  departmentData: [
+    { name: "Consultation", value: 1 },
+    { name: "Lab", value: 1 },
+    { name: "Procedure", value: 1 }
+  ],
+  recordTypes: [
+    { type: "Lab Results", count: 1 },
+    { type: "X-Ray", count: 1 }
+  ],
+  monthlyTrends: [
+    { label: "Jan", invoicedAmount: 1500, collectedAmount: 1500, appointments: 2, newPatients: 1 },
+    { label: "Feb", invoicedAmount: 950, collectedAmount: 0, appointments: 1, newPatients: 0 }
+  ],
+  diseasePatterns: {
+    diagnosedRecords: 1,
+    uniqueDiagnoses: 1,
+    items: [
+      {
+        diagnosis: "Blood pressure review",
+        caseCount: 1,
+        patientCount: 1,
+        lastSeenAt: guestMedicalRecords[0].record_date,
+        sharePercent: 100
+      }
+    ]
+  },
+  doctorHighlights: {
+    highestRevenueDoctor: {
+      id: guestDoctors[0].id,
+      name: guestDoctors[0].full_name,
+      specialty: guestDoctors[0].specialty,
+      appointments: 1,
+      completed: 0,
+      noShows: 0,
+      uniquePatients: 1,
+      invoiceCount: 1,
+      avgInvoiceValue: 1500,
+      completionRate: 0,
+      noShowRate: 0,
+      avgRevenuePerCompleted: 0,
+      revenue: 1500
+    },
+    busiestDoctor: {
+      id: guestDoctors[1].id,
+      name: guestDoctors[1].full_name,
+      specialty: guestDoctors[1].specialty,
+      appointments: 1,
+      completed: 0,
+      noShows: 0,
+      uniquePatients: 1,
+      invoiceCount: 0,
+      avgInvoiceValue: 0,
+      completionRate: 0,
+      noShowRate: 0,
+      avgRevenuePerCompleted: 0,
+      revenue: 0
+    },
+    bestCompletionDoctor: null
+  },
+  revenueAnalysis: {
+    invoicedAmount: 2450,
+    collectedAmount: 1500,
+    outstandingAmount: 950,
+    refundedAmount: 0,
+    averageInvoiceValue: 1225,
+    averagePaymentValue: 1500,
+    monthOverMonthGrowth: 0
+  },
+  revenueStreams: [
+    { stream: "Consultation", total: 500 },
+    { stream: "Lab", total: 1000 },
+    { stream: "Procedure", total: 950 }
+  ],
+  predictiveAnalytics: {
+    revisitPrediction: {
+      totalPatientsModeled: guestPatients.length,
+      highLikelihoodCount: 1,
+      mediumLikelihoodCount: 1,
+      lowLikelihoodCount: 1,
+      patients: guestPatients.map((patient, index) => ({
+        patientId: patient.id,
+        patientCode: patient.patient_code,
+        patientName: patient.full_name,
+        phone: patient.phone,
+        lastVisitAt: patient.last_visit_at,
+        nextFollowUpDate: index === 2 ? guestAppointments[2].appointment_date : null,
+        latestDiagnosis: index === 0 ? "Blood pressure review" : index === 1 ? "Routine review" : "Procedure follow-up",
+        daysSinceLastVisit: index + 1,
+        daysUntilFollowUp: index === 2 ? 10 : null,
+        completedVisitsLast180: 1,
+        totalVisitsLast365: 1,
+        noShowsLast180: 0,
+        repeatDiagnosisCount: 0,
+        revisitScore: index === 0 ? 82 : index === 1 ? 64 : 48,
+        likelihood: index === 0 ? "high" : index === 1 ? "medium" : "low",
+        predictedWindow: index === 0 ? "7 days" : index === 1 ? "14 days" : "30 days",
+        reasons: index === 0 ? ["Recent visit", "Active follow-up"] : ["Scheduled review"]
+      }))
+    },
+    diseaseTrends: {
+      currentWindowLabel: "Last 90 days",
+      previousWindowLabel: "Previous 90 days",
+      risingCount: 1,
+      newSignals: 1,
+      stableCount: 1,
+      decliningCount: 0,
+      items: [
+        {
+          diagnosis: "Blood pressure review",
+          currentCases: 1,
+          previousCases: 0,
+          deltaPercent: 100,
+          trend: "new",
+          lastSeenAt: guestMedicalRecords[0].record_date
+        }
+      ]
+    },
+    revenueForecasting: {
+      currentMonthLabel: "April 2026",
+      monthToDateCollected: 1500,
+      projectedMonthEndCollected: 2400,
+      trailingThreeMonthAverage: 1225,
+      forecastRangeLow: 1800,
+      forecastRangeHigh: 2600,
+      projectedGrowthVsLastMonth: 0,
+      elapsedDays: 10,
+      remainingDays: 20,
+      confidence: "medium",
+      series: [
+        { label: "Week 1", actualCollected: 1500, projectedCollected: null },
+        { label: "Week 2", actualCollected: null, projectedCollected: 900 }
+      ]
+    }
+  }
+};
+
+const guestCommercialOverview = {
+  pricing: {
+    planTier: "starter",
+    basePlanPrice: 799,
+    monthlyIncludedCredits: 100,
+    topupPrice: 199,
+    topupCreditAmount: 200,
+    aiCreditsPerQuery: 1,
+    messageCreditsPerUnit: 1,
+    defaultAiCostPerQuery: 1,
+    defaultMessageCostPerUnit: 1
+  },
+  wallet: {
+    currentBalance: 100,
+    monthlyIncludedCredits: 100,
+    lowBalanceThreshold: 20,
+    lastResetAt: new Date().toISOString(),
+    isLowBalance: false
+  },
+  usage: {
+    usageMonth: "2026-04",
+    aiQueriesUsed: 2,
+    aiCostPerQuery: 1,
+    aiCostTotal: 2,
+    messagesUsed: 0,
+    messageCostPerUnit: 1,
+    messageCostTotal: 0,
+    creditsConsumed: 2,
+    includedCreditsGranted: 100,
+    topupCreditsPurchased: 0,
+    topupRevenue: 0,
+    infraCostShare: 0,
+    basePlanRevenue: 799,
+    totalRevenue: 799,
+    totalCost: 2,
+    profitAmount: 797
+  },
+  platformInfra: {
+    usageMonth: "2026-04",
+    totalInfraCost: 0,
+    activeClinics: 1,
+    infraCostPerClinic: 0,
+    notes: "Guest preview"
+  },
+  transactions: []
+};
+
 const guestDashboardPayload = {
   stats: {
     todayAppointments: 1,
@@ -467,7 +793,13 @@ const mockGuestResponse = (path: string, options: RequestOptions = {}) => {
   }
 
   if (cleanPath === "/billings") {
-    return new Response(JSON.stringify({ success: true, data: { items: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 1 } } }), {
+    return new Response(JSON.stringify({ success: true, data: { items: guestInvoices, stats: guestBillingStats } }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (cleanPath === "/billings/reconciliation") {
+    return new Response(JSON.stringify({ success: true, data: guestBillingReconciliation }), {
       headers: { "Content-Type": "application/json" }
     });
   }
@@ -533,7 +865,37 @@ const mockGuestResponse = (path: string, options: RequestOptions = {}) => {
   }
 
   if (cleanPath === "/reports") {
-    return new Response(JSON.stringify({ success: true, data: { period: "30d" } }), {
+    return new Response(JSON.stringify({ success: true, data: guestReports }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (cleanPath === "/dashboard/reports") {
+    return new Response(JSON.stringify({ success: true, data: guestReports }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (cleanPath === "/commercial/overview") {
+    return new Response(JSON.stringify({ success: true, data: guestCommercialOverview }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (cleanPath === "/commercial/pricing") {
+    return new Response(JSON.stringify({ success: true, data: guestCommercialOverview, message: "Guest preview mode is read-only." }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (cleanPath === "/commercial/top-ups") {
+    return new Response(JSON.stringify({ success: true, data: guestCommercialOverview, message: "Guest preview mode is read-only." }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (cleanPath === "/commercial/platform-infra") {
+    return new Response(JSON.stringify({ success: true, message: "Guest preview mode is read-only." }), {
       headers: { "Content-Type": "application/json" }
     });
   }
