@@ -80,7 +80,7 @@ type DashboardResponse = {
   };
 };
 
-export type DashboardInitialData = DashboardResponse["data"] | null;
+export type DashboardInitialData = (DashboardResponse["data"] & { patients: Patient[] }) | null;
 
 type PatientsResponse = {
   success: boolean;
