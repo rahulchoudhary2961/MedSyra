@@ -82,7 +82,10 @@ const buildAuthToken = (user) => {
       branchId: user.branch_id || null,
       emailVerified: Boolean(user.email_verified_at)
     },
-    env.jwtSecret
+    env.jwtSecret,
+    {
+      expiresIn: env.jwtExpiresIn
+    }
   );
 };
 

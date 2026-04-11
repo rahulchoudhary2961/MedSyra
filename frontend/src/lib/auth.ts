@@ -17,9 +17,28 @@ const clearFrontendSessionCookie = () => {
   document.cookie = `${FRONTEND_SESSION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
 };
 
-export const getAuthToken = () => null;
+export const getAuthToken = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
 
-export const setAuthToken = (_token: string) => {};
+  const token = window.localStorage.getItem(TOKEN_KEY);
+  return token && token.trim() ? token.trim() : null;
+};
+
+export const setAuthToken = (token: string) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const normalizedToken = typeof token === "string" ? token.trim() : "";
+  if (!normalizedToken) {
+    window.localStorage.removeItem(TOKEN_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(TOKEN_KEY, normalizedToken);
+};
 
 export const clearAuthToken = () => {
   if (typeof window !== "undefined") {

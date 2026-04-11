@@ -1,4 +1,5 @@
 import { getSelectedBranchId } from "./branch-selection";
+import { getAuthToken } from "./auth";
 import { isGuestModeEnabled } from "./guest-mode";
 
 const API_BASE_URL =
@@ -935,6 +936,11 @@ export const apiFetch = async (path: string, options: SessionFetchOptions = {}) 
     const selectedBranchId = getSelectedBranchId();
     if (selectedBranchId) {
       headers.set("X-Branch-Id", selectedBranchId);
+    }
+
+    const authToken = getAuthToken();
+    if (authToken) {
+      headers.set("Authorization", `Bearer ${authToken}`);
     }
   }
 

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, EyeOff, Eye } from "lucide-react";
 import { apiRequest } from "@/lib/api";
-import { clearAuthToken, setFrontendSessionMarker } from "@/lib/auth";
+import { clearAuthToken, setAuthToken, setFrontendSessionMarker } from "@/lib/auth";
 import { clearGuestMode, enableGuestMode } from "@/lib/guest-mode";
 import { markLoginIntroPending } from "@/lib/onboarding";
 import BrandLogo from "../../components/BrandLogo";
@@ -13,6 +13,7 @@ import BrandLogo from "../../components/BrandLogo";
 type SigninResponse = {
   success: boolean;
   data: {
+    token: string;
     user: {
       full_name: string;
       role: string;
@@ -38,7 +39,7 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await apiRequest<SigninResponse>("/auth/signin", {
+      const response = await apiRequest<SigninResponse>("/auth/signin", {
         method: "POST",
         body: {
           email: formData.email,
@@ -48,6 +49,7 @@ export default function LoginPage() {
 
       clearGuestMode();
       clearAuthToken();
+      setAuthToken(response.data.token);
       setFrontendSessionMarker();
       markLoginIntroPending();
       const callbackUrl = searchParams.get("callbackUrl");

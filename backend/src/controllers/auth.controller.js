@@ -67,6 +67,7 @@ const signin = asyncHandler(async (req, res) => {
       success: true,
       message: "Signed in successfully",
       data: {
+        token: result.token,
         user: result.user
       }
     });
