@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, EyeOff, Eye } from "lucide-react";
 import { apiRequest } from "@/lib/api";
-import { clearAuthToken } from "@/lib/auth";
+import { clearAuthToken, setFrontendSessionMarker } from "@/lib/auth";
 import { clearGuestMode, enableGuestMode } from "@/lib/guest-mode";
 import { markLoginIntroPending } from "@/lib/onboarding";
 import BrandLogo from "../../components/BrandLogo";
@@ -48,6 +48,7 @@ export default function LoginPage() {
 
       clearGuestMode();
       clearAuthToken();
+      setFrontendSessionMarker();
       markLoginIntroPending();
       const callbackUrl = searchParams.get("callbackUrl");
       const safeDestination = callbackUrl && callbackUrl.startsWith("/") ? callbackUrl : "/dashboard";

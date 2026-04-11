@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const AUTH_COOKIE_NAME = process.env.NEXT_PUBLIC_AUTH_COOKIE_NAME || "medsyra_session";
+const FRONTEND_SESSION_COOKIE_NAME = "medsyra_frontend_session";
 const GUEST_MODE_COOKIE_NAME = "medsyra_guest_mode";
 
 export function middleware(request: NextRequest) {
@@ -11,9 +12,10 @@ export function middleware(request: NextRequest) {
   }
 
   const authCookie = request.cookies.get(AUTH_COOKIE_NAME)?.value?.trim();
+  const frontendSessionCookie = request.cookies.get(FRONTEND_SESSION_COOKIE_NAME)?.value?.trim();
   const guestModeCookie = request.cookies.get(GUEST_MODE_COOKIE_NAME)?.value?.trim();
 
-  if (authCookie || guestModeCookie === "true") {
+  if (authCookie || frontendSessionCookie === "true" || guestModeCookie === "true") {
     return NextResponse.next();
   }
 
