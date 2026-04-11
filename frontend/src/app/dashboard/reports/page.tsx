@@ -425,6 +425,7 @@ const createSimplePdfBlob = (title: string, lines: string[]) => {
 };
 
 export default function ReportsPage() {
+  const LIST_PREVIEW_LIMIT = 6;
   const [currentRole, setCurrentRole] = useState("");
   const [period, setPeriod] = useState<string>("90d");
   const [isLoading, setIsLoading] = useState(true);
@@ -459,6 +460,10 @@ export default function ReportsPage() {
   const [savingPricing, setSavingPricing] = useState(false);
   const [addingTopUp, setAddingTopUp] = useState(false);
   const [savingPlatformInfra, setSavingPlatformInfra] = useState(false);
+  const [showAllTopDoctors, setShowAllTopDoctors] = useState(false);
+  const [showAllOutstandingInvoices, setShowAllOutstandingInvoices] = useState(false);
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
+  const [showAllRevisitPatients, setShowAllRevisitPatients] = useState(false);
 
   const applyCommercialData = (data: CommercialOverviewResponse["data"]) => {
     setCommercial(data);
@@ -945,6 +950,16 @@ export default function ReportsPage() {
   const revisitPrediction = report?.predictiveAnalytics.revisitPrediction || null;
   const diseaseTrends = report?.predictiveAnalytics.diseaseTrends || null;
   const revenueForecasting = report?.predictiveAnalytics.revenueForecasting || null;
+  const visibleTopDoctors = showAllTopDoctors ? report?.topDoctors || [] : (report?.topDoctors || []).slice(0, LIST_PREVIEW_LIMIT);
+  const visibleOutstandingInvoices = showAllOutstandingInvoices
+    ? report?.outstandingInvoices || []
+    : (report?.outstandingInvoices || []).slice(0, LIST_PREVIEW_LIMIT);
+  const visibleTransactions = showAllTransactions
+    ? commercial?.transactions || []
+    : (commercial?.transactions || []).slice(0, LIST_PREVIEW_LIMIT);
+  const visibleRevisitPatients = showAllRevisitPatients
+    ? revisitPrediction?.patients || []
+    : (revisitPrediction?.patients || []).slice(0, LIST_PREVIEW_LIMIT);
 
   if (currentRole && !canAccessReports(currentRole)) {
     return <p className="text-red-600">You do not have access to reports.</p>;
@@ -1141,7 +1156,7 @@ export default function ReportsPage() {
                             </td>
                           </tr>
                         )}
-                        {commercial.transactions.map((transaction) => (
+                        {visibleTransactions.map((transaction) => (
                           <tr key={transaction.id} className="border-t border-gray-100">
                             <td className="px-6 py-4 text-sm text-gray-800">
                               <p className="capitalize">{transaction.transactionType.replace(/_/g, " ")}</p>
@@ -1156,6 +1171,21 @@ export default function ReportsPage() {
                             <td className="px-6 py-4 text-sm text-gray-500">{formatTimestamp(transaction.createdAt)}</td>
                           </tr>
                         ))}
+                        {commercial.transactions.length > LIST_PREVIEW_LIMIT && (
+                          <tr>
+                            <td className="px-6 py-4" colSpan={5}>
+                              <div className="flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAllTransactions((current) => !current)}
+                                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                >
+                                  {showAllTransactions ? "Show less" : "Show more"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1596,7 +1626,7 @@ export default function ReportsPage() {
                 {(revisitPrediction?.patients || []).length === 0 && (
                   <div className="px-6 py-5 text-sm text-gray-500">Not enough patient history yet for revisit predictions.</div>
                 )}
-                {(revisitPrediction?.patients || []).map((patient) => {
+                {visibleRevisitPatients.map((patient) => {
                   const likelihoodClasses =
                     patient.likelihood === "high"
                       ? "border-emerald-200 bg-emerald-50 text-emerald-800"
@@ -1647,6 +1677,17 @@ export default function ReportsPage() {
                     </div>
                   );
                 })}
+                {(revisitPrediction?.patients || []).length > LIST_PREVIEW_LIMIT && (
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowAllRevisitPatients((current) => !current)}
+                      className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      {showAllRevisitPatients ? "Show less" : "Show more"}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1828,7 +1869,7 @@ export default function ReportsPage() {
                   </thead>
                   <tbody>
                     {report.topDoctors.length === 0 && <tr><td colSpan={8} className="px-6 py-4 text-sm text-gray-500">No doctor performance data in this period.</td></tr>}
-                    {report.topDoctors.map((doctor) => (
+                    {visibleTopDoctors.map((doctor) => (
                       <tr key={doctor.id} className="border-t border-gray-100">
                         <td className="px-6 py-4 text-sm text-gray-800">
                           <p>{doctor.name}</p>
@@ -1843,6 +1884,21 @@ export default function ReportsPage() {
                         <td className="px-6 py-4 text-sm text-gray-800">{currency(doctor.revenue)}</td>
                       </tr>
                     ))}
+                    {report.topDoctors.length > LIST_PREVIEW_LIMIT && (
+                      <tr>
+                        <td className="px-6 py-4" colSpan={8}>
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setShowAllTopDoctors((current) => !current)}
+                              className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              {showAllTopDoctors ? "Show less" : "Show more"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1855,7 +1911,7 @@ export default function ReportsPage() {
               </div>
               <div className="divide-y divide-gray-100">
                 {report.outstandingInvoices.length === 0 && <div className="px-6 py-5 text-sm text-gray-500">No outstanding invoices.</div>}
-                {report.outstandingInvoices.map((invoice) => (
+                {visibleOutstandingInvoices.map((invoice) => (
                   <div key={invoice.id} className="px-6 py-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -1870,6 +1926,19 @@ export default function ReportsPage() {
                     </div>
                   </div>
                 ))}
+                {report.outstandingInvoices.length > LIST_PREVIEW_LIMIT && (
+                  <div className="px-6 py-4">
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowAllOutstandingInvoices((current) => !current)}
+                        className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        {showAllOutstandingInvoices ? "Show less" : "Show more"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

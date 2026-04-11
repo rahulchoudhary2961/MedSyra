@@ -167,6 +167,7 @@ const buildEventForm = (): EventForm => ({
 export default function InsurancePage() {
   const searchParams = useSearchParams();
   const patientFilterId = searchParams.get("patientId") || "";
+  const LIST_PREVIEW_LIMIT = 6;
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [providers, setProviders] = useState<InsuranceProvider[]>([]);
   const [claims, setClaims] = useState<InsuranceClaim[]>([]);
@@ -187,6 +188,8 @@ export default function InsurancePage() {
   const [claimForm, setClaimForm] = useState<ClaimForm>(buildClaimForm(patientFilterId));
   const [editForm, setEditForm] = useState<ClaimUpdateForm>(buildUpdateForm());
   const [eventForm, setEventForm] = useState<EventForm>(buildEventForm());
+  const [showAllClaims, setShowAllClaims] = useState(false);
+  const [showAllClaimEvents, setShowAllClaimEvents] = useState(false);
 
   const loadReferenceData = useCallback(async (patientId = "") => {
     const params = new URLSearchParams();
@@ -306,6 +309,8 @@ export default function InsurancePage() {
     settledAmount: claims.reduce((sum, claim) => sum + Number(claim.paid_amount || 0), 0),
     atRisk: claims.filter((claim) => claim.days_to_response !== null && claim.days_to_response <= 2 && !["settled", "rejected", "cancelled"].includes(claim.status)).length
   }), [claims]);
+  const visibleClaims = showAllClaims ? claims : claims.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleClaimEvents = showAllClaimEvents ? (selectedClaim?.events || []) : (selectedClaim?.events || []).slice(0, LIST_PREVIEW_LIMIT);
 
   const providerOptions = useMemo(
     () => providers.filter((provider) => provider.is_active).map((provider) => ({ id: provider.id, label: `${provider.name}${provider.payer_code ? ` | ${provider.payer_code}` : ""}` })),
@@ -613,7 +618,7 @@ export default function InsurancePage() {
               <div className="border-b border-gray-200 px-6 py-4"><h2 className="text-gray-900">Claim Queue</h2><p className="mt-1 text-sm text-gray-500">Track submission, approval, and settlement follow-up in one queue.</p></div>
               <div className="divide-y divide-gray-100">
                 {claims.length === 0 && <div className="px-6 py-6 text-sm text-gray-500">No insurance claims found for the selected filters.</div>}
-                {claims.map((claim) => (
+                {visibleClaims.map((claim) => (
                   <button key={claim.id} data-testid="insurance-claim-queue-item" type="button" onClick={() => void loadClaimDetail(claim.id)} className={`w-full px-6 py-4 text-left transition ${selectedClaimId === claim.id ? "bg-emerald-50" : "hover:bg-gray-50"}`}>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
@@ -632,6 +637,19 @@ export default function InsurancePage() {
                     </div>
                   </button>
                 ))}
+                {claims.length > LIST_PREVIEW_LIMIT && (
+                  <div className="px-6 py-4">
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowAllClaims((current) => !current)}
+                        className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        {showAllClaims ? "Show less" : "Show more"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
             <section className="space-y-6">
@@ -686,7 +704,7 @@ export default function InsurancePage() {
                     <div className="border-b border-gray-200 px-6 py-4"><h2 className="text-gray-900">Claim Timeline</h2><p className="mt-1 text-sm text-gray-500">Every claim action and status transition recorded against this case.</p></div>
                     <div className="divide-y divide-gray-100">
                       {(selectedClaim.events || []).length === 0 && <div className="px-6 py-5 text-sm text-gray-500">No claim events recorded yet.</div>}
-                      {(selectedClaim.events || []).map((event) => (
+                      {visibleClaimEvents.map((event) => (
                         <div key={event.id} className="px-6 py-4">
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -699,6 +717,19 @@ export default function InsurancePage() {
                           </div>
                         </div>
                       ))}
+                      {(selectedClaim?.events || []).length > LIST_PREVIEW_LIMIT && (
+                        <div className="px-6 py-4">
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setShowAllClaimEvents((current) => !current)}
+                              className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              {showAllClaimEvents ? "Show less" : "Show more"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>

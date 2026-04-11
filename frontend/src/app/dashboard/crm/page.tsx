@@ -145,6 +145,7 @@ type EditTaskForm = {
 const taskTypes: Array<CreateTaskForm["taskType"]> = ["follow_up", "recall", "retention"];
 const taskStatuses: CrmTask["status"][] = ["open", "contacted", "scheduled", "not_reachable", "closed", "dismissed"];
 const taskPriorities: CrmTask["priority"][] = ["high", "medium", "low"];
+const LIST_PREVIEW_LIMIT = 6;
 
 const formatDate = (value: string | null) => {
   if (!value) return "-";
@@ -281,6 +282,12 @@ export default function CrmPage() {
     status: ""
   });
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showAllAutoSuggestions, setShowAllAutoSuggestions] = useState(false);
+  const [showAllMissedFollowUps, setShowAllMissedFollowUps] = useState(false);
+  const [showAllInactive30, setShowAllInactive30] = useState(false);
+  const [showAllInactive60, setShowAllInactive60] = useState(false);
+  const [showAllChronicPatients, setShowAllChronicPatients] = useState(false);
+  const [showAllTasks, setShowAllTasks] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingTask, setEditingTask] = useState<CrmTask | null>(null);
   const [createForm, setCreateForm] = useState<CreateTaskForm>(buildDefaultCreateForm(patientFilterId));
@@ -311,6 +318,12 @@ export default function CrmPage() {
 
     return patientOptions.filter((patient) => patient.label.toLowerCase().includes(query));
   }, [patientOptions, patientSearch]);
+  const visibleAutoSuggestions = showAllAutoSuggestions ? smartFollowUp.autoSuggestions : smartFollowUp.autoSuggestions.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleMissedFollowUps = showAllMissedFollowUps ? smartFollowUp.missedFollowUps : smartFollowUp.missedFollowUps.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleInactive30 = showAllInactive30 ? smartFollowUp.inactive30Days : smartFollowUp.inactive30Days.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleInactive60 = showAllInactive60 ? smartFollowUp.inactive60Days : smartFollowUp.inactive60Days.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleChronicPatients = showAllChronicPatients ? smartFollowUp.chronicPatients : smartFollowUp.chronicPatients.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleTasks = showAllTasks ? tasks : tasks.slice(0, LIST_PREVIEW_LIMIT);
 
   const loadTasks = useCallback(async () => {
     const params = new URLSearchParams();
@@ -701,7 +714,7 @@ export default function CrmPage() {
                 No diagnosis-based follow-up suggestions right now.
               </p>
             ) : (
-              smartFollowUp.autoSuggestions.map((item) => (
+              visibleAutoSuggestions.map((item) => (
                 <article key={item.medicalRecordId} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${getSignalTone(item.priority)}`}>
@@ -746,6 +759,17 @@ export default function CrmPage() {
               ))
             )}
           </div>
+          {smartFollowUp.autoSuggestions.length > LIST_PREVIEW_LIMIT && (
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAllAutoSuggestions((current) => !current)}
+                className="rounded-lg border border-blue-200 px-4 py-2 text-sm text-blue-700 hover:bg-blue-50"
+              >
+                {showAllAutoSuggestions ? "Show less" : "Show more"}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -764,7 +788,7 @@ export default function CrmPage() {
                 No missed follow-up alerts right now.
               </p>
             ) : (
-              smartFollowUp.missedFollowUps.map((item) => (
+              visibleMissedFollowUps.map((item) => (
                 <article key={item.medicalRecordId} className="rounded-2xl border border-red-100 bg-red-50/40 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-red-700">
@@ -808,6 +832,17 @@ export default function CrmPage() {
               ))
             )}
           </div>
+          {smartFollowUp.missedFollowUps.length > LIST_PREVIEW_LIMIT && (
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAllMissedFollowUps((current) => !current)}
+                className="rounded-lg border border-red-200 px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+              >
+                {showAllMissedFollowUps ? "Show less" : "Show more"}
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -828,7 +863,7 @@ export default function CrmPage() {
                 No patients in the 30-59 day inactive bucket.
               </p>
             ) : (
-              smartFollowUp.inactive30Days.map((item) => (
+              visibleInactive30.map((item) => (
                 <article key={`inactive30-${item.patientId}`} className="rounded-2xl border border-amber-100 bg-amber-50/40 p-4">
                   <h3 className="text-base text-gray-900">{item.patientName}</h3>
                   <p className="mt-1 text-sm text-gray-600">{item.patientCode ? `${item.patientCode} | ` : ""}{item.daysSinceLastVisit} days since last visit</p>
@@ -860,6 +895,17 @@ export default function CrmPage() {
               ))
             )}
           </div>
+          {smartFollowUp.inactive30Days.length > LIST_PREVIEW_LIMIT && (
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAllInactive30((current) => !current)}
+                className="rounded-lg border border-amber-200 px-4 py-2 text-sm text-amber-700 hover:bg-amber-50"
+              >
+                {showAllInactive30 ? "Show less" : "Show more"}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -878,7 +924,7 @@ export default function CrmPage() {
                 No patients in the 60+ day inactive bucket.
               </p>
             ) : (
-              smartFollowUp.inactive60Days.map((item) => (
+              visibleInactive60.map((item) => (
                 <article key={`inactive60-${item.patientId}`} className="rounded-2xl border border-rose-100 bg-rose-50/40 p-4">
                   <h3 className="text-base text-gray-900">{item.patientName}</h3>
                   <p className="mt-1 text-sm text-gray-600">{item.patientCode ? `${item.patientCode} | ` : ""}{item.daysSinceLastVisit} days since last visit</p>
@@ -913,6 +959,17 @@ export default function CrmPage() {
               ))
             )}
           </div>
+          {smartFollowUp.inactive60Days.length > LIST_PREVIEW_LIMIT && (
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAllInactive60((current) => !current)}
+                className="rounded-lg border border-rose-200 px-4 py-2 text-sm text-rose-700 hover:bg-rose-50"
+              >
+                {showAllInactive60 ? "Show less" : "Show more"}
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -932,7 +989,7 @@ export default function CrmPage() {
               No chronic tracking candidates right now.
             </p>
           ) : (
-            smartFollowUp.chronicPatients.map((item) => (
+            visibleChronicPatients.map((item) => (
               <article key={`chronic-${item.patientId}`} className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
@@ -977,6 +1034,17 @@ export default function CrmPage() {
             ))
           )}
         </div>
+        {smartFollowUp.chronicPatients.length > LIST_PREVIEW_LIMIT && (
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowAllChronicPatients((current) => !current)}
+              className="rounded-lg border border-emerald-200 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50"
+            >
+              {showAllChronicPatients ? "Show less" : "Show more"}
+            </button>
+          </div>
+        )}
       </section>
 
       {showCreateForm && (
@@ -1152,7 +1220,7 @@ export default function CrmPage() {
             No CRM tasks matched the current filters.
           </div>
         ) : (
-          tasks.map((task) => (
+          visibleTasks.map((task) => (
             <article key={task.id} data-testid="crm-task-card" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-3">
@@ -1224,6 +1292,17 @@ export default function CrmPage() {
               </div>
             </article>
           ))
+        )}
+        {tasks.length > LIST_PREVIEW_LIMIT && (
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => setShowAllTasks((current) => !current)}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              {showAllTasks ? "Show less" : "Show more"}
+            </button>
+          </div>
         )}
       </section>
 

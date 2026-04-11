@@ -66,6 +66,7 @@ type DispenseForm = {
 };
 
 const todayDateKey = () => new Date().toISOString().slice(0, 10);
+const LIST_PREVIEW_LIMIT = 6;
 const money = (value: number | null | undefined) => `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const quantity = (value: number | null | undefined) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const formatDate = (value: string | null | undefined) => {
@@ -233,6 +234,9 @@ export default function PharmacyPage() {
   const [showMedicineForm, setShowMedicineForm] = useState(false);
   const [showBatchForm, setShowBatchForm] = useState(false);
   const [showDispenseForm, setShowDispenseForm] = useState(false);
+  const [showAllLowStock, setShowAllLowStock] = useState(false);
+  const [showAllMedicines, setShowAllMedicines] = useState(false);
+  const [showAllDispenses, setShowAllDispenses] = useState(false);
   const [filters, setFilters] = useState({ q: "", status: "" });
   const [medicineForm, setMedicineForm] = useState<MedicineForm>(initialMedicineForm());
   const [batchForm, setBatchForm] = useState<BatchForm>(initialBatchForm());
@@ -326,6 +330,9 @@ export default function PharmacyPage() {
     () => patients.find((patient) => patient.id === dispenseForm.patientId) || null,
     [patients, dispenseForm.patientId]
   );
+  const visibleLowStockItems = showAllLowStock ? insights.low_stock_items : insights.low_stock_items.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleMedicines = showAllMedicines ? medicines : medicines.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleDispenses = showAllDispenses ? dispenses : dispenses.slice(0, LIST_PREVIEW_LIMIT);
 
   const activeBatches = useMemo(() => batches.filter((batch) => batch.available_quantity > 0), [batches]);
   const lowStock = useMemo(
@@ -559,7 +566,8 @@ export default function PharmacyPage() {
               No low stock medicines in today&apos;s summary.
             </div>
           ) : (
-            insights.low_stock_items.map((item) => (
+            <>
+              {visibleLowStockItems.map((item) => (
               <article key={item.id} className="rounded-2xl border border-amber-100 bg-white p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -579,7 +587,19 @@ export default function PharmacyPage() {
                   <p><span className="font-medium text-gray-900">Suggested Reorder:</span> {quantity(item.suggested_reorder_quantity)} {item.unit}</p>
                 </div>
               </article>
-            ))
+            ))}
+            {insights.low_stock_items.length > LIST_PREVIEW_LIMIT && (
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowAllLowStock((current) => !current)}
+                  className="rounded-lg border border-amber-200 px-4 py-2 text-sm text-amber-800 hover:bg-white"
+                >
+                  {showAllLowStock ? "Show less" : "Show more"}
+                </button>
+              </div>
+            )}
+            </>
           )}
         </div>
       </section>
@@ -749,8 +769,9 @@ export default function PharmacyPage() {
         ) : medicines.length === 0 ? (
           <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">No medicines added yet.</div>
         ) : (
+          <>
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {medicines.map((medicine) => {
+            {visibleMedicines.map((medicine) => {
               const isLowStock = Number(medicine.current_stock || 0) <= Number(medicine.reorder_level || 0);
               return (
                 <article key={medicine.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
@@ -777,6 +798,18 @@ export default function PharmacyPage() {
               );
             })}
           </div>
+          {medicines.length > LIST_PREVIEW_LIMIT && (
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAllMedicines((current) => !current)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                {showAllMedicines ? "Show less" : "Show more"}
+              </button>
+            </div>
+          )}
+          </>
         )}
       </section>
 
@@ -835,7 +868,8 @@ export default function PharmacyPage() {
         ) : dispenses.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">No pharmacy dispenses matched the current filters.</div>
         ) : (
-          dispenses.map((dispense) => (
+          <>
+          {visibleDispenses.map((dispense) => (
             <article key={dispense.id} data-testid="pharmacy-dispense-card" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-3">
@@ -867,7 +901,19 @@ export default function PharmacyPage() {
                 </div>
               </div>
             </article>
-          ))
+          ))}
+          {dispenses.length > LIST_PREVIEW_LIMIT && (
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAllDispenses((current) => !current)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                {showAllDispenses ? "Show less" : "Show more"}
+              </button>
+            </div>
+          )}
+          </>
         )}
       </section>
     </div>

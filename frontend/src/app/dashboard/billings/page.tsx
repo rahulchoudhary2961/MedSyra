@@ -42,6 +42,7 @@ const formatRupee = (value: number) => `Rs. ${Number(value || 0).toLocaleString(
 const formatInvoiceMoney = (amount: number, currency?: string | null) =>
   currency && currency !== "INR" ? `${currency} ${Number(amount || 0).toFixed(2)}` : `Rs. ${Number(amount || 0).toFixed(2)}`;
 const normalizeDateInput = (value?: string | null) => (value ? String(value).slice(0, 10) : null);
+const LIST_PREVIEW_LIMIT = 6;
 
 type InvoiceFormItem = {
   id: string;
@@ -134,6 +135,7 @@ export default function BillingsPage() {
   const [currentRole, setCurrentRole] = useState("");
   const [creatingPaymentLinkId, setCreatingPaymentLinkId] = useState<string | null>(null);
   const [refreshingPaymentLinkId, setRefreshingPaymentLinkId] = useState<string | null>(null);
+  const [showAllInvoices, setShowAllInvoices] = useState(false);
   const loadRequestRef = useRef(0);
 
   const invoiceDraftTotal = useMemo(
@@ -269,6 +271,7 @@ export default function BillingsPage() {
         (invoice.patient_name || "").toLowerCase().includes(query)
       );
   }, [invoices, search]);
+  const visibleInvoices = showAllInvoices ? filteredInvoices : filteredInvoices.slice(0, LIST_PREVIEW_LIMIT);
 
   const selectedPatient = useMemo(
     () => patients.find((patient) => patient.id === patientFilterId) || null,
@@ -777,7 +780,7 @@ export default function BillingsPage() {
                   </td>
                 </tr>
               )}
-                {filteredInvoices.map((invoice) => (
+                {visibleInvoices.map((invoice) => (
                 <tr key={invoice.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <p className="text-emerald-700">{invoice.invoice_number}</p>
@@ -891,11 +894,26 @@ export default function BillingsPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+                ))}
+                {filteredInvoices.length > LIST_PREVIEW_LIMIT && (
+                  <tr>
+                    <td className="px-6 py-4" colSpan={7}>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setShowAllInvoices((current) => !current)}
+                          className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          {showAllInvoices ? "Show less" : "Show more"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">

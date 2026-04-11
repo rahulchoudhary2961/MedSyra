@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, EyeOff, Eye } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth";
@@ -22,6 +22,7 @@ type SigninResponse = {
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -37,7 +38,7 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await apiRequest<SigninResponse>("/auth/signin", {
+      await apiRequest<SigninResponse>("/auth/signin", {
         method: "POST",
         body: {
           email: formData.email,
@@ -48,7 +49,9 @@ export default function LoginPage() {
       clearGuestMode();
       clearAuthToken();
       markLoginIntroPending();
-      router.push("/dashboard");
+      const callbackUrl = searchParams.get("callbackUrl");
+      const safeDestination = callbackUrl && callbackUrl.startsWith("/") ? callbackUrl : "/dashboard";
+      router.push(safeDestination);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to sign in";
       setErrorMessage(message);
@@ -61,7 +64,9 @@ export default function LoginPage() {
     enableGuestMode();
     clearAuthToken();
     markLoginIntroPending();
-    router.push("/dashboard");
+    const callbackUrl = searchParams.get("callbackUrl");
+    const safeDestination = callbackUrl && callbackUrl.startsWith("/") ? callbackUrl : "/dashboard";
+    router.push(safeDestination);
   };
 
   return (

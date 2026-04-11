@@ -1,8 +1,10 @@
 import { UserPlus, FileText, Calendar, CreditCard } from "lucide-react";
+import { useState } from "react";
 import { ActivityLog } from "@/types/api";
 
 type Props = {
   items: ActivityLog[];
+  maxVisibleItems?: number;
 };
 
 const iconByType = {
@@ -19,13 +21,17 @@ const colorClasses = {
   payment: "bg-teal-50 text-teal-600"
 };
 
-export default function PatientActivityTimeline({ items }: Props) {
+export default function PatientActivityTimeline({ items, maxVisibleItems = 6 }: Props) {
+  const [showAll, setShowAll] = useState(false);
+  const visibleItems = showAll ? items : items.slice(0, maxVisibleItems);
+  const hasMore = items.length > maxVisibleItems;
+
   return (
     <div className="theme-panel rounded-xl p-6">
       <h3 className="theme-heading mb-6">Recent Activity</h3>
       <div className="space-y-4">
-        {items.length === 0 && <p className="text-sm theme-muted">No activity yet.</p>}
-        {items.map((activity, index) => {
+        {visibleItems.length === 0 && <p className="text-sm theme-muted">No activity yet.</p>}
+        {visibleItems.map((activity, index) => {
           const type = (activity.event_type as keyof typeof iconByType) || "record";
           const Icon = iconByType[type] || FileText;
           const colorClass = colorClasses[type] || colorClasses.record;
@@ -47,6 +53,18 @@ export default function PatientActivityTimeline({ items }: Props) {
           );
         })}
       </div>
+
+      {hasMore && (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => setShowAll((current) => !current)}
+            className="inline-flex items-center justify-center rounded-lg border border-emerald-200 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50"
+          >
+            {showAll ? "Show less" : "Show more"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

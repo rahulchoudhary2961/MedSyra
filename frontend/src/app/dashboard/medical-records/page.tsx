@@ -117,6 +117,7 @@ export default function MedicalRecordsPage() {
   const searchParams = useSearchParams();
   const patientFilterId = searchParams.get("patientId") || "";
   const medicalRecordStatuses = ["completed", "pending review", "in progress"] as const;
+  const LIST_PREVIEW_LIMIT = 6;
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -138,6 +139,8 @@ export default function MedicalRecordsPage() {
   const [aiSuggestionError, setAiSuggestionError] = useState("");
   const [isGeneratingAiSuggestion, setIsGeneratingAiSuggestion] = useState(false);
   const [reviewingAiSuggestionId, setReviewingAiSuggestionId] = useState<string | null>(null);
+  const [showAllRecords, setShowAllRecords] = useState(false);
+  const [showAllAiSuggestions, setShowAllAiSuggestions] = useState(false);
 
   const patientsMap = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient.full_name])),
@@ -147,6 +150,8 @@ export default function MedicalRecordsPage() {
     () => new Map(doctors.map((doctor) => [doctor.id, doctor.full_name])),
     [doctors]
   );
+  const visibleRecords = showAllRecords ? records : records.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleAiSuggestions = showAllAiSuggestions ? aiSuggestions : aiSuggestions.slice(0, LIST_PREVIEW_LIMIT);
 
   const sortRecords = useCallback(
     (items: MedicalRecord[]) =>
@@ -838,7 +843,7 @@ export default function MedicalRecordsPage() {
                   </td>
                 </tr>
               )}
-              {records.map((record) => (
+              {visibleRecords.map((record) => (
                 <tr key={record.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -924,6 +929,21 @@ export default function MedicalRecordsPage() {
                   </td>
                 </tr>
               ))}
+              {records.length > LIST_PREVIEW_LIMIT && (
+                <tr>
+                  <td className="px-6 py-4" colSpan={6}>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowAllRecords((current) => !current)}
+                        className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        {showAllRecords ? "Show less" : "Show more"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1039,7 +1059,7 @@ export default function MedicalRecordsPage() {
                   </p>
                 ) : (
                   <div className="mt-4 space-y-3">
-                    {aiSuggestions.map((suggestion) => (
+                    {visibleAiSuggestions.map((suggestion) => (
                       <div key={suggestion.id} className="rounded-xl border border-violet-200 bg-white p-4">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1124,6 +1144,17 @@ export default function MedicalRecordsPage() {
                         )}
                       </div>
                     ))}
+                    {aiSuggestions.length > LIST_PREVIEW_LIMIT && (
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowAllAiSuggestions((current) => !current)}
+                          className="rounded-lg border border-violet-200 px-4 py-2 text-sm text-violet-700 hover:bg-violet-50"
+                        >
+                          {showAllAiSuggestions ? "Show less" : "Show more"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -40,6 +40,7 @@ type MovementForm = {
 };
 
 const todayDateKey = () => new Date().toISOString().slice(0, 10);
+const LIST_PREVIEW_LIMIT = 6;
 
 const movementLabels: Record<InventoryMovement["movement_type"], string> = {
   stock_in: "Stock In",
@@ -101,6 +102,9 @@ export default function InventoryPage() {
   const [error, setError] = useState("");
   const [showItemForm, setShowItemForm] = useState(false);
   const [showMovementForm, setShowMovementForm] = useState(false);
+  const [showAllLowStock, setShowAllLowStock] = useState(false);
+  const [showAllItems, setShowAllItems] = useState(false);
+  const [showAllMovements, setShowAllMovements] = useState(false);
   const [filters, setFilters] = useState({ q: "", movementType: "" });
   const [itemForm, setItemForm] = useState<ItemForm>(initialItemForm());
   const [movementForm, setMovementForm] = useState<MovementForm>(initialMovementForm());
@@ -149,6 +153,9 @@ export default function InventoryPage() {
     () => items.filter((item) => item.is_active && Number(item.current_stock || 0) <= Number(item.reorder_level || 0)),
     [items]
   );
+  const visibleLowStockItems = showAllLowStock ? lowStockItems : lowStockItems.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleItems = showAllItems ? items : items.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleMovements = showAllMovements ? movements : movements.slice(0, LIST_PREVIEW_LIMIT);
 
   const submitItem = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -305,24 +312,37 @@ export default function InventoryPage() {
         ) : lowStockItems.length === 0 ? (
           <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">No low-stock consumables right now.</div>
         ) : (
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {lowStockItems.map((item) => (
-              <article key={item.id} className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg text-amber-950">{item.name}</p>
-                    <p className="mt-1 text-sm text-amber-800">{item.category || "General"}{item.code ? ` | ${item.code}` : ""}</p>
+          <>
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {visibleLowStockItems.map((item) => (
+                <article key={item.id} className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg text-amber-950">{item.name}</p>
+                      <p className="mt-1 text-sm text-amber-800">{item.category || "General"}{item.code ? ` | ${item.code}` : ""}</p>
+                    </div>
+                    <TriangleAlert className="h-5 w-5 text-amber-700" />
                   </div>
-                  <TriangleAlert className="h-5 w-5 text-amber-700" />
-                </div>
-                <div className="mt-4 grid gap-2 text-sm text-amber-900">
-                  <p><span className="font-medium">Current stock:</span> {formatQuantity(item.current_stock)} {item.unit}</p>
-                  <p><span className="font-medium">Reorder level:</span> {formatQuantity(item.reorder_level)} {item.unit}</p>
-                  <p><span className="font-medium">Last movement:</span> {formatDate(item.last_movement_date)}</p>
-                </div>
-              </article>
-            ))}
-          </div>
+                  <div className="mt-4 grid gap-2 text-sm text-amber-900">
+                    <p><span className="font-medium">Current stock:</span> {formatQuantity(item.current_stock)} {item.unit}</p>
+                    <p><span className="font-medium">Reorder level:</span> {formatQuantity(item.reorder_level)} {item.unit}</p>
+                    <p><span className="font-medium">Last movement:</span> {formatDate(item.last_movement_date)}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+            {lowStockItems.length > LIST_PREVIEW_LIMIT && (
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowAllLowStock((current) => !current)}
+                  className="rounded-lg border border-amber-200 px-4 py-2 text-sm text-amber-800 hover:bg-white"
+                >
+                  {showAllLowStock ? "Show less" : "Show more"}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -339,25 +359,38 @@ export default function InventoryPage() {
         ) : items.length === 0 ? (
           <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">No consumables added yet.</div>
         ) : (
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {items.map((item) => (
-              <article key={item.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg text-gray-900">{item.name}</p>
-                    <p className="mt-1 text-sm text-gray-600">{item.category || "General"}{item.code ? ` | ${item.code}` : ""}</p>
+          <>
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {visibleItems.map((item) => (
+                <article key={item.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg text-gray-900">{item.name}</p>
+                      <p className="mt-1 text-sm text-gray-600">{item.category || "General"}{item.code ? ` | ${item.code}` : ""}</p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${item.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>{item.is_active ? "Active" : "Inactive"}</span>
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${item.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>{item.is_active ? "Active" : "Inactive"}</span>
-                </div>
-                <div className="mt-4 grid gap-2 text-sm text-gray-600">
-                  <p><span className="font-medium text-gray-900">Stock:</span> {formatQuantity(item.current_stock)} {item.unit}</p>
-                  <p><span className="font-medium text-gray-900">Reorder level:</span> {formatQuantity(item.reorder_level)} {item.unit}</p>
-                  <p><span className="font-medium text-gray-900">Latest unit cost:</span> {formatCurrency(item.latest_unit_cost)}</p>
-                  <p><span className="font-medium text-gray-900">Wastage:</span> {formatQuantity(item.wastage_quantity)} {item.unit} ({formatCurrency(item.wastage_value)})</p>
-                </div>
-              </article>
-            ))}
-          </div>
+                  <div className="mt-4 grid gap-2 text-sm text-gray-600">
+                    <p><span className="font-medium text-gray-900">Stock:</span> {formatQuantity(item.current_stock)} {item.unit}</p>
+                    <p><span className="font-medium text-gray-900">Reorder level:</span> {formatQuantity(item.reorder_level)} {item.unit}</p>
+                    <p><span className="font-medium text-gray-900">Latest unit cost:</span> {formatCurrency(item.latest_unit_cost)}</p>
+                    <p><span className="font-medium text-gray-900">Wastage:</span> {formatQuantity(item.wastage_quantity)} {item.unit} ({formatCurrency(item.wastage_value)})</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+            {items.length > LIST_PREVIEW_LIMIT && (
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowAllItems((current) => !current)}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-white"
+                >
+                  {showAllItems ? "Show less" : "Show more"}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -377,31 +410,46 @@ export default function InventoryPage() {
         ) : movements.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">No inventory movements matched the current filters.</div>
         ) : (
-          movements.map((movement) => (
-            <article key={movement.id} data-testid="inventory-movement-card" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ring-1 ${movementTone(movement.movement_type)}`}>{movementLabels[movement.movement_type]}</span>
-                    {movement.item_code && <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600">{movement.item_code}</span>}
+          <>
+            <div className="space-y-4">
+              {visibleMovements.map((movement) => (
+                <article key={movement.id} data-testid="inventory-movement-card" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ring-1 ${movementTone(movement.movement_type)}`}>{movementLabels[movement.movement_type]}</span>
+                        {movement.item_code && <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-600">{movement.item_code}</span>}
+                      </div>
+                      <div>
+                        <h2 className="text-xl text-gray-900">{movement.item_name}</h2>
+                        <p className="mt-1 text-sm text-gray-600">
+                          {movement.item_category || "General"} | {formatDate(movement.movement_date)}
+                          {movement.performed_by_name ? ` | ${movement.performed_by_name}` : ""}
+                        </p>
+                      </div>
+                      <div className="grid gap-2 text-sm text-gray-600 md:grid-cols-3">
+                        <p><span className="font-medium text-gray-900">Quantity:</span> {formatQuantity(movement.quantity)} {movement.item_unit}</p>
+                        <p><span className="font-medium text-gray-900">Unit Cost:</span> {formatCurrency(movement.unit_cost)}</p>
+                        <p><span className="font-medium text-gray-900">Total Cost:</span> {formatCurrency(movement.total_cost)}</p>
+                      </div>
+                      {movement.notes && <p className="rounded-2xl bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-700">{movement.notes}</p>}
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-xl text-gray-900">{movement.item_name}</h2>
-                    <p className="mt-1 text-sm text-gray-600">
-                      {movement.item_category || "General"} | {formatDate(movement.movement_date)}
-                      {movement.performed_by_name ? ` | ${movement.performed_by_name}` : ""}
-                    </p>
-                  </div>
-                  <div className="grid gap-2 text-sm text-gray-600 md:grid-cols-3">
-                    <p><span className="font-medium text-gray-900">Quantity:</span> {formatQuantity(movement.quantity)} {movement.item_unit}</p>
-                    <p><span className="font-medium text-gray-900">Unit Cost:</span> {formatCurrency(movement.unit_cost)}</p>
-                    <p><span className="font-medium text-gray-900">Total Cost:</span> {formatCurrency(movement.total_cost)}</p>
-                  </div>
-                  {movement.notes && <p className="rounded-2xl bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-700">{movement.notes}</p>}
-                </div>
+                </article>
+              ))}
+            </div>
+            {movements.length > LIST_PREVIEW_LIMIT && (
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAllMovements((current) => !current)}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  {showAllMovements ? "Show less" : "Show more"}
+                </button>
               </div>
-            </article>
-          ))
+            )}
+          </>
         )}
       </section>
     </div>

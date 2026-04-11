@@ -66,6 +66,8 @@ const initialForm: CreatePatientForm = {
   address: ""
 };
 
+const PAGE_SIZE = 8;
+
 const getStatusClass = (status: string) => {
   const normalized = status.toLowerCase();
   if (normalized === "active") return "bg-green-50 text-green-700";
@@ -162,7 +164,7 @@ export default function PatientsPage() {
 
     const q = currentQuery.trim() ? `&q=${encodeURIComponent(currentQuery.trim())}` : "";
 
-    apiRequest<PatientsResponse>(`/patients?page=${currentPage}&limit=20${q}`, {
+    apiRequest<PatientsResponse>(`/patients?page=${currentPage}&limit=${PAGE_SIZE}${q}`, {
       authenticated: true
     })
       .then((response) => {
@@ -291,12 +293,14 @@ export default function PatientsPage() {
         const matchesCurrentQuery = patientMatchesQuery(createdPatient, query);
 
         if (matchesCurrentQuery) {
-          setPatients((currentPatients) => [createdPatient, ...currentPatients.filter((patient) => patient.id !== createdPatient.id)].slice(0, 20));
+          setPatients((currentPatients) =>
+            [createdPatient, ...currentPatients.filter((patient) => patient.id !== createdPatient.id)].slice(0, PAGE_SIZE)
+          );
         }
 
         setTotalPatients((current) => {
           const nextTotal = current + 1;
-          setTotalPages(Math.max(1, Math.ceil(nextTotal / 20)));
+          setTotalPages(Math.max(1, Math.ceil(nextTotal / PAGE_SIZE)));
           return nextTotal;
         });
         setPage(1);
@@ -566,7 +570,7 @@ export default function PatientsPage() {
               Previous
             </button>
             <span className="text-sm text-gray-600">
-              Page {page} of {totalPages}
+              Page {page} of {totalPages} · {PAGE_SIZE} per page
             </span>
             <button
               onClick={() => fetchPatients(Math.min(totalPages, page + 1), query)}

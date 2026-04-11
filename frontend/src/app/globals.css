@@ -88,22 +88,29 @@ body {
   .theme-button-primary {
     background: #059669;
     color: #ffffff;
+    box-shadow: 0 10px 24px rgba(5, 150, 105, 0.16);
+    transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, filter 180ms ease;
   }
 
   .theme-button-primary:hover {
     background: #047857;
+    box-shadow: 0 14px 30px rgba(5, 150, 105, 0.22);
+    transform: translateY(-1px);
   }
 
   .theme-button-secondary {
     border: 1px solid #cbd5e1;
     background: rgba(255, 255, 255, 0.92);
     color: #1e293b;
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, color 180ms ease, background-color 180ms ease;
   }
 
   .theme-button-secondary:hover {
     border-color: #86efac;
     color: #047857;
     background: #f8fffc;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+    transform: translateY(-1px);
   }
 
   .theme-accent-soft {
@@ -184,6 +191,35 @@ body {
     box-shadow: 0 22px 52px rgba(15, 23, 42, 0.1);
   }
 
+  .theme-nav-link {
+    position: relative;
+    overflow: hidden;
+    transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
+  }
+
+  .theme-nav-link:hover {
+    transform: translateX(2px);
+  }
+
+  .theme-nav-result {
+    position: relative;
+    transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
+  }
+
+  .theme-nav-result:hover {
+    background: rgba(236, 253, 245, 0.95);
+    transform: translateX(2px);
+  }
+
+  .theme-action-button {
+    transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+  }
+
+  .theme-action-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  }
+
   .theme-dark-panel {
     background: linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(2, 6, 23, 0.98) 100%);
     color: #ffffff;
@@ -197,6 +233,15 @@ body {
 
   .theme-dark-button:hover {
     background: #047857;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
 
@@ -271,6 +316,17 @@ body {
   .hover-lift:hover {
     transition: none !important;
     transform: none !important;
+  }
+
+  .theme-nav-link,
+  .theme-nav-link:hover,
+  .theme-nav-result,
+  .theme-nav-result:hover,
+  .theme-action-button,
+  .theme-action-button:hover {
+    transition: none !important;
+    transform: none !important;
+    box-shadow: none !important;
   }
 }
 
