@@ -22,9 +22,14 @@ const listDoctors = async (organizationId, query) => {
   const conditions = ["d.organization_id = $1"];
 
   if (query.q) {
-    values.push(`%${query.q}%`);
-    const idx = values.length;
-    conditions.push(`(d.full_name ILIKE $${idx} OR d.specialty ILIKE $${idx} OR d.email ILIKE $${idx} OR d.phone ILIKE $${idx})`);
+    values.push(`${query.q}%`, `%${query.q}%`);
+    const prefixIdx = values.length - 1;
+    const containsIdx = values.length;
+    conditions.push(
+      `(d.full_name ILIKE $${prefixIdx} OR (
+        LENGTH($${containsIdx}) > 1 AND (d.specialty ILIKE $${containsIdx} OR d.email ILIKE $${containsIdx} OR d.phone ILIKE $${containsIdx})
+      ))`
+    );
   }
 
   if (query.status) {

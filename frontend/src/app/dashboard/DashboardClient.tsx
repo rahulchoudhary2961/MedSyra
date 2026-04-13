@@ -6,9 +6,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import StatCard from "../components/StatCard";
 import RecentPatientsTable from "../components/RecentPatientsTable";
 import PatientActivityTimeline from "../components/PatientActivityTimeline";
+import ModalCloseButton from "../components/ModalCloseButton";
 import { apiRequest, ApiRequestError } from "@/lib/api";
 import { isUuid } from "@/lib/uuid";
 import { ActivityLog, Patient } from "@/types/api";
+
+const BLOOD_TYPE_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] as const;
 
 type DashboardFollowUpQueueItem = {
   recordId: string;
@@ -107,6 +110,8 @@ type EditPatientForm = {
   phone: string;
   email: string;
   bloodType: string;
+  bloodTypeMode: "select" | "other";
+  description: string;
   emergencyContact: string;
   address: string;
 };
@@ -119,6 +124,8 @@ const initialPatientForm: EditPatientForm = {
   phone: "",
   email: "",
   bloodType: "",
+  bloodTypeMode: "select",
+  description: "",
   emergencyContact: "",
   address: ""
 };
@@ -157,6 +164,34 @@ const calculateAgeFromDateOfBirth = (value: string) => {
   }
 
   return age >= 0 ? String(age) : "";
+};
+
+const getTitlePrefix = (gender: string) => {
+  if (gender === "male") {
+    return "Mr. ";
+  }
+
+  if (gender === "female") {
+    return "Miss. ";
+  }
+
+  return "";
+};
+
+const stripTitlePrefix = (value: string) => value.replace(/^(Mr\.|Miss\.|Mrs\.|Ms\.)\s*/i, "").trimStart();
+
+const normalizeBloodTypeSelection = (value: string | null | undefined) => {
+  if (!value) {
+    return "";
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return BLOOD_TYPE_OPTIONS.includes(normalized as (typeof BLOOD_TYPE_OPTIONS)[number]) ? normalized : "other";
+};
+
+const isKnownBloodType = (value: string | null | undefined) => {
+  const normalized = normalizeBloodTypeSelection(value);
+  return normalized !== "" && normalized !== "other";
 };
 
 export default function DashboardClient({ initialData }: { initialData?: DashboardInitialData }) {
@@ -329,13 +364,15 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
     setPatientFormError("");
     setEditingPatient(patient);
     setPatientForm({
-      fullName: patient.full_name || "",
+      fullName: stripTitlePrefix(patient.full_name || ""),
       age: patient.age?.toString() || "",
       dateOfBirth: patient.date_of_birth || "",
       gender: patient.gender || "",
       phone: patient.phone || "",
       email: patient.email || "",
       bloodType: patient.blood_type || "",
+      bloodTypeMode: isKnownBloodType(patient.blood_type) ? "select" : "other",
+      description: patient.description || "",
       emergencyContact: patient.emergency_contact || "",
       address: patient.address || ""
     });
@@ -351,13 +388,14 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
     setPatientFormError("");
 
     const body = {
-      fullName: patientForm.fullName,
+      fullName: `${getTitlePrefix(patientForm.gender)}${stripTitlePrefix(patientForm.fullName)}`,
       age: patientForm.age ? Number(patientForm.age) : null,
       ...(patientForm.dateOfBirth ? { dateOfBirth: patientForm.dateOfBirth } : {}),
       gender: patientForm.gender,
       phone: patientForm.phone,
       email: patientForm.email || null,
-      bloodType: patientForm.bloodType ? patientForm.bloodType.trim().toUpperCase() : null,
+      bloodType: patientForm.bloodType ? patientForm.bloodType.trim() : null,
+      description: patientForm.description || null,
       emergencyContact: patientForm.emergencyContact || null,
       address: patientForm.address || null,
       status: editingPatient.status || "active"
@@ -720,13 +758,7 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
               <p className="sm:col-span-2"><span className="theme-muted">Address:</span> {viewPatient.address || "-"}</p>
             </div>
             <div className="p-6 border-t border-slate-200 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setViewPatient(null)}
-                className="theme-button-secondary px-4 py-2 rounded-lg"
-              >
-                Close
-              </button>
+              <ModalCloseButton onClick={() => setViewPatient(null)} />
             </div>
           </div>
         </div>
@@ -751,13 +783,21 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm theme-copy mb-2">Full Name</label>
-                    <input
-                      type="text"
-                      value={patientForm.fullName}
-                      onChange={(e) => setPatientForm({ ...patientForm, fullName: e.target.value })}
-                      className="theme-input w-full px-4 py-2 rounded-lg"
-                      required
-                    />
+                    <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-300">
+                      {getTitlePrefix(patientForm.gender) && (
+                        <span className="flex items-center border-r border-slate-300 bg-slate-50 px-4 text-sm font-medium text-slate-600">
+                          {getTitlePrefix(patientForm.gender).trim()}
+                        </span>
+                      )}
+                      <input
+                        type="text"
+                        value={patientForm.fullName}
+                        onChange={(e) => setPatientForm({ ...patientForm, fullName: stripTitlePrefix(e.target.value) })}
+                        className="theme-input min-w-0 flex-1 px-4 py-2"
+                        placeholder="Enter full name"
+                        required
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm theme-copy mb-2">Age</label>
@@ -777,6 +817,7 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
                     <label className="block text-sm theme-copy mb-2">Date of Birth</label>
                     <input
                       type="date"
+                      max={new Date().toISOString().slice(0, 10)}
                       value={patientForm.dateOfBirth}
                       onChange={(e) =>
                         setPatientForm({
@@ -790,17 +831,24 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
                   </div>
                   <div>
                     <label className="block text-sm theme-copy mb-2">Gender</label>
-                    <select
-                      value={patientForm.gender}
-                      onChange={(e) => setPatientForm({ ...patientForm, gender: e.target.value })}
-                      className="theme-input w-full px-4 py-2 rounded-lg"
-                      required
-                    >
-                      <option value="">Select gender</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
+                    <div className="relative">
+                      {!patientForm.gender && (
+                        <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                          Select gender
+                        </span>
+                      )}
+                      <select
+                        value={patientForm.gender || ""}
+                        onChange={(e) => setPatientForm({ ...patientForm, gender: e.target.value })}
+                        className="theme-input w-full rounded-lg px-4 py-2 bg-white"
+                        required
+                      >
+                        <option value="" disabled hidden />
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm theme-copy mb-2">Phone</label>
@@ -829,12 +877,42 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
                   </div>
                   <div>
                     <label className="block text-sm theme-copy mb-2">Blood Type</label>
-                    <input
-                      type="text"
-                      value={patientForm.bloodType}
-                      onChange={(e) => setPatientForm({ ...patientForm, bloodType: e.target.value })}
-                      className="theme-input w-full px-4 py-2 rounded-lg"
-                    />
+                    {patientForm.bloodTypeMode === "other" ? (
+                      <input
+                        type="text"
+                        value={patientForm.bloodType}
+                        onChange={(e) => setPatientForm({ ...patientForm, bloodType: e.target.value })}
+                        className="theme-input w-full px-4 py-2 rounded-lg"
+                        placeholder="Enter blood group"
+                      />
+                    ) : (
+                      <div className="relative">
+                        {!isKnownBloodType(patientForm.bloodType) && (
+                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                            Select blood group
+                          </span>
+                        )}
+                        <select
+                          value={isKnownBloodType(patientForm.bloodType) ? normalizeBloodTypeSelection(patientForm.bloodType) : ""}
+                          onChange={(e) =>
+                            setPatientForm({
+                              ...patientForm,
+                              bloodType: e.target.value === "other" ? "" : e.target.value,
+                              bloodTypeMode: e.target.value === "other" ? "other" : "select"
+                            })
+                          }
+                          className="theme-input w-full rounded-lg px-4 py-2 bg-white"
+                        >
+                          <option value="" disabled hidden />
+                          {BLOOD_TYPE_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm theme-copy mb-2">Emergency Contact</label>
@@ -854,6 +932,17 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
                       className="theme-input w-full px-4 py-2 rounded-lg"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm theme-copy mb-2">Description</label>
+                  <textarea
+                    rows={3}
+                    value={patientForm.description}
+                    onChange={(e) => setPatientForm({ ...patientForm, description: e.target.value })}
+                    className="theme-input w-full px-4 py-2 rounded-lg"
+                    placeholder="Optional notes about the patient"
+                  />
                 </div>
 
                 <div>

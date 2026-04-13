@@ -30,6 +30,12 @@ router.patch(
   validateRequest({ params: pharmacySchemas.idParams, body: pharmacySchemas.medicineUpdateBody }),
   controller.updateMedicine
 );
+router.delete(
+  "/medicines/:id",
+  authorizeRoles("full_access"),
+  validateRequest({ params: pharmacySchemas.idParams }),
+  controller.deleteMedicine
+);
 router.get(
   "/batches",
   authorizeRoles("full_access", "billing_access", "reception_access", "doctor"),
@@ -47,6 +53,12 @@ router.patch(
   authorizeRoles("full_access"),
   validateRequest({ params: pharmacySchemas.idParams, body: pharmacySchemas.batchUpdateBody }),
   controller.updateMedicineBatch
+);
+router.delete(
+  "/batches/:id",
+  authorizeRoles("full_access"),
+  validateRequest({ params: pharmacySchemas.idParams }),
+  controller.deleteMedicineBatch
 );
 router.get(
   "/dispenses",

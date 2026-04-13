@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Package, Pill, Plus, Receipt, RefreshCcw, TriangleAlert } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Package, Pencil, Pill, Plus, Receipt, RefreshCcw, Trash2, TriangleAlert } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { canAccessPharmacy, canManagePharmacyCatalog } from "@/lib/roles";
 import { AuthUser, Doctor, MedicalRecord, Medicine, MedicineBatch, Patient, PharmacyDispense } from "@/types/api";
+import ModalCloseButton from "@/app/components/ModalCloseButton";
 
 type ListResponse<T> = { success: boolean; data: { items: T[] } };
 type SingleResponse<T> = { success: boolean; data: T };
@@ -234,13 +235,18 @@ export default function PharmacyPage() {
   const [showMedicineForm, setShowMedicineForm] = useState(false);
   const [showBatchForm, setShowBatchForm] = useState(false);
   const [showDispenseForm, setShowDispenseForm] = useState(false);
+  const [editingMedicineId, setEditingMedicineId] = useState<string | null>(null);
+  const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
   const [showAllLowStock, setShowAllLowStock] = useState(false);
   const [showAllMedicines, setShowAllMedicines] = useState(false);
   const [showAllDispenses, setShowAllDispenses] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState({ q: "", status: "" });
   const [medicineForm, setMedicineForm] = useState<MedicineForm>(initialMedicineForm());
   const [batchForm, setBatchForm] = useState<BatchForm>(initialBatchForm());
   const [dispenseForm, setDispenseForm] = useState<DispenseForm>(initialDispenseForm(patientFilterId));
+  const medicineFormRef = useRef<HTMLElement | null>(null);
+  const batchFormRef = useRef<HTMLElement | null>(null);
 
   const loadDispenses = useCallback(async () => {
     const params = new URLSearchParams({ limit: "200" });
@@ -276,6 +282,22 @@ export default function PharmacyPage() {
       setLoading(false);
     }
   }, [loadDispenses]);
+
+  useEffect(() => {
+    if (!showMedicineForm) {
+      return;
+    }
+
+    medicineFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showMedicineForm]);
+
+  useEffect(() => {
+    if (!showBatchForm) {
+      return;
+    }
+
+    batchFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showBatchForm]);
 
   const loadPatientRecords = useCallback(async (patientId: string) => {
     if (!patientId) {
@@ -330,15 +352,72 @@ export default function PharmacyPage() {
     () => patients.find((patient) => patient.id === dispenseForm.patientId) || null,
     [patients, dispenseForm.patientId]
   );
-  const visibleLowStockItems = showAllLowStock ? insights.low_stock_items : insights.low_stock_items.slice(0, LIST_PREVIEW_LIMIT);
-  const visibleMedicines = showAllMedicines ? medicines : medicines.slice(0, LIST_PREVIEW_LIMIT);
-  const visibleDispenses = showAllDispenses ? dispenses : dispenses.slice(0, LIST_PREVIEW_LIMIT);
-
   const activeBatches = useMemo(() => batches.filter((batch) => batch.available_quantity > 0), [batches]);
-  const lowStock = useMemo(
+  const lowStockMedicines = useMemo(
     () => medicines.filter((medicine) => medicine.is_active && Number(medicine.current_stock || 0) <= Number(medicine.reorder_level || 0)),
     [medicines]
   );
+  const lowStock = useMemo(() => insights.low_stock_items, [insights.low_stock_items]);
+  const normalizedSearchTerm = normalizeText(searchTerm);
+  const matchesSearch = useCallback(
+    (...values: Array<string | number | null | undefined>) => {
+      if (!normalizedSearchTerm) {
+        return true;
+      }
+
+      return values
+        .map((value) => normalizeText(String(value ?? "")))
+        .some((value) => value.includes(normalizedSearchTerm));
+    },
+    [normalizedSearchTerm]
+  );
+  const filteredLowStock = useMemo(
+    () =>
+      lowStock.filter((item) =>
+        matchesSearch(item.name, item.generic_name, item.code, item.strength, item.dosage_form)
+      ),
+    [lowStock, matchesSearch]
+  );
+  const filteredMedicines = useMemo(
+    () =>
+      medicines.filter((medicine) =>
+        matchesSearch(
+          medicine.name,
+          medicine.generic_name,
+          medicine.code,
+          medicine.strength,
+          medicine.dosage_form,
+          medicine.unit
+        )
+      ),
+    [medicines, matchesSearch]
+  );
+  const filteredBatches = useMemo(
+    () =>
+      batches.filter((batch) =>
+        matchesSearch(batch.medicine_name, batch.medicine_code, batch.batch_number, batch.manufacturer, batch.unit)
+      ),
+    [batches, matchesSearch]
+  );
+  const filteredDispenses = useMemo(
+    () =>
+      dispenses.filter((dispense) =>
+        matchesSearch(
+          dispense.dispense_number,
+          dispense.patient_name,
+          dispense.patient_code,
+          dispense.doctor_name,
+          dispense.invoice_number,
+          dispense.medical_record_type,
+          dispense.items.map((item) => item.medicine_name).join(" ")
+        )
+      ),
+    [dispenses, matchesSearch]
+  );
+  const visibleLowStockItems = showAllLowStock ? filteredLowStock : filteredLowStock.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleMedicines = showAllMedicines ? filteredMedicines : filteredMedicines.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleBatches = filteredBatches.slice(0, 18);
+  const visibleDispenses = showAllDispenses ? filteredDispenses : filteredDispenses.slice(0, LIST_PREVIEW_LIMIT);
   const prescriptionDraft = useMemo(
     () => buildPrescriptionDispenseDraft(dispenseForm.prescriptionSnapshot, medicines, batches),
     [batches, dispenseForm.prescriptionSnapshot, medicines]
@@ -363,6 +442,47 @@ export default function PharmacyPage() {
           : item
       )
     }));
+  };
+
+  const openMedicineForm = (medicine?: Medicine) => {
+    if (medicine) {
+      setEditingMedicineId(medicine.id);
+      setMedicineForm({
+        code: medicine.code || "",
+        name: medicine.name || "",
+        genericName: medicine.generic_name || "",
+        dosageForm: medicine.dosage_form || "",
+        strength: medicine.strength || "",
+        unit: medicine.unit || "tablet",
+        reorderLevel: String(medicine.reorder_level ?? 0)
+      });
+    } else {
+      setEditingMedicineId(null);
+      setMedicineForm(initialMedicineForm());
+    }
+
+    setShowMedicineForm(true);
+  };
+
+  const openBatchForm = (batch?: MedicineBatch) => {
+    if (batch) {
+      setEditingBatchId(batch.id);
+      setBatchForm({
+        medicineId: batch.medicine_id || "",
+        batchNumber: batch.batch_number || "",
+        manufacturer: batch.manufacturer || "",
+        expiryDate: batch.expiry_date || "",
+        receivedQuantity: String(batch.received_quantity ?? ""),
+        purchasePrice: String(batch.purchase_price ?? ""),
+        salePrice: String(batch.sale_price ?? ""),
+        receivedDate: batch.received_date || todayDateKey()
+      });
+    } else {
+      setEditingBatchId(null);
+      setBatchForm(initialBatchForm());
+    }
+
+    setShowBatchForm(true);
   };
 
   const applyPrescriptionDraft = () => {
@@ -399,24 +519,38 @@ export default function PharmacyPage() {
     setSaving(true);
     setError("");
     try {
-      const response = await apiRequest<SingleResponse<Medicine>>("/pharmacy/medicines", {
-        method: "POST",
-        authenticated: true,
-        body: {
-          code: medicineForm.code.trim() || undefined,
-          name: medicineForm.name.trim(),
-          genericName: medicineForm.genericName.trim() || undefined,
-          dosageForm: medicineForm.dosageForm.trim() || undefined,
-          strength: medicineForm.strength.trim() || undefined,
-          unit: medicineForm.unit.trim() || undefined,
-          reorderLevel: medicineForm.reorderLevel ? Number(medicineForm.reorderLevel) : undefined
-        }
-      });
-      setMedicines((current) => [response.data, ...current]);
+      const payload = {
+        code: medicineForm.code.trim() || undefined,
+        name: medicineForm.name.trim(),
+        genericName: medicineForm.genericName.trim() || undefined,
+        dosageForm: medicineForm.dosageForm.trim() || undefined,
+        strength: medicineForm.strength.trim() || undefined,
+        unit: medicineForm.unit.trim() || undefined,
+        reorderLevel: medicineForm.reorderLevel ? Number(medicineForm.reorderLevel) : undefined
+      };
+
+      const response = editingMedicineId
+        ? await apiRequest<SingleResponse<Medicine>>(`/pharmacy/medicines/${editingMedicineId}`, {
+            method: "PATCH",
+            authenticated: true,
+            body: payload
+          })
+        : await apiRequest<SingleResponse<Medicine>>("/pharmacy/medicines", {
+            method: "POST",
+            authenticated: true,
+            body: payload
+          });
+
+      setMedicines((current) =>
+        editingMedicineId
+          ? current.map((medicine) => (medicine.id === response.data.id ? response.data : medicine))
+          : [response.data, ...current]
+      );
       setMedicineForm(initialMedicineForm());
+      setEditingMedicineId(null);
       setShowMedicineForm(false);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to save medicine");
+      setError(requestError instanceof Error ? requestError.message : `Failed to ${editingMedicineId ? "update" : "save"} medicine`);
     } finally {
       setSaving(false);
     }
@@ -427,26 +561,40 @@ export default function PharmacyPage() {
     setSaving(true);
     setError("");
     try {
-      const response = await apiRequest<SingleResponse<MedicineBatch>>("/pharmacy/batches", {
-        method: "POST",
-        authenticated: true,
-        body: {
-          medicineId: batchForm.medicineId,
-          batchNumber: batchForm.batchNumber.trim(),
-          manufacturer: batchForm.manufacturer.trim() || undefined,
-          expiryDate: batchForm.expiryDate,
-          receivedQuantity: Number(batchForm.receivedQuantity),
-          purchasePrice: batchForm.purchasePrice ? Number(batchForm.purchasePrice) : undefined,
-          salePrice: batchForm.salePrice ? Number(batchForm.salePrice) : undefined,
-          receivedDate: batchForm.receivedDate || undefined
-        }
-      });
-      setBatches((current) => [response.data, ...current]);
+      const payload = {
+        medicineId: batchForm.medicineId,
+        batchNumber: batchForm.batchNumber.trim(),
+        manufacturer: batchForm.manufacturer.trim() || undefined,
+        expiryDate: batchForm.expiryDate,
+        receivedQuantity: Number(batchForm.receivedQuantity),
+        purchasePrice: batchForm.purchasePrice ? Number(batchForm.purchasePrice) : undefined,
+        salePrice: batchForm.salePrice ? Number(batchForm.salePrice) : undefined,
+        receivedDate: batchForm.receivedDate || undefined
+      };
+
+      const response = editingBatchId
+        ? await apiRequest<SingleResponse<MedicineBatch>>(`/pharmacy/batches/${editingBatchId}`, {
+            method: "PATCH",
+            authenticated: true,
+            body: payload
+          })
+        : await apiRequest<SingleResponse<MedicineBatch>>("/pharmacy/batches", {
+            method: "POST",
+            authenticated: true,
+            body: payload
+          });
+
+      setBatches((current) =>
+        editingBatchId
+          ? current.map((batch) => (batch.id === response.data.id ? response.data : batch))
+          : [response.data, ...current]
+      );
       await refreshInventory();
       setBatchForm(initialBatchForm());
+      setEditingBatchId(null);
       setShowBatchForm(false);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to save batch");
+      setError(requestError instanceof Error ? requestError.message : `Failed to ${editingBatchId ? "update" : "save"} batch`);
     } finally {
       setSaving(false);
     }
@@ -488,6 +636,42 @@ export default function PharmacyPage() {
     }
   };
 
+  const deleteMedicine = async (medicine: Medicine) => {
+    if (!window.confirm(`Delete medicine "${medicine.name}"?`)) {
+      return;
+    }
+
+    setError("");
+    try {
+      await apiRequest(`/pharmacy/medicines/${medicine.id}`, {
+        method: "DELETE",
+        authenticated: true
+      });
+      setMedicines((current) => current.filter((item) => item.id !== medicine.id));
+      await refreshInventory();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to delete medicine");
+    }
+  };
+
+  const deleteBatch = async (batch: MedicineBatch) => {
+    if (!window.confirm(`Delete batch "${batch.batch_number}" for ${batch.medicine_name}?`)) {
+      return;
+    }
+
+    setError("");
+    try {
+      await apiRequest(`/pharmacy/batches/${batch.id}`, {
+        method: "DELETE",
+        authenticated: true
+      });
+      setBatches((current) => current.filter((item) => item.id !== batch.id));
+      await refreshInventory();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to delete batch");
+    }
+  };
+
   if (currentUser && !canAccessPharmacy(currentUser.role)) {
     return <p className="text-red-600">You do not have access to Pharmacy.</p>;
   }
@@ -507,11 +691,11 @@ export default function PharmacyPage() {
           </button>
           {canManagePharmacyCatalog(currentUser?.role) && (
             <>
-              <button data-testid="pharmacy-add-medicine-button" type="button" onClick={() => setShowMedicineForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
+              <button data-testid="pharmacy-add-medicine-button" type="button" onClick={() => openMedicineForm()} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
                 <Pill className="h-4 w-4" />
                 Add Medicine
               </button>
-              <button data-testid="pharmacy-add-batch-button" type="button" onClick={() => setShowBatchForm((current) => !current)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
+              <button data-testid="pharmacy-add-batch-button" type="button" onClick={() => openBatchForm()} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
                 <Package className="h-4 w-4" />
                 Add Batch
               </button>
@@ -527,10 +711,23 @@ export default function PharmacyPage() {
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       {assistMessage && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{assistMessage}</div>}
 
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <label className="space-y-2">
+          <span className="text-sm text-gray-700">Search</span>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search medicines, batches, or dispenses"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
+          />
+        </label>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-[0.14em] text-gray-500">Medicines</p><p className="mt-3 text-2xl text-gray-900">{medicines.length}</p></div>
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-[0.14em] text-gray-500">Active Batches</p><p className="mt-3 text-2xl text-gray-900">{activeBatches.length}</p></div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-[0.14em] text-gray-500">Low Stock</p><p className="mt-3 text-2xl text-gray-900">{lowStock.length}</p></div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-[0.14em] text-gray-500">Low Stock</p><p className="mt-3 text-2xl text-gray-900">{lowStockMedicines.length}</p></div>
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-[0.14em] text-gray-500">Expiring Soon</p><p className="mt-3 text-2xl text-gray-900">{expiring.length}</p></div>
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-[0.14em] text-gray-500">Dispenses</p><p className="mt-3 text-2xl text-gray-900">{dispenses.length}</p></div>
       </section>
@@ -605,13 +802,19 @@ export default function PharmacyPage() {
       </section>
 
       {showMedicineForm && canManagePharmacyCatalog(currentUser?.role) && (
-        <section data-testid="pharmacy-medicine-form" className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
+        <section ref={medicineFormRef} data-testid="pharmacy-medicine-form" className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Catalog</p>
-              <h2 className="mt-2 text-xl text-gray-900">Create Medicine</h2>
+              <h2 className="mt-2 text-xl text-gray-900">{editingMedicineId ? "Edit Medicine" : "Create Medicine"}</h2>
             </div>
-            <button type="button" onClick={() => setShowMedicineForm(false)} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm text-emerald-800 hover:bg-white">Close</button>
+            <ModalCloseButton
+              onClick={() => {
+                setShowMedicineForm(false);
+                setEditingMedicineId(null);
+                setMedicineForm(initialMedicineForm());
+              }}
+            />
           </div>
           <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitMedicine}>
             <input data-testid="pharmacy-medicine-code-input" value={medicineForm.code} onChange={(event) => setMedicineForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
@@ -621,19 +824,42 @@ export default function PharmacyPage() {
             <input data-testid="pharmacy-medicine-strength-input" value={medicineForm.strength} onChange={(event) => setMedicineForm((current) => ({ ...current, strength: event.target.value }))} placeholder="Strength" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
             <input data-testid="pharmacy-medicine-unit-input" value={medicineForm.unit} onChange={(event) => setMedicineForm((current) => ({ ...current, unit: event.target.value }))} placeholder="Unit" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
             <input data-testid="pharmacy-medicine-reorder-level-input" type="number" min="0" step="0.01" value={medicineForm.reorderLevel} onChange={(event) => setMedicineForm((current) => ({ ...current, reorderLevel: event.target.value }))} placeholder="Reorder level" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <div className="lg:col-span-2"><button data-testid="pharmacy-medicine-submit-button" type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Create Medicine"}</button></div>
+            <div className="lg:col-span-2 flex items-center justify-between gap-3">
+              {editingMedicineId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingMedicineId(null);
+                    setMedicineForm(initialMedicineForm());
+                  }}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel Edit
+                </button>
+              )}
+              <div className="flex-1" />
+              <button data-testid="pharmacy-medicine-submit-button" type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">
+                {saving ? "Saving..." : editingMedicineId ? "Update Medicine" : "Create Medicine"}
+              </button>
+            </div>
           </form>
         </section>
       )}
 
       {showBatchForm && canManagePharmacyCatalog(currentUser?.role) && (
-        <section data-testid="pharmacy-batch-form" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <section ref={batchFormRef} data-testid="pharmacy-batch-form" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Inventory</p>
-              <h2 className="mt-2 text-xl text-gray-900">Add Batch</h2>
+              <h2 className="mt-2 text-xl text-gray-900">{editingBatchId ? "Edit Batch" : "Add Batch"}</h2>
             </div>
-            <button type="button" onClick={() => setShowBatchForm(false)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Close</button>
+            <ModalCloseButton
+              onClick={() => {
+                setShowBatchForm(false);
+                setEditingBatchId(null);
+                setBatchForm(initialBatchForm());
+              }}
+            />
           </div>
           <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitBatch}>
             <select data-testid="pharmacy-batch-medicine-select" value={batchForm.medicineId} onChange={(event) => setBatchForm((current) => ({ ...current, medicineId: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
@@ -647,7 +873,24 @@ export default function PharmacyPage() {
             <input data-testid="pharmacy-batch-purchase-price-input" type="number" min="0" step="0.01" value={batchForm.purchasePrice} onChange={(event) => setBatchForm((current) => ({ ...current, purchasePrice: event.target.value }))} placeholder="Purchase price" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
             <input data-testid="pharmacy-batch-sale-price-input" type="number" min="0" step="0.01" value={batchForm.salePrice} onChange={(event) => setBatchForm((current) => ({ ...current, salePrice: event.target.value }))} placeholder="Sale price" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
             <input data-testid="pharmacy-batch-received-date-input" type="date" value={batchForm.receivedDate} onChange={(event) => setBatchForm((current) => ({ ...current, receivedDate: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <div className="lg:col-span-2"><button data-testid="pharmacy-batch-submit-button" type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "Saving..." : "Create Batch"}</button></div>
+            <div className="lg:col-span-2 flex items-center justify-between gap-3">
+              {editingBatchId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingBatchId(null);
+                    setBatchForm(initialBatchForm());
+                  }}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel Edit
+                </button>
+              )}
+              <div className="flex-1" />
+              <button data-testid="pharmacy-batch-submit-button" type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60">
+                {saving ? "Saving..." : editingBatchId ? "Update Batch" : "Create Batch"}
+              </button>
+            </div>
           </form>
         </section>
       )}
@@ -659,7 +902,7 @@ export default function PharmacyPage() {
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Dispense</p>
               <h2 className="mt-2 text-xl text-gray-900">Dispense Medicines</h2>
             </div>
-            <button type="button" onClick={() => setShowDispenseForm(false)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Close</button>
+            <ModalCloseButton onClick={() => setShowDispenseForm(false)} />
           </div>
           <form className="mt-6 grid gap-4" onSubmit={submitDispense}>
             <div className="grid gap-4 lg:grid-cols-2">
@@ -766,7 +1009,7 @@ export default function PharmacyPage() {
         </div>
         {loading ? (
           <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">Loading inventory...</div>
-        ) : medicines.length === 0 ? (
+        ) : filteredMedicines.length === 0 ? (
           <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">No medicines added yet.</div>
         ) : (
           <>
@@ -794,11 +1037,29 @@ export default function PharmacyPage() {
                     {isLowStock && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700"><TriangleAlert className="h-3.5 w-3.5" />Low stock</span>}
                     {Number(medicine.expiring_batch_count || 0) > 0 && <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-red-700">{medicine.expiring_batch_count} expiring</span>}
                   </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openMedicineForm(medicine)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-white"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void deleteMedicine(medicine)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </button>
+                  </div>
                 </article>
               );
             })}
           </div>
-          {medicines.length > LIST_PREVIEW_LIMIT && (
+          {filteredMedicines.length > LIST_PREVIEW_LIMIT && (
             <div className="mt-4 flex justify-end">
               <button
                 type="button"
@@ -823,11 +1084,11 @@ export default function PharmacyPage() {
         </div>
         {loading ? (
           <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">Loading batches...</div>
-        ) : batches.length === 0 ? (
+        ) : filteredBatches.length === 0 ? (
           <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">No batches added yet.</div>
         ) : (
           <div className="mt-6 space-y-3">
-            {batches.slice(0, 18).map((batch) => (
+            {visibleBatches.map((batch) => (
               <article key={batch.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
@@ -844,6 +1105,24 @@ export default function PharmacyPage() {
                   <p><span className="font-medium text-gray-900">Purchase:</span> {money(batch.purchase_price)}</p>
                   <p><span className="font-medium text-gray-900">Received:</span> {formatDate(batch.received_date)}</p>
                   <p><span className="font-medium text-gray-900">Unit:</span> {batch.unit}</p>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openBatchForm(batch)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-white"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteBatch(batch)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </button>
                 </div>
               </article>
             ))}
@@ -865,7 +1144,7 @@ export default function PharmacyPage() {
       <section className="space-y-4">
         {loading ? (
           <div className="rounded-3xl border border-gray-200 bg-white px-6 py-12 text-center text-sm text-gray-500 shadow-sm">Loading dispenses...</div>
-        ) : dispenses.length === 0 ? (
+        ) : filteredDispenses.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">No pharmacy dispenses matched the current filters.</div>
         ) : (
           <>
@@ -902,7 +1181,7 @@ export default function PharmacyPage() {
               </div>
             </article>
           ))}
-          {dispenses.length > LIST_PREVIEW_LIMIT && (
+          {filteredDispenses.length > LIST_PREVIEW_LIMIT && (
             <div className="flex justify-end pt-2">
               <button
                 type="button"

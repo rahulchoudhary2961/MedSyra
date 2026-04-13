@@ -422,6 +422,19 @@ const updateMedicine = async (organizationId, id, payload) => {
   return getMedicineById(organizationId, id);
 };
 
+const deleteMedicine = async (organizationId, id) => {
+  const { rows } = await pool.query(
+    `
+      DELETE FROM medicines
+      WHERE organization_id = $1 AND id = $2
+      RETURNING id
+    `,
+    [organizationId, id]
+  );
+
+  return rows[0] || null;
+};
+
 const listMedicineBatches = async (organizationId, query = {}) => {
   const { page, limit, offset } = parsePagination(query);
   const values = [organizationId];
@@ -612,6 +625,19 @@ const updateMedicineBatch = async (organizationId, id, payload) => {
   }
 
   return getMedicineBatchById(organizationId, id);
+};
+
+const deleteMedicineBatch = async (organizationId, id) => {
+  const { rows } = await pool.query(
+    `
+      DELETE FROM medicine_batches
+      WHERE organization_id = $1 AND id = $2
+      RETURNING id
+    `,
+    [organizationId, id]
+  );
+
+  return rows[0] || null;
 };
 
 const getPharmacyDispenseByIdWithDb = async (db, organizationId, id) => {
@@ -1003,10 +1029,12 @@ module.exports = {
   getPharmacyInsights,
   createMedicine,
   updateMedicine,
+  deleteMedicine,
   listMedicineBatches,
   getMedicineBatchById,
   createMedicineBatch,
   updateMedicineBatch,
+  deleteMedicineBatch,
   listPharmacyDispenses,
   getPharmacyDispenseById,
   createPharmacyDispense

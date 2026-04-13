@@ -21,9 +21,9 @@ const withPatientCodeRetry = async (client, organizationId, payload, maxAttempts
       const query = `
         INSERT INTO patients (
           organization_id, patient_code, full_name, age, date_of_birth, gender, phone, email,
-          blood_type, emergency_contact, address, status, last_visit_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        RETURNING id, patient_code, full_name, age, date_of_birth, gender, phone, email, blood_type, emergency_contact,
+          blood_type, description, emergency_contact, address, status, last_visit_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        RETURNING id, patient_code, full_name, age, date_of_birth, gender, phone, email, blood_type, description, emergency_contact,
                   address, status, last_visit_at, created_at, updated_at
       `;
 
@@ -37,6 +37,7 @@ const withPatientCodeRetry = async (client, organizationId, payload, maxAttempts
         payload.phone,
         payload.email,
         payload.bloodType,
+        payload.description,
         payload.emergencyContact,
         payload.address,
         payload.status || "active",
@@ -63,9 +64,14 @@ const listPatients = async ({ organizationId, search, status, limit, offset }) =
   const conditions = ["p.organization_id = $1", "p.is_active = true"];
 
   if (search) {
-    values.push(`%${search}%`);
-    const idx = values.length;
-    conditions.push(`(p.patient_code ILIKE $${idx} OR p.full_name ILIKE $${idx} OR p.email ILIKE $${idx} OR p.phone ILIKE $${idx})`);
+    values.push(`${search}%`, `%${search}%`);
+    const prefixIdx = values.length - 1;
+    const containsIdx = values.length;
+    conditions.push(
+      `(p.full_name ILIKE $${prefixIdx} OR p.patient_code ILIKE $${prefixIdx} OR (
+        LENGTH($${containsIdx}) > 1 AND (p.email ILIKE $${containsIdx} OR p.phone ILIKE $${containsIdx})
+      ))`
+    );
   }
 
   if (status) {
@@ -77,7 +83,7 @@ const listPatients = async ({ organizationId, search, status, limit, offset }) =
   const whereClause = conditions.join(" AND ");
 
   const query = `
-    SELECT p.id, p.patient_code, p.full_name, p.age, p.date_of_birth, p.gender, p.phone, p.email, p.blood_type, p.emergency_contact,
+    SELECT p.id, p.patient_code, p.full_name, p.age, p.date_of_birth, p.gender, p.phone, p.email, p.blood_type, p.description, p.emergency_contact,
            p.address, p.status, p.last_visit_at,
            p.created_at, p.updated_at
     FROM patients p
@@ -140,7 +146,7 @@ const findDuplicatePatient = async (organizationId, { email, excludeId = null })
 
 const getPatientById = async (organizationId, id) => {
   const query = `
-    SELECT p.id, p.patient_code, p.full_name, p.age, p.date_of_birth, p.gender, p.phone, p.email, p.blood_type, p.emergency_contact,
+    SELECT p.id, p.patient_code, p.full_name, p.age, p.date_of_birth, p.gender, p.phone, p.email, p.blood_type, p.description, p.emergency_contact,
            p.address, p.status, p.last_visit_at,
            p.created_at, p.updated_at
     FROM patients p
@@ -387,6 +393,7 @@ const updatePatient = async (organizationId, id, payload) => {
     phone: "phone",
     email: "email",
     bloodType: "blood_type",
+    description: "description",
     emergencyContact: "emergency_contact",
     address: "address",
     status: "status",
@@ -413,7 +420,7 @@ const updatePatient = async (organizationId, id, payload) => {
     UPDATE patients
     SET ${setClauses.join(", ")}, updated_at = NOW()
     WHERE organization_id = $1 AND id = $2 AND is_active = true
-    RETURNING id, patient_code, full_name, age, date_of_birth, gender, phone, email, blood_type, emergency_contact,
+    RETURNING id, patient_code, full_name, age, date_of_birth, gender, phone, email, blood_type, description, emergency_contact,
               address, status, last_visit_at, created_at, updated_at
   `;
 

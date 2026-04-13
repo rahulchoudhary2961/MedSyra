@@ -70,6 +70,38 @@ const updateInventoryItem = async (organizationId, id, payload, actor = null, re
   return updated;
 };
 
+const deleteInventoryItem = async (organizationId, id, actor = null, requestMeta = null) => {
+  const current = await inventoryModel.getInventoryItemById(organizationId, id);
+  if (!current) {
+    throw new ApiError(404, "Inventory item not found");
+  }
+
+  const deleted = await inventoryModel.deleteInventoryItem(organizationId, id);
+  await invalidateInventoryRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "inventory",
+    action: "inventory_item_deleted",
+    summary: `Inventory item deleted: ${current.name}`,
+    entityType: "inventory_item",
+    entityId: current.id,
+    entityLabel: current.name,
+    severity: "warning",
+    isDestructive: true,
+    metadata: {
+      code: current.code || null,
+      category: current.category || null
+    },
+    beforeState: current,
+    afterState: deleted
+  });
+
+  return deleted;
+};
+
 const listInventoryMovements = async (organizationId, query) => inventoryModel.listInventoryMovements(organizationId, query);
 
 const createInventoryMovement = async (organizationId, payload, actor = null, requestMeta = null, branchContext = null) => {
@@ -122,6 +154,7 @@ module.exports = {
   listInventoryItems,
   createInventoryItem,
   updateInventoryItem,
+  deleteInventoryItem,
   listInventoryMovements,
   createInventoryMovement
 };

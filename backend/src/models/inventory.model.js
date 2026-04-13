@@ -235,6 +235,24 @@ const updateInventoryItem = async (organizationId, id, payload) => {
   return getInventoryItemById(organizationId, id);
 };
 
+const deleteInventoryItem = async (organizationId, id) => {
+  const { rows } = await pool.query(
+    `
+      UPDATE inventory_items
+      SET is_active = false, updated_at = NOW()
+      WHERE organization_id = $1 AND id = $2
+      RETURNING id
+    `,
+    [organizationId, id]
+  );
+
+  if (!rows[0]) {
+    return null;
+  }
+
+  return getInventoryItemById(organizationId, id);
+};
+
 const getCurrentStockWithDb = async (db, organizationId, itemId) => {
   const { rows } = await db.query(
     `
@@ -460,6 +478,7 @@ module.exports = {
   getInventoryItemById,
   createInventoryItem,
   updateInventoryItem,
+  deleteInventoryItem,
   listInventoryMovements,
   createInventoryMovement
 };

@@ -28,6 +28,11 @@ const updateMedicine = asyncHandler(async (req, res) => {
   res.json({ success: true, message: "Medicine updated", data });
 });
 
+const deleteMedicine = asyncHandler(async (req, res) => {
+  await pharmacyService.deleteMedicine(req.user.organizationId, req.params.id, req.user, getRequestMeta(req));
+  res.json({ success: true, message: "Medicine deleted" });
+});
+
 const listMedicineBatches = asyncHandler(async (req, res) => {
   const data = await pharmacyService.listMedicineBatches(req.user.organizationId, req.query);
   res.json({ success: true, data });
@@ -52,6 +57,11 @@ const updateMedicineBatch = asyncHandler(async (req, res) => {
     getRequestMeta(req)
   );
   res.json({ success: true, message: "Medicine batch updated", data });
+});
+
+const deleteMedicineBatch = asyncHandler(async (req, res) => {
+  await pharmacyService.deleteMedicineBatch(req.user.organizationId, req.params.id, req.user, getRequestMeta(req));
+  res.json({ success: true, message: "Medicine batch deleted" });
 });
 
 const listPharmacyDispenses = asyncHandler(async (req, res) => {
@@ -79,9 +89,11 @@ module.exports = {
   getPharmacyInsights,
   createMedicine,
   updateMedicine,
+  deleteMedicine,
   listMedicineBatches,
   createMedicineBatch,
   updateMedicineBatch,
+  deleteMedicineBatch,
   listPharmacyDispenses,
   getPharmacyDispense,
   createPharmacyDispense

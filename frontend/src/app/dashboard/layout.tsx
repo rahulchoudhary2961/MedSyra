@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import DashboardLayout from "@/app/components/DashboardLayout";
+import { AuthProvider } from "@/app/context/AuthContext";
+import { BranchProvider } from "@/app/context/BranchContext";
+import { DashboardUIProvider } from "@/app/context/DashboardUIContext";
 
 export const metadata: Metadata = {
   title: {
@@ -14,5 +17,13 @@ export const metadata: Metadata = {
 };
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return <DashboardLayout>{children}</DashboardLayout>;
+  return (
+    <AuthProvider>
+      <BranchProvider>
+        <DashboardUIProvider>
+          <DashboardLayout>{children}</DashboardLayout>
+        </DashboardUIProvider>
+      </BranchProvider>
+    </AuthProvider>
+  );
 }

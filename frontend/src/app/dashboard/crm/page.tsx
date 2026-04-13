@@ -7,6 +7,7 @@ import { AlertTriangle, CalendarDays, HeartPulse, Phone, Plus, RefreshCcw, Steth
 import { apiRequest } from "@/lib/api";
 import { canAccessCrm, isFullAccessRole } from "@/lib/roles";
 import { AuthUser, CrmTask, Patient } from "@/types/api";
+import ModalCloseButton from "@/app/components/ModalCloseButton";
 
 type CrmTasksResponse = {
   success: boolean;
@@ -1058,13 +1059,7 @@ export default function CrmPage() {
                 <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">New Task</p>
                 <h2 className="mt-2 text-xl text-gray-900">Create CRM Task</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowCreateForm(false)}
-                className="rounded-lg border border-emerald-200 px-3 py-2 text-sm text-emerald-800 hover:bg-white"
-              >
-                Close
-              </button>
+              <ModalCloseButton onClick={() => setShowCreateForm(false)} />
             </div>
 
             <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitCreateTask}>
@@ -1195,7 +1190,7 @@ export default function CrmPage() {
                 />
               </label>
 
-              <div className="lg:col-span-2">
+              <div className="lg:col-span-2 flex justify-end">
                 <button
                   data-testid="crm-submit-button"
                   type="submit"
@@ -1313,13 +1308,7 @@ export default function CrmPage() {
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Task Workflow</p>
               <h2 className="mt-2 text-xl text-gray-900">{editingTask.title}</h2>
             </div>
-            <button
-              type="button"
-              onClick={() => setEditingTask(null)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-            >
-              Close
-            </button>
+            <ModalCloseButton onClick={() => setEditingTask(null)} />
           </div>
 
           <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitUpdateTask}>

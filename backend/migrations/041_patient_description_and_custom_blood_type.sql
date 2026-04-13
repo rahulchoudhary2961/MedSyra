@@ -1,0 +1,2 @@
+ALTER TABLE IF EXISTS patients
+  ADD COLUMN IF NOT EXISTS description TEXT;

@@ -6,7 +6,7 @@ const aiToolsModel = require("../models/ai-tools.model");
 const authModel = require("../models/auth.model");
 
 const DEFAULT_MODEL = "openai/gpt-oss-120b";
-const WORKFLOW_SUGGESTIONS = {
+const WORKFLOW_SUGGESTIONS = { 
   staff: {
     operations: [
       "What needs attention in this branch today?",

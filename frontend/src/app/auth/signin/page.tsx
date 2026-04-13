@@ -95,7 +95,7 @@ export default function LoginPage() {
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="theme-input w-full pl-10 pr-4 py-3 rounded-lg"
-                  placeholder="doctor@hospital.com"
+                  placeholder="Your email"
                   required
                 />
               </div>

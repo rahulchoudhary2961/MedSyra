@@ -12,11 +12,19 @@ import {
   isFullAccessRole
 } from "@/lib/roles";
 import { AiPrescriptionSuggestion, Doctor, MedicalRecord, Patient } from "@/types/api";
+import NumberedPagination from "@/app/components/NumberedPagination";
+import ModalCloseButton from "@/app/components/ModalCloseButton";
 
 type MedicalRecordsResponse = {
   success: boolean;
   data: {
     items: MedicalRecord[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
   };
 };
 
@@ -116,8 +124,9 @@ type MedicalRecordAttachment = {
 export default function MedicalRecordsPage() {
   const searchParams = useSearchParams();
   const patientFilterId = searchParams.get("patientId") || "";
+  const initialQuery = searchParams.get("q") || "";
   const medicalRecordStatuses = ["completed", "pending review", "in progress"] as const;
-  const LIST_PREVIEW_LIMIT = 6;
+  const PAGE_SIZE = 8;
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -139,8 +148,12 @@ export default function MedicalRecordsPage() {
   const [aiSuggestionError, setAiSuggestionError] = useState("");
   const [isGeneratingAiSuggestion, setIsGeneratingAiSuggestion] = useState(false);
   const [reviewingAiSuggestionId, setReviewingAiSuggestionId] = useState<string | null>(null);
-  const [showAllRecords, setShowAllRecords] = useState(false);
   const [showAllAiSuggestions, setShowAllAiSuggestions] = useState(false);
+  const [search, setSearch] = useState(initialQuery);
+  const [query, setQuery] = useState(initialQuery);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
 
   const patientsMap = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient.full_name])),
@@ -150,8 +163,9 @@ export default function MedicalRecordsPage() {
     () => new Map(doctors.map((doctor) => [doctor.id, doctor.full_name])),
     [doctors]
   );
-  const visibleRecords = showAllRecords ? records : records.slice(0, LIST_PREVIEW_LIMIT);
-  const visibleAiSuggestions = showAllAiSuggestions ? aiSuggestions : aiSuggestions.slice(0, LIST_PREVIEW_LIMIT);
+  const visibleAiSuggestions = showAllAiSuggestions ? aiSuggestions : aiSuggestions.slice(0, PAGE_SIZE);
+  const isInitialLoading = loading && records.length === 0;
+  const isRefreshing = loading && records.length > 0;
 
   const sortRecords = useCallback(
     (items: MedicalRecord[]) =>
@@ -255,21 +269,28 @@ export default function MedicalRecordsPage() {
     };
   };
 
-  const loadRecords = useCallback(() => {
+  const loadRecords = useCallback((currentPage: number, currentQuery: string) => {
     setLoading(true);
     const params = new URLSearchParams();
-    params.set("limit", "100");
+    params.set("page", String(currentPage));
+    params.set("limit", String(PAGE_SIZE));
+    if (currentQuery.trim()) {
+      params.set("q", currentQuery.trim());
+    }
     if (patientFilterId) {
       params.set("patientId", patientFilterId);
     }
 
     apiRequest<MedicalRecordsResponse>(`/medical-records?${params.toString()}`, { authenticated: true })
       .then((recordsRes) => {
-        setRecords(recordsRes.data.items || []);
+        setRecords(sortRecords(recordsRes.data.items || []));
+        setPage(recordsRes.data.pagination?.page || currentPage);
+        setTotalPages(recordsRes.data.pagination?.totalPages || 1);
+        setTotalRecords(recordsRes.data.pagination?.total || 0);
       })
       .catch((err: Error) => setError(err.message || "Failed to load medical records"))
       .finally(() => setLoading(false));
-  }, [patientFilterId]);
+  }, [PAGE_SIZE, patientFilterId, sortRecords]);
 
   const loadMetadata = () => {
     apiRequest<MeResponse>("/auth/me", { authenticated: true })
@@ -318,6 +339,12 @@ export default function MedicalRecordsPage() {
   }, []);
 
   useEffect(() => {
+    setSearch(initialQuery);
+    setQuery(initialQuery);
+    loadRecords(1, initialQuery);
+  }, [initialQuery, loadRecords]);
+
+  useEffect(() => {
     if (!showFormModal) {
       return;
     }
@@ -326,8 +353,18 @@ export default function MedicalRecordsPage() {
   }, [loadFormOptions, showFormModal]);
 
   useEffect(() => {
-    loadRecords();
-  }, [loadRecords]);
+    if (search === query) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setQuery(search);
+      setPage(1);
+      loadRecords(1, search);
+    }, 100);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [search, query, loadRecords]);
 
   useEffect(() => {
     if (!showFormModal || !canUseAiPrescription(currentRole)) {
@@ -549,7 +586,7 @@ export default function MedicalRecordsPage() {
 
       setShowFormModal(false);
       resetForm();
-      void loadRecords();
+      void loadRecords(page, query);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save medical record";
       setError(message);
@@ -696,7 +733,7 @@ export default function MedicalRecordsPage() {
         authenticated: true
       });
       setDeleteTarget(null);
-      loadRecords();
+      void loadRecords(page, query);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete medical record";
       setError(message);
@@ -813,9 +850,22 @@ export default function MedicalRecordsPage() {
         </div>
       )}
 
+      <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <label className="space-y-2">
+          <span className="text-sm text-gray-700">Search</span>
+          <input
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by patient, record type, or doctor"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ring-emerald-200 focus:border-emerald-400 focus:ring"
+          />
+        </label>
+      </section>
+
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div data-tour-id="tour-records-list" className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div data-tour-id="tour-records-list" className="relative bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -829,7 +879,7 @@ export default function MedicalRecordsPage() {
               </tr>
             </thead>
             <tbody>
-              {loading && (
+              {isInitialLoading && (
                 <tr>
                   <td className="px-6 py-4 text-sm text-gray-500" colSpan={6}>
                     Loading medical records...
@@ -843,7 +893,7 @@ export default function MedicalRecordsPage() {
                   </td>
                 </tr>
               )}
-              {visibleRecords.map((record) => (
+              {records.map((record) => (
                 <tr key={record.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -929,30 +979,41 @@ export default function MedicalRecordsPage() {
                   </td>
                 </tr>
               ))}
-              {records.length > LIST_PREVIEW_LIMIT && (
-                <tr>
-                  <td className="px-6 py-4" colSpan={6}>
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => setShowAllRecords((current) => !current)}
-                        className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                      >
-                        {showAllRecords ? "Show less" : "Show more"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
+        </div>
+        {isRefreshing && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center border-b border-gray-200 bg-white/70 px-4 py-3 backdrop-blur-sm">
+            <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm">
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 border-t-emerald-600" />
+              Loading next page...
+            </div>
+          </div>
+        )}
+        <div className="border-t border-gray-200 px-6 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <p className="text-sm text-gray-600">Total records: {totalRecords}</p>
+          <NumberedPagination
+            currentPage={page}
+            totalPages={totalPages}
+            onPageChange={(nextPage) => loadRecords(nextPage, query)}
+            className="justify-start lg:justify-end"
+            disabled={loading}
+          />
         </div>
       </div>
 
       {showFormModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
           <form data-testid="medical-record-form-modal" onSubmit={handleSubmit} className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
-            <h2 className="text-lg text-gray-900">{editingRecordId ? "Edit Medical Record" : "Add Medical Record"}</h2>
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-lg text-gray-900">{editingRecordId ? "Edit Medical Record" : "Add Medical Record"}</h2>
+              <ModalCloseButton
+                onClick={() => {
+                  setShowFormModal(false);
+                  resetForm();
+                }}
+              />
+            </div>
 
             <div>
               <label className="block text-sm text-gray-700 mb-2">Patient</label>
@@ -1144,7 +1205,7 @@ export default function MedicalRecordsPage() {
                         )}
                       </div>
                     ))}
-                    {aiSuggestions.length > LIST_PREVIEW_LIMIT && (
+                    {aiSuggestions.length > PAGE_SIZE && (
                       <div className="flex justify-end pt-1">
                         <button
                           type="button"
@@ -1314,15 +1375,12 @@ export default function MedicalRecordsPage() {
                   {sendingReminderId === selectedRecord.id ? "Sending..." : "Send Reminder"}
                 </button>
               )}
-              <button
+              <ModalCloseButton
                 onClick={() => {
                   setShowViewModal(false);
                   setSelectedRecord(null);
                 }}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Close
-              </button>
+              />
             </div>
           </div>
         </div>

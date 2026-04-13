@@ -185,6 +185,35 @@ const createMedicine = async (organizationId, payload, actor = null, requestMeta
   return created;
 };
 
+const deleteMedicine = async (organizationId, id, actor = null, requestMeta = null) => {
+  const current = await pharmacyModel.getMedicineById(organizationId, id);
+  if (!current) {
+    throw new ApiError(404, "Medicine not found");
+  }
+
+  const deleted = await pharmacyModel.deleteMedicine(organizationId, id);
+  await invalidatePharmacyRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "pharmacy",
+    action: "medicine_deleted",
+    summary: `Medicine deleted: ${current.name}`,
+    entityType: "medicine",
+    entityId: current.id,
+    entityLabel: current.name,
+    metadata: {
+      code: current.code || null
+    },
+    beforeState: current,
+    afterState: deleted
+  });
+
+  return deleted;
+};
+
 const updateMedicine = async (organizationId, id, payload, actor = null, requestMeta = null) => {
   const current = await pharmacyModel.getMedicineById(organizationId, id);
   if (!current) {
@@ -239,6 +268,36 @@ const createMedicineBatch = async (organizationId, payload, actor = null, reques
   });
 
   return created;
+};
+
+const deleteMedicineBatch = async (organizationId, id, actor = null, requestMeta = null) => {
+  const current = await pharmacyModel.getMedicineBatchById(organizationId, id);
+  if (!current) {
+    throw new ApiError(404, "Medicine batch not found");
+  }
+
+  const deleted = await pharmacyModel.deleteMedicineBatch(organizationId, id);
+  await invalidatePharmacyRelatedCaches(organizationId);
+
+  await logAuditEventSafe({
+    organizationId,
+    actor,
+    requestMeta,
+    module: "pharmacy",
+    action: "medicine_batch_deleted",
+    summary: `Medicine batch deleted: ${current.batch_number}`,
+    entityType: "medicine_batch",
+    entityId: current.id,
+    entityLabel: `${current.medicine_name} ${current.batch_number}`,
+    metadata: {
+      medicineId: current.medicine_id,
+      expiryDate: current.expiry_date || null
+    },
+    beforeState: current,
+    afterState: deleted
+  });
+
+  return deleted;
 };
 
 const updateMedicineBatch = async (organizationId, id, payload, actor = null, requestMeta = null) => {
@@ -337,9 +396,11 @@ module.exports = {
   getPharmacyInsights,
   createMedicine,
   updateMedicine,
+  deleteMedicine,
   listMedicineBatches,
   createMedicineBatch,
   updateMedicineBatch,
+  deleteMedicineBatch,
   listPharmacyDispenses,
   getPharmacyDispenseById,
   createPharmacyDispense

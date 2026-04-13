@@ -24,6 +24,12 @@ router.patch(
   validateRequest({ params: inventorySchemas.idParams, body: inventorySchemas.itemUpdateBody }),
   controller.updateInventoryItem
 );
+router.delete(
+  "/items/:id",
+  authorizeRoles("full_access"),
+  validateRequest({ params: inventorySchemas.idParams }),
+  controller.deleteInventoryItem
+);
 router.get(
   "/movements",
   authorizeRoles("full_access", "billing_access", "reception_access"),

@@ -41,6 +41,7 @@ export interface Patient {
   phone: string;
   email: string | null;
   blood_type: string | null;
+  description: string | null;
   emergency_contact: string | null;
   address: string | null;
   status: string;

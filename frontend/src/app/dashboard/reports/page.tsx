@@ -7,9 +7,9 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Legend,
   Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -325,7 +325,14 @@ type PlatformInfraForm = {
   notes: string;
 };
 
-const PIE_COLORS = ["#059669", "#10b981", "#34d399", "#6ee7b7", "#047857", "#22c55e", "#f59e0b", "#ef4444"];
+const APPOINTMENT_STATUS_COLORS = ["#0f766e", "#14b8a6", "#22c55e", "#f59e0b", "#ef4444"];
+const PAYMENT_METHOD_COLORS = ["#2563eb", "#0f766e", "#f59e0b", "#ef4444", "#7c3aed", "#0891b2"];
+const DEPARTMENT_COLORS = ["#14b8a6", "#2563eb", "#f59e0b", "#8b5cf6", "#ef4444", "#10b981"];
+const REVENUE_STREAM_COLORS = ["#0f766e", "#22c55e", "#f59e0b", "#ef4444", "#2563eb", "#8b5cf6"];
+const DISEASE_PATTERN_COLORS = ["#10b981", "#059669", "#14b8a6", "#0ea5e9", "#f59e0b", "#ef4444"];
+const DISEASE_TREND_COLORS = ["#0f766e", "#14b8a6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444"];
+const MONTHLY_BAR_COLORS = ["#0f766e", "#14b8a6", "#f59e0b", "#2563eb"];
+const RECORD_TYPE_COLORS = ["#0f766e", "#14b8a6", "#22c55e", "#f59e0b", "#2563eb"];
 const PERIOD_OPTIONS = [
   { value: "7d", label: "Last 7 days" },
   { value: "30d", label: "Last 30 days" },
@@ -372,6 +379,8 @@ const PLAN_PRICING_DEFAULTS: Record<string, Omit<PricingForm, "planTier" | "lowB
 
 const currency = (value: number) => `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const percentage = (value: number) => `${Number(value || 0).toFixed(1)}%`;
+const sortByValueDesc = <T extends Record<string, unknown>, K extends keyof T>(items: T[], key: K) =>
+  [...items].sort((left, right) => Number(right[key] ?? 0) - Number(left[key] ?? 0));
 const escapeCsv = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
 const escapePdfText = (text: string) => text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 const formatTimestamp = (value: string | null) => (value ? new Date(value).toLocaleString() : "-");
@@ -921,26 +930,64 @@ export default function ReportsPage() {
   }, [commercial]);
 
   const appointmentStatusData = useMemo(
-    () => (report?.appointmentStatus || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[index % PIE_COLORS.length] })),
+    () =>
+      sortByValueDesc(report?.appointmentStatus || [], "value").map((entry, index) => ({
+        ...entry,
+        color: APPOINTMENT_STATUS_COLORS[index % APPOINTMENT_STATUS_COLORS.length]
+      })),
     [report]
   );
 
   const paymentMethodData = useMemo(
-    () => (report?.paymentMethods || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[(index + 2) % PIE_COLORS.length] })),
+    () =>
+      sortByValueDesc(report?.paymentMethods || [], "total").map((entry, index) => ({
+        ...entry,
+        color: PAYMENT_METHOD_COLORS[index % PAYMENT_METHOD_COLORS.length]
+      })),
     [report]
   );
   const revenueStreamData = useMemo(
-    () => (report?.revenueStreams || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[(index + 4) % PIE_COLORS.length] })),
+    () =>
+      sortByValueDesc(report?.revenueStreams || [], "total").map((entry, index) => ({
+        ...entry,
+        color: REVENUE_STREAM_COLORS[index % REVENUE_STREAM_COLORS.length]
+      })),
+    [report]
+  );
+  const departmentData = useMemo(
+    () =>
+      sortByValueDesc(report?.departmentData || [], "value").map((entry, index) => ({
+        ...entry,
+        color: DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length]
+      })),
+    [report]
+  );
+  const recordTypeData = useMemo(
+    () =>
+      sortByValueDesc(report?.recordTypes || [], "count").map((entry, index) => ({
+        ...entry,
+        color: RECORD_TYPE_COLORS[index % RECORD_TYPE_COLORS.length]
+      })),
     [report]
   );
   const diseasePatternData = useMemo(
-    () => (report?.diseasePatterns.items || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[index % PIE_COLORS.length] })),
+    () =>
+      sortByValueDesc(report?.diseasePatterns.items || [], "caseCount").map((entry, index) => ({
+        ...entry,
+        color: DISEASE_PATTERN_COLORS[index % DISEASE_PATTERN_COLORS.length]
+      })),
     [report]
   );
   const diseaseTrendSignalData = useMemo(
-    () => (report?.predictiveAnalytics.diseaseTrends.items || []).map((entry, index) => ({ ...entry, color: PIE_COLORS[index % PIE_COLORS.length] })),
+    () =>
+      sortByValueDesc(report?.predictiveAnalytics.diseaseTrends.items || [], "currentCases").map((entry, index) => ({
+        ...entry,
+        color: DISEASE_TREND_COLORS[index % DISEASE_TREND_COLORS.length]
+      })),
     [report]
   );
+  const diseasePatternChartData = useMemo(() => diseasePatternData.slice(0, 5), [diseasePatternData]);
+  const diseaseTrendChartData = useMemo(() => diseaseTrendSignalData.slice(0, 5), [diseaseTrendSignalData]);
   const monthlyTrendData = useMemo(() => report?.monthlyTrends || [], [report]);
   const forecastSeries = useMemo(() => report?.predictiveAnalytics.revenueForecasting.series || [], [report]);
   const doctorLeader = report?.topDoctors[0] || null;
@@ -1241,17 +1288,17 @@ export default function ReportsPage() {
                 <TrendingUp className="h-5 w-5 text-emerald-600" />
               </div>
               <ResponsiveContainer width="100%" height={320}>
-                <LineChart data={report.trendData}>
+                <ComposedChart data={report.trendData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="label" stroke="#6b7280" />
-                  <YAxis yAxisId="left" stroke="#6b7280" />
-                  <YAxis yAxisId="right" orientation="right" stroke="#6b7280" />
+                  <YAxis yAxisId="left" stroke="#6b7280" domain={[0, "dataMax"]} />
+                  <YAxis yAxisId="right" orientation="right" stroke="#6b7280" domain={[0, "dataMax"]} />
                   <Tooltip />
                   <Legend />
-                  <Bar yAxisId="left" dataKey="appointments" fill="#10b981" radius={[6, 6, 0, 0]} />
+                  <Bar yAxisId="left" dataKey="appointments" fill="#14b8a6" />
                   <Line yAxisId="left" type="monotone" dataKey="noShows" stroke="#ef4444" strokeWidth={2} />
-                  <Line yAxisId="right" type="monotone" dataKey="revenue" stroke="#047857" strokeWidth={3} dot={false} />
-                </LineChart>
+                  <Line yAxisId="right" type="monotone" dataKey="revenue" stroke="#0f766e" strokeWidth={3} dot={false} />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
 
@@ -1265,7 +1312,7 @@ export default function ReportsPage() {
               </div>
               <ResponsiveContainer width="100%" height={320}>
                 <PieChart>
-                  <Pie data={appointmentStatusData} dataKey="value" nameKey="name" outerRadius={110} label>
+                  <Pie data={appointmentStatusData} dataKey="value" nameKey="name" outerRadius={110} innerRadius={70}>
                     {appointmentStatusData.map((entry) => (
                       <Cell key={entry.name} fill={entry.color} />
                     ))}
@@ -1287,7 +1334,7 @@ export default function ReportsPage() {
               <ResponsiveContainer width="100%" height={320}>
                 <BarChart data={paymentMethodData} layout="vertical" margin={{ left: 24 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis type="number" stroke="#6b7280" />
+                  <XAxis type="number" stroke="#6b7280" domain={[0, "dataMax"]} />
                   <YAxis type="category" dataKey="method" stroke="#6b7280" width={110} />
                   <Tooltip
                     formatter={(value) => {
@@ -1295,7 +1342,7 @@ export default function ReportsPage() {
                       return currency(Number(normalized ?? 0));
                     }}
                   />
-                  <Bar dataKey="total" radius={[0, 6, 6, 0]}>
+                  <Bar dataKey="total">
                     {paymentMethodData.map((entry) => (
                       <Cell key={entry.method} fill={entry.color} />
                     ))}
@@ -1313,23 +1360,27 @@ export default function ReportsPage() {
                 <Stethoscope className="h-5 w-5 text-emerald-600" />
               </div>
               <div className="grid gap-4 lg:grid-cols-2">
-                <ResponsiveContainer width="100%" height={260}>
+              <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
-                    <Pie data={report.departmentData} dataKey="value" nameKey="name" outerRadius={82} label>
-                      {report.departmentData.map((entry, index) => (
-                        <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    <Pie data={departmentData} dataKey="value" nameKey="name" outerRadius={82} innerRadius={46}>
+                      {departmentData.map((entry, index) => (
+                        <Cell key={entry.name} fill={entry.color} />
                       ))}
                     </Pie>
                     <Tooltip />
                   </PieChart>
                 </ResponsiveContainer>
                 <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={report.recordTypes}>
+                  <BarChart data={recordTypeData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="type" stroke="#6b7280" />
-                    <YAxis stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" domain={[0, "dataMax"]} />
                     <Tooltip />
-                    <Bar dataKey="count" fill="#10b981" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="count">
+                      {recordTypeData.map((entry) => (
+                        <Cell key={entry.type} fill={entry.color} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -1346,11 +1397,11 @@ export default function ReportsPage() {
                 <TrendingUp className="h-5 w-5 text-emerald-600" />
               </div>
               <ResponsiveContainer width="100%" height={340}>
-                <LineChart data={monthlyTrendData}>
+                <ComposedChart data={monthlyTrendData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="label" stroke="#6b7280" />
-                  <YAxis yAxisId="amount" stroke="#6b7280" />
-                  <YAxis yAxisId="volume" orientation="right" stroke="#6b7280" />
+                  <YAxis yAxisId="amount" stroke="#6b7280" domain={[0, "dataMax"]} />
+                  <YAxis yAxisId="volume" orientation="right" stroke="#6b7280" domain={[0, "dataMax"]} />
                   <Tooltip
                     formatter={(value, name) => {
                       const normalized = Number(Array.isArray(value) ? value[0] : value);
@@ -1367,11 +1418,11 @@ export default function ReportsPage() {
                     }}
                   />
                   <Legend />
-                  <Bar yAxisId="amount" dataKey="invoicedAmount" fill="#d1fae5" radius={[6, 6, 0, 0]} name="Invoiced" />
-                  <Bar yAxisId="amount" dataKey="collectedAmount" fill="#10b981" radius={[6, 6, 0, 0]} name="Collected" />
-                  <Line yAxisId="volume" type="monotone" dataKey="appointments" stroke="#047857" strokeWidth={3} name="Appointments" />
+                  <Bar yAxisId="amount" dataKey="invoicedAmount" fill="#bfdbfe" name="Invoiced" />
+                  <Bar yAxisId="amount" dataKey="collectedAmount" fill="#14b8a6" name="Collected" />
+                  <Line yAxisId="volume" type="monotone" dataKey="appointments" stroke="#0f766e" strokeWidth={3} name="Appointments" />
                   <Line yAxisId="volume" type="monotone" dataKey="newPatients" stroke="#f59e0b" strokeWidth={2} dot={false} name="New Patients" />
-                </LineChart>
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
 
@@ -1434,11 +1485,11 @@ export default function ReportsPage() {
                 <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
                   <ResponsiveContainer width="100%" height={240}>
                     <PieChart>
-                      <Pie data={revenueStreamData} dataKey="total" nameKey="stream" outerRadius={84}>
-                        {revenueStreamData.map((entry) => (
-                          <Cell key={entry.stream} fill={entry.color} />
-                        ))}
-                      </Pie>
+                    <Pie data={revenueStreamData} dataKey="total" nameKey="stream" outerRadius={84} innerRadius={48}>
+                      {revenueStreamData.map((entry) => (
+                        <Cell key={entry.stream} fill={entry.color} />
+                      ))}
+                    </Pie>
                       <Tooltip
                         formatter={(value, name) => {
                           const normalized = Number(Array.isArray(value) ? value[0] : value);
@@ -1496,25 +1547,33 @@ export default function ReportsPage() {
                 </div>
               </div>
               <div className="mt-5 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={diseasePatternData} layout="vertical" margin={{ left: 24 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis type="number" stroke="#6b7280" />
-                    <YAxis type="category" dataKey="diagnosis" stroke="#6b7280" width={130} />
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={diseasePatternChartData} layout="vertical" margin={{ left: 24, right: 12 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis type="number" stroke="#6b7280" domain={[0, "dataMax"]} />
+                  <YAxis type="category" dataKey="diagnosis" stroke="#6b7280" width={130} />
                     <Tooltip
                       formatter={(value, name) => {
                         const normalized = Number(Array.isArray(value) ? value[0] : value);
                         if (name === "caseCount") {
                           return [normalized.toLocaleString(), "Cases"];
                         }
-                        return [normalized.toLocaleString(), "Patients"];
+                        return [normalized.toLocaleString(), "Unique Patients"];
                       }}
                     />
                     <Legend />
-                    <Bar dataKey="caseCount" fill="#10b981" radius={[0, 6, 6, 0]} name="Cases" />
-                    <Bar dataKey="patientCount" fill="#047857" radius={[0, 6, 6, 0]} name="Patients" />
-                  </BarChart>
-                </ResponsiveContainer>
+                    <Bar dataKey="caseCount" name="Cases">
+                      {diseasePatternChartData.map((entry) => (
+                        <Cell key={`${entry.diagnosis}-cases`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  <Bar dataKey="patientCount" name="Unique Patients">
+                    {diseasePatternChartData.map((entry, index) => (
+                      <Cell key={`${entry.diagnosis}-patients-${index}`} fill={DISEASE_PATTERN_COLORS[(index + 2) % DISEASE_PATTERN_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
                 <div className="space-y-3">
                   {diseasePatternData.length === 0 && <p className="text-sm text-gray-500">No diagnosis patterns yet.</p>}
                   {diseasePatternData.map((entry) => (
@@ -1737,11 +1796,11 @@ export default function ReportsPage() {
                 </div>
               </div>
               <div className="mt-5">
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={forecastSeries}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis dataKey="label" stroke="#6b7280" />
-                    <YAxis stroke="#6b7280" />
+              <ResponsiveContainer width="100%" height={240}>
+                <ComposedChart data={forecastSeries}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="label" stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" domain={[0, "dataMax"]} />
                     <Tooltip
                       formatter={(value, name) => {
                         const normalized = Number(Array.isArray(value) ? value[0] : value);
@@ -1750,12 +1809,12 @@ export default function ReportsPage() {
                         }
 
                         return [currency(normalized), "Actual / MTD"];
-                      }}
-                    />
-                    <Legend />
-                    <Bar dataKey="actualCollected" fill="#10b981" radius={[6, 6, 0, 0]} name="Actual / MTD" />
-                    <Bar dataKey="projectedCollected" fill="#f59e0b" radius={[6, 6, 0, 0]} name="Forecast" />
-                  </BarChart>
+                    }}
+                  />
+                  <Legend />
+                  <Bar dataKey="actualCollected" fill="#14b8a6" name="Actual / MTD" />
+                  <Bar dataKey="projectedCollected" fill="#f59e0b" name="Forecast" />
+                </ComposedChart>
                 </ResponsiveContainer>
               </div>
             </div>
@@ -1789,9 +1848,9 @@ export default function ReportsPage() {
             </div>
             <div className="mt-5 grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={diseaseTrendSignalData} layout="vertical" margin={{ left: 24 }}>
+                <BarChart data={diseaseTrendChartData} layout="vertical" margin={{ left: 24, right: 12 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis type="number" stroke="#6b7280" />
+                  <XAxis type="number" stroke="#6b7280" domain={[0, "dataMax"]} />
                   <YAxis type="category" dataKey="diagnosis" stroke="#6b7280" width={130} />
                   <Tooltip
                     formatter={(value, name) => {
@@ -1804,8 +1863,8 @@ export default function ReportsPage() {
                     }}
                   />
                   <Legend />
-                  <Bar dataKey="currentCases" fill="#10b981" radius={[0, 6, 6, 0]} name={diseaseTrends?.currentWindowLabel || "Current window"} />
-                  <Bar dataKey="previousCases" fill="#94a3b8" radius={[0, 6, 6, 0]} name={diseaseTrends?.previousWindowLabel || "Previous window"} />
+                  <Bar dataKey="currentCases" fill="#14b8a6" name={diseaseTrends?.currentWindowLabel || "Current window"} />
+                  <Bar dataKey="previousCases" fill="#94a3b8" name={diseaseTrends?.previousWindowLabel || "Previous window"} />
                 </BarChart>
               </ResponsiveContainer>
               <div className="space-y-3">

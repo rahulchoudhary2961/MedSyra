@@ -7,6 +7,7 @@ import { Download, FileUp, FlaskConical, Plus, RefreshCcw } from "lucide-react";
 import { apiFetch, apiRequest } from "@/lib/api";
 import { canAccessLab, canManageLabCatalog } from "@/lib/roles";
 import { AuthUser, Doctor, LabOrder, LabTest, Patient } from "@/types/api";
+import ModalCloseButton from "@/app/components/ModalCloseButton";
 
 type LabTestsResponse = {
   success: boolean;
@@ -554,13 +555,7 @@ export default function LabPage() {
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Catalog</p>
               <h2 className="mt-2 text-xl text-gray-900">Create Lab Test</h2>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowTestForm(false)}
-              className="rounded-lg border border-emerald-200 px-3 py-2 text-sm text-emerald-800 hover:bg-white"
-            >
-              Close
-            </button>
+            <ModalCloseButton onClick={() => setShowTestForm(false)} />
           </div>
 
           <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={submitTest}>
@@ -604,9 +599,7 @@ export default function LabPage() {
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Booking</p>
               <h2 className="mt-2 text-xl text-gray-900">Create Lab Order</h2>
             </div>
-            <button type="button" onClick={() => setShowOrderForm(false)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-              Close
-            </button>
+            <ModalCloseButton onClick={() => setShowOrderForm(false)} />
           </div>
 
           <form className="mt-6 grid gap-4" onSubmit={submitOrder}>
@@ -811,9 +804,7 @@ export default function LabPage() {
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Order Workflow</p>
               <h2 className="mt-2 text-xl text-gray-900">{selectedOrder.order_number}</h2>
             </div>
-            <button type="button" onClick={() => setSelectedOrder(null)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-              Close
-            </button>
+            <ModalCloseButton onClick={() => setSelectedOrder(null)} />
           </div>
 
           <form className="mt-6 grid gap-4" onSubmit={submitOrderUpdate}>

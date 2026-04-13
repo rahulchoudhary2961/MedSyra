@@ -15,6 +15,7 @@ import {
   NotificationDelivery,
   Patient
 } from "@/types/api";
+import ModalCloseButton from "@/app/components/ModalCloseButton";
 
 type AppointmentsResponse = {
   success: boolean;
@@ -2067,12 +2068,6 @@ export default function AppointmentsPage() {
                 {mode}
               </button>
             ))}
-            <button
-              onClick={jumpToToday}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-            >
-              Today
-            </button>
             {canManageCalendar && (
               <button
                 onClick={openWalkIn}
@@ -2587,16 +2582,12 @@ export default function AppointmentsPage() {
                       <h3 className="text-sm text-gray-900">Create New Patient</h3>
                       <p className="mt-1 text-xs text-gray-600">Add the patient here and continue booking immediately.</p>
                     </div>
-                    <button
-                      type="button"
+                    <ModalCloseButton
                       onClick={() => {
                         setShowInlinePatientForm(false);
                         setInlinePatientForm(initialInlinePatientForm);
                       }}
-                      className="text-xs text-gray-600 hover:text-gray-900"
-                    >
-                      Close
-                    </button>
+                    />
                   </div>
 
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -3312,13 +3303,7 @@ export default function AppointmentsPage() {
                 <p className="text-sm text-gray-500">Appointment Details</p>
                 <h2 className="text-lg text-gray-900">{selectedAppointment.patient_name || selectedAppointment.title}</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedAppointment(null)}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
-              >
-                Close
-              </button>
+              <ModalCloseButton onClick={() => setSelectedAppointment(null)} />
             </div>
 
             <div className="space-y-4 p-6">

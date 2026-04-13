@@ -289,7 +289,9 @@ const normalizePatientPayload = (payload) => {
         ? normalizeDigits(payload.emergencyContact.trim())
         : payload.emergencyContact,
     email: payload.email ? payload.email.trim().toLowerCase() : null,
-    dateOfBirth: payload.dateOfBirth || undefined
+    dateOfBirth: payload.dateOfBirth || undefined,
+    bloodType: typeof payload.bloodType === "string" ? payload.bloodType.trim() || null : payload.bloodType,
+    description: typeof payload.description === "string" ? payload.description.trim() || null : payload.description
   };
 
   if (normalizedPayload.dateOfBirth) {

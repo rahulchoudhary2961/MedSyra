@@ -6,6 +6,7 @@ import { Clock, Link as LinkIcon, Mail, Phone, Plus, Star, Trash2 } from "lucide
 import { apiRequest } from "@/lib/api";
 import { canAccessDoctors, canManageDoctors, isFullAccessRole } from "@/lib/roles";
 import { Doctor } from "@/types/api";
+import NumberedPagination from "@/app/components/NumberedPagination";
 
 type DoctorsResponse = {
   success: boolean;
@@ -173,6 +174,8 @@ export default function DoctorsPage() {
   const [totalDoctors, setTotalDoctors] = useState(0);
   const [form, setForm] = useState<DoctorForm>(initialForm);
   const initialQuery = searchParams.get("q") || "";
+  const isInitialLoading = loading && doctors.length === 0;
+  const isRefreshing = loading && doctors.length > 0;
 
   const resetForm = useCallback(() => {
     setForm(initialForm);
@@ -225,7 +228,7 @@ export default function DoctorsPage() {
       setQuery(search);
       setPage(1);
       loadDoctors(1, search);
-    }, 300);
+    }, 100);
 
     return () => window.clearTimeout(timeoutId);
   }, [search, query, loadDoctors]);
@@ -448,15 +451,32 @@ export default function DoctorsPage() {
       </section>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {loading && <p className="text-sm text-gray-500">Loading doctors...</p>}
+      {isInitialLoading && (
+        <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-500">
+          <div className="flex items-center gap-3">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-emerald-600" />
+            Loading doctors...
+          </div>
+        </div>
+      )}
       {!loading && doctors.length === 0 && (
         <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-500">
           No doctor profiles found for the current search.
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {doctors.map((doctor) => (
+      <div className="relative">
+        {isRefreshing && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center px-4 py-3">
+            <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm">
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 border-t-emerald-600" />
+              Loading next page...
+            </div>
+          </div>
+        )}
+
+        <div className={`grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 ${isRefreshing ? "opacity-75" : ""}`}>
+          {doctors.map((doctor) => (
           <div key={doctor.id} data-testid="doctor-card" className="bg-white rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-shadow">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-start gap-4">
@@ -551,30 +571,19 @@ export default function DoctorsPage() {
               </div>
             )}
           </div>
-        ))}
+          ))}
+        </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl px-6 py-4 flex items-center justify-between">
+      <div className="bg-white border border-gray-200 rounded-xl px-6 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <p className="text-sm text-gray-600">Total doctors: {totalDoctors}</p>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => loadDoctors(Math.max(1, page - 1), query)}
-            disabled={page <= 1 || loading}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <span className="text-sm text-gray-600">
-            Page {page} of {totalPages}
-          </span>
-          <button
-            onClick={() => loadDoctors(Math.min(totalPages, page + 1), query)}
-            disabled={page >= totalPages || loading}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50"
-          >
-            Next
-          </button>
-        </div>
+        <NumberedPagination
+          currentPage={page}
+          totalPages={totalPages}
+          onPageChange={(nextPage) => loadDoctors(nextPage, query)}
+          className="justify-start lg:justify-end"
+          disabled={loading}
+        />
       </div>
 
       {showCreate && (

@@ -29,7 +29,6 @@ const medicalRecordFileUrlRule = (value, fieldName) => {
 };
 const patientStatuses = ["active", "follow-up", "pending", "inactive"];
 const doctorStatuses = ["available", "busy", "off duty", "off-duty"];
-const bloodTypes = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const invoiceStatuses = ["draft", "issued", "partially_paid", "paid", "overdue", "void"];
 const paymentMethods = ["cash", "card", "bank_transfer", "insurance", "upi", "other"];
 const reportPeriods = ["7d", "30d", "90d", "12m"];
@@ -319,7 +318,8 @@ const patientsSchemas = {
       gender: stringRule({ enumValues: ["male", "female", "other"] }),
       phone: phoneRule({ strictTenDigits: true }),
       email: optional(emailRule()),
-      bloodType: optional(stringRule({ enumValues: bloodTypes, safe: false })),
+      bloodType: optional(stringRule({ minLength: 1, maxLength: 20, safe: false })),
+      description: optional(stringRule({ maxLength: 1000, safe: false })),
       emergencyContact: optional(phoneRule({ strictTenDigits: true })),
       address: optional(stringRule({ minLength: 2, maxLength: 300 })),
       status: optional(stringRule({ enumValues: patientStatuses, maxLength: 20 })),
@@ -334,7 +334,8 @@ const patientsSchemas = {
       gender: optional(stringRule({ enumValues: ["male", "female", "other"] })),
       phone: optional(phoneRule({ strictTenDigits: true })),
       email: optional(emailRule()),
-      bloodType: optional(stringRule({ enumValues: bloodTypes, safe: false })),
+      bloodType: optional(stringRule({ minLength: 1, maxLength: 20, safe: false })),
+      description: optional(stringRule({ maxLength: 1000, safe: false })),
       emergencyContact: optional(phoneRule({ strictTenDigits: true })),
       address: optional(stringRule({ minLength: 2, maxLength: 300 })),
       status: optional(stringRule({ enumValues: patientStatuses, maxLength: 20 })),

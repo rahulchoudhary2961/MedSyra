@@ -712,6 +712,32 @@ const buildGuestPatientProfile = (patientId: string) => {
   };
 };
 
+const filterGuestList = <T extends { [key: string]: unknown }>(
+  items: T[],
+  search: string,
+  fields: Array<keyof T>,
+) => {
+  const normalized = search.trim().toLowerCase();
+  if (!normalized) {
+    return items;
+  }
+
+  return items.filter((item) =>
+    fields.some((field) => {
+      const value = String(item[field] ?? "").toLowerCase();
+      if (!value) {
+        return false;
+      }
+
+      if (field === "full_name" || field === "patient_code") {
+        return value.startsWith(normalized);
+      }
+
+      return normalized.length > 1 && value.includes(normalized);
+    })
+  );
+};
+
 const mockGuestResponse = (path: string, options: RequestOptions = {}) => {
   const method = options.method || "GET";
   if (method !== "GET") {
@@ -721,7 +747,11 @@ const mockGuestResponse = (path: string, options: RequestOptions = {}) => {
     });
   }
 
-  const cleanPath = path.split("?")[0];
+  const [cleanPath, queryString = ""] = path.split("?");
+  const params = new URLSearchParams(queryString);
+  const page = Math.max(1, Number(params.get("page") || "1") || 1);
+  const limit = Math.max(1, Number(params.get("limit") || "20") || 20);
+  const search = params.get("q") || "";
 
   if (cleanPath === "/auth/me") {
     return new Response(JSON.stringify({
@@ -756,7 +786,13 @@ const mockGuestResponse = (path: string, options: RequestOptions = {}) => {
   }
 
   if (cleanPath === "/patients") {
-    return new Response(JSON.stringify({ success: true, data: { items: guestPatients, pagination: { page: 1, limit: 20, total: guestPatients.length, totalPages: 1 } } }), {
+    const filteredPatients = filterGuestList(guestPatients, search, ["patient_code", "full_name", "email", "phone"]);
+    const total = filteredPatients.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const start = (page - 1) * limit;
+    const items = filteredPatients.slice(start, start + limit);
+
+    return new Response(JSON.stringify({ success: true, data: { items, pagination: { page, limit, total, totalPages } } }), {
       headers: { "Content-Type": "application/json" }
     });
   }
@@ -824,7 +860,13 @@ const mockGuestResponse = (path: string, options: RequestOptions = {}) => {
   }
 
   if (cleanPath === "/doctors") {
-    return new Response(JSON.stringify({ success: true, data: { items: guestDoctors } }), {
+    const filteredDoctors = filterGuestList(guestDoctors, search, ["full_name", "specialty", "email", "phone"]);
+    const total = filteredDoctors.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const start = (page - 1) * limit;
+    const items = filteredDoctors.slice(start, start + limit);
+
+    return new Response(JSON.stringify({ success: true, data: { items, pagination: { page, limit, total, totalPages } } }), {
       headers: { "Content-Type": "application/json" }
     });
   }

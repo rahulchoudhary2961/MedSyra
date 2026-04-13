@@ -1,11 +1,15 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Edit2, Eye, Plus, Trash2 } from "lucide-react";
+import { Edit2, Plus, Trash2 } from "lucide-react";
 import { apiRequest, ApiRequestError } from "@/lib/api";
 import { canAccessPatients, canDeletePatients } from "@/lib/roles";
 import { isUuid } from "@/lib/uuid";
 import { Patient } from "@/types/api";
+import NumberedPagination from "@/app/components/NumberedPagination";
+import ModalCloseButton from "@/app/components/ModalCloseButton";
+
+const BLOOD_TYPE_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] as const;
 
 type PatientsResponse = {
   success: boolean;
@@ -50,6 +54,8 @@ type CreatePatientForm = {
   phone: string;
   email: string;
   bloodType: string;
+  bloodTypeMode: "select" | "other";
+  description: string;
   emergencyContact: string;
   address: string;
 };
@@ -62,6 +68,8 @@ const initialForm: CreatePatientForm = {
   phone: "",
   email: "",
   bloodType: "",
+  bloodTypeMode: "select",
+  description: "",
   emergencyContact: "",
   address: ""
 };
@@ -98,6 +106,37 @@ const calculateAgeFromDateOfBirth = (value: string) => {
   return String(Math.max(age, 0));
 };
 
+const getTitlePrefix = (gender: string) => {
+  if (gender === "male") {
+    return "Mr. ";
+  }
+
+  if (gender === "female") {
+    return "Miss. ";
+  }
+
+  return "";
+};
+
+const stripTitlePrefix = (value: string) =>
+  value.replace(/^(Mr\.|Miss\.|Mrs\.|Ms\.)\s*/i, "").trimStart();
+
+const normalizeFullNameInput = (value: string) => stripTitlePrefix(value);
+
+const normalizeBloodTypeSelection = (value: string | null | undefined) => {
+  if (!value) {
+    return "";
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return BLOOD_TYPE_OPTIONS.includes(normalized as (typeof BLOOD_TYPE_OPTIONS)[number]) ? normalized : "other";
+};
+
+const isKnownBloodType = (value: string | null | undefined) => {
+  const normalized = normalizeBloodTypeSelection(value);
+  return normalized !== "" && normalized !== "other";
+};
+
 const patientMatchesQuery = (patient: Patient, currentQuery: string) => {
   const normalizedQuery = currentQuery.trim().toLowerCase();
   if (!normalizedQuery) return true;
@@ -127,20 +166,25 @@ export default function PatientsPage() {
   const [editingPatientId, setEditingPatientId] = useState<string | null>(null);
   const [existingPatientIdHint, setExistingPatientIdHint] = useState<string | null>(null);
   const [currentRole, setCurrentRole] = useState("");
+  const [quickViewPatient, setQuickViewPatient] = useState<Patient | null>(null);
   const initialQuery = searchParams.get("q") || "";
+  const isInitialLoading = isLoading && patients.length === 0;
+  const isRefreshing = isLoading && patients.length > 0;
 
   const openEditModal = useCallback((patient: Patient) => {
     setFormError("");
     setExistingPatientIdHint(null);
     setEditingPatientId(patient.id);
     setFormData({
-      fullName: patient.full_name || "",
+      fullName: normalizeFullNameInput(patient.full_name || ""),
       age: patient.age?.toString() || "",
       dateOfBirth: patient.date_of_birth || "",
       gender: patient.gender || "",
       phone: patient.phone || "",
       email: patient.email || "",
       bloodType: patient.blood_type || "",
+      bloodTypeMode: isKnownBloodType(patient.blood_type) ? "select" : "other",
+      description: patient.description || "",
       emergencyContact: patient.emergency_contact || "",
       address: patient.address || ""
     });
@@ -202,7 +246,7 @@ export default function PatientsPage() {
       setQuery(search);
       setPage(1);
       fetchPatients(1, search);
-    }, 300);
+    }, 100);
 
     return () => window.clearTimeout(timeoutId);
   }, [search, query, fetchPatients]);
@@ -249,13 +293,14 @@ export default function PatientsPage() {
 
     try {
       const body = {
-        fullName: formData.fullName,
+        fullName: `${getTitlePrefix(formData.gender)}${stripTitlePrefix(formData.fullName)}`,
         age: formData.age ? Number(formData.age) : null,
         ...(formData.dateOfBirth ? { dateOfBirth: formData.dateOfBirth } : {}),
         gender: formData.gender,
         phone: formData.phone,
         email: formData.email || null,
-        bloodType: formData.bloodType ? formData.bloodType.trim().toUpperCase() : null,
+        bloodType: formData.bloodType ? formData.bloodType.trim() : null,
+        description: formData.description || null,
         emergencyContact: formData.emergencyContact || null,
         address: formData.address || null,
         status: "active"
@@ -401,11 +446,11 @@ export default function PatientsPage() {
           data-testid="add-patient-button"
           data-tour-id="tour-patients-add"
           onClick={() => {
-            setEditingPatientId(null);
-            setFormData(initialForm);
-            setFormError("");
-            setExistingPatientIdHint(null);
-            setShowModal(true);
+          setEditingPatientId(null);
+          setFormData(initialForm);
+          setFormError("");
+          setExistingPatientIdHint(null);
+          setShowModal(true);
           }}
           className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
         >
@@ -427,9 +472,9 @@ export default function PatientsPage() {
         </label>
       </section>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="relative bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full" aria-busy={isLoading}>
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left text-sm text-gray-600 px-6 py-4">Patient</th>
@@ -444,10 +489,13 @@ export default function PatientsPage() {
               </tr>
             </thead>
             <tbody>
-              {isLoading && (
+              {isInitialLoading && (
                 <tr>
-                  <td className="px-6 py-5 text-sm text-gray-500" colSpan={9}>
-                    Loading patients...
+                  <td className="px-6 py-8 text-sm text-gray-500" colSpan={9}>
+                    <div className="flex items-center gap-3">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-emerald-600" />
+                      Loading patients...
+                    </div>
                   </td>
                 </tr>
               )}
@@ -508,28 +556,6 @@ export default function PatientsPage() {
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          handleViewPatient(patient);
-                        }}
-                        className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
-                        title="View patient"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleViewPatient(patient);
-                        }}
-                        className="p-1.5 rounded hover:bg-gray-100 text-emerald-700"
-                        title="Open profile"
-                      >
-                        <span className="text-xs font-medium">Profile</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
                           handleEditPatient(patient);
                         }}
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
@@ -559,27 +585,24 @@ export default function PatientsPage() {
           </table>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-          <p className="text-sm text-gray-600">Total patients: {totalPatients}</p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => fetchPatients(Math.max(1, page - 1), query)}
-              disabled={page <= 1 || isLoading}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50"
-            >
-              Previous
-            </button>
-            <span className="text-sm text-gray-600">
-              Page {page} of {totalPages} · {PAGE_SIZE} per page
-            </span>
-            <button
-              onClick={() => fetchPatients(Math.min(totalPages, page + 1), query)}
-              disabled={page >= totalPages || isLoading}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50"
-            >
-              Next
-            </button>
+        {isRefreshing && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center border-b border-gray-200 bg-white/70 px-4 py-3 backdrop-blur-sm">
+            <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm">
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 border-t-emerald-600" />
+              Loading next page...
+            </div>
           </div>
+        )}
+
+        <div className="px-6 py-4 border-t border-gray-200 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <p className="text-sm text-gray-600">Total patients: {totalPatients}</p>
+          <NumberedPagination
+            currentPage={page}
+            totalPages={totalPages}
+            onPageChange={(nextPage) => fetchPatients(nextPage, query)}
+            className="justify-start lg:justify-end"
+            disabled={isLoading}
+          />
         </div>
         {error && <p className="text-sm text-red-600 px-6 pb-4">{error}</p>}
       </div>
@@ -614,14 +637,22 @@ export default function PatientsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Full Name</label>
-                    <input
-                      data-testid="patient-full-name-input"
-                      type="text"
-                      value={formData.fullName}
-                      onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                      required
-                    />
+                    <div className="flex items-stretch overflow-hidden rounded-lg border border-gray-300">
+                      {getTitlePrefix(formData.gender) && (
+                        <span className="flex items-center border-r border-gray-300 bg-gray-50 px-4 text-sm font-medium text-gray-600">
+                          {getTitlePrefix(formData.gender).trim()}
+                        </span>
+                      )}
+                      <input
+                        data-testid="patient-full-name-input"
+                        type="text"
+                        value={formData.fullName}
+                        onChange={(e) => setFormData({ ...formData, fullName: normalizeFullNameInput(e.target.value) })}
+                        className="min-w-0 flex-1 px-4 py-2 outline-none"
+                        placeholder="Enter full name"
+                        required
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Age</label>
@@ -643,6 +674,7 @@ export default function PatientsPage() {
                     <input
                       data-testid="patient-dob-input"
                       type="date"
+                      max={new Date().toISOString().slice(0, 10)}
                       value={formData.dateOfBirth}
                       onChange={(e) =>
                         setFormData((current) => ({
@@ -656,18 +688,25 @@ export default function PatientsPage() {
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Gender</label>
-                    <select
-                      data-testid="patient-gender-select"
-                      value={formData.gender}
-                      onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                      required
-                    >
-                      <option value="">Select gender</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
+                    <div className="relative">
+                      {!formData.gender && (
+                        <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                          Select gender
+                        </span>
+                      )}
+                      <select
+                        data-testid="patient-gender-select"
+                        value={formData.gender || ""}
+                        onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2"
+                        required
+                      >
+                        <option value="" disabled hidden />
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Phone</label>
@@ -695,14 +734,45 @@ export default function PatientsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-700 mb-2">Blood Type</label>
-                    <input
-                      data-testid="patient-blood-type-input"
-                      type="text"
-                      value={formData.bloodType}
-                      onChange={(e) => setFormData({ ...formData, bloodType: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                    />
+                    <label className="block text-sm text-gray-700 mb-2">Blood Group</label>
+                    {formData.bloodTypeMode === "other" ? (
+                      <input
+                        data-testid="patient-blood-type-input"
+                        type="text"
+                        value={formData.bloodType}
+                        onChange={(e) => setFormData({ ...formData, bloodType: e.target.value })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                        placeholder="Enter blood group"
+                      />
+                    ) : (
+                      <div className="relative">
+                        {!isKnownBloodType(formData.bloodType) && (
+                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                            Select blood group
+                          </span>
+                        )}
+                        <select
+                          data-testid="patient-blood-type-select"
+                          value={isKnownBloodType(formData.bloodType) ? normalizeBloodTypeSelection(formData.bloodType) : ""}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              bloodType: e.target.value === "other" ? "" : e.target.value,
+                              bloodTypeMode: e.target.value === "other" ? "other" : "select"
+                            })
+                          }
+                          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2"
+                        >
+                          <option value="" disabled hidden />
+                          {BLOOD_TYPE_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-2">Emergency Contact</label>
@@ -720,6 +790,18 @@ export default function PatientsPage() {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-700 mb-2">Description</label>
+                  <textarea
+                    data-testid="patient-description-input"
+                    rows={3}
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    placeholder="Optional notes about the patient"
+                  />
                 </div>
 
                 <div>
@@ -787,6 +869,80 @@ export default function PatientsPage() {
                 className="px-4 py-2 bg-red-600 text-white rounded-lg disabled:opacity-60"
               >
                 {deletingPatientId === patientToDelete.id ? "Deleting..." : "Delete Patient"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {quickViewPatient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-xl">
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl text-gray-900">{quickViewPatient.full_name}</h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {quickViewPatient.patient_code}
+                    {quickViewPatient.blood_type ? ` · ${quickViewPatient.blood_type}` : ""}
+                  </p>
+                </div>
+                <ModalCloseButton onClick={() => setQuickViewPatient(null)} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 px-6 py-5 sm:grid-cols-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Age</p>
+                <p className="mt-1 text-sm text-gray-900">{quickViewPatient.age ?? "-"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Gender</p>
+                <p className="mt-1 text-sm text-gray-900">{quickViewPatient.gender || "-"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Phone</p>
+                <p className="mt-1 text-sm text-gray-900">{quickViewPatient.phone || "-"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Email</p>
+                <p className="mt-1 text-sm text-gray-900">{quickViewPatient.email || "-"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">DOB</p>
+                <p className="mt-1 text-sm text-gray-900">{quickViewPatient.date_of_birth || "-"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Status</p>
+                <p className="mt-1 text-sm text-gray-900">{quickViewPatient.status || "-"}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Description</p>
+                <p className="mt-1 text-sm text-gray-900">{quickViewPatient.description || "No description added."}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Last Visit</p>
+                <p className="mt-1 text-sm text-gray-900">{formatLastVisitDate(quickViewPatient.last_visit_at)}</p>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickViewPatient(null);
+                  handleEditPatient(quickViewPatient);
+                }}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuickViewPatient(null)}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
+              >
+                Done
               </button>
             </div>
           </div>
