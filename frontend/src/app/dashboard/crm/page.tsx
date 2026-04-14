@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CalendarDays, HeartPulse, Phone, Plus, RefreshCcw, Stethoscope, Users } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import { formatDateTime as formatUtcDateTime } from "@/lib/date-time";
 import { canAccessCrm, isFullAccessRole } from "@/lib/roles";
 import { AuthUser, CrmTask, Patient } from "@/types/api";
 import ModalCloseButton from "@/app/components/ModalCloseButton";
@@ -160,16 +161,7 @@ const formatDate = (value: string | null) => {
 };
 
 const formatDateTime = (value: string | null) => {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "numeric",
-    minute: "2-digit"
-  });
+  return formatUtcDateTime(value);
 };
 
 const toDateTimeLocalInput = (value: string | null) => {

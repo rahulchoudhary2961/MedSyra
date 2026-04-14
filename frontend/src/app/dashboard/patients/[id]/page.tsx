@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CalendarDays, CreditCard, Download, Eye, FileText, Pencil, Pill, Search, Stethoscope, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarDays, CreditCard, Download, Eye, FileText, Pencil, Pill, Search, Stethoscope, Trash2, Upload, Users } from "lucide-react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, apiRequest } from "@/lib/api";
+import DocumentPreviewCard from "@/app/components/DocumentPreviewCard";
 import { isUuid } from "@/lib/uuid";
 import { CrmTask, LabOrder, MedicalRecord, Patient, PharmacyDispense, SmartSummaryItem } from "@/types/api";
 
@@ -207,8 +208,12 @@ export default function PatientProfilePage() {
   } | null>(null);
   const [previews, setPreviews] = useState<Record<string, AttachmentPreview>>({});
   const [historySearch, setHistorySearch] = useState("");
+  const [uploadingRecordId, setUploadingRecordId] = useState<string | null>(null);
+  const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
   const previewsRef = useRef<Record<string, AttachmentPreview>>({});
   const attachmentObjectUrlsRef = useRef<string[]>([]);
+  const attachmentUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const attachmentUploadTargetRef = useRef<MedicalRecord | null>(null);
 
   const scrollToSection = useCallback((sectionId: string) => {
     const element = document.getElementById(sectionId);
@@ -217,23 +222,137 @@ export default function PatientProfilePage() {
     }
   }, []);
 
+  const fileToBase64 = useCallback(
+    (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          if (typeof result !== "string") {
+            reject(new Error("Failed to read file"));
+            return;
+          }
+
+          resolve(result.split(",", 2)[1] || "");
+        };
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      }),
+    []
+  );
+
+  const refreshPatientProfile = useCallback(async () => {
+    if (!patientId || hasInvalidPatientId) {
+      return;
+    }
+
+    const response = await apiRequest<PatientProfileResponse>(`/patients/${patientId}/profile`, { authenticated: true });
+    setPatient(response.data.patient);
+    setVisits(response.data.visits || []);
+    setRecords(response.data.medicalRecords || []);
+    setInvoices(response.data.invoices || []);
+    setLabOrders(response.data.labOrders || []);
+    setPharmacyDispenses(response.data.pharmacyDispenses || []);
+    setSmartSummary(response.data.smartSummary || []);
+    setSummary(response.data.summary || null);
+  }, [hasInvalidPatientId, patientId]);
+
+  const handleAttachmentUploadClick = useCallback((record: MedicalRecord) => {
+    attachmentUploadTargetRef.current = record;
+    attachmentUploadInputRef.current?.click();
+  }, []);
+
+  const handleAttachmentUploadChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      const targetRecord = attachmentUploadTargetRef.current;
+      event.target.value = "";
+
+      if (!file || !targetRecord) {
+        return;
+      }
+
+      setUploadingRecordId(targetRecord.id);
+      setError("");
+
+      try {
+        const dataBase64 = await fileToBase64(file);
+        const uploadResponse = await apiRequest<{ success: boolean; data: { fileUrl: string } }>("/medical-records/upload", {
+          method: "POST",
+          authenticated: true,
+          body: {
+            fileName: file.name,
+            contentType: file.type,
+            dataBase64
+          }
+        });
+
+        await apiRequest(`/medical-records/${targetRecord.id}`, {
+          method: "PATCH",
+          authenticated: true,
+          body: {
+            fileUrl: uploadResponse.data.fileUrl
+          }
+        });
+
+        await refreshPatientProfile();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to upload attachment";
+        setError(message);
+      } finally {
+        setUploadingRecordId(null);
+        attachmentUploadTargetRef.current = null;
+      }
+    },
+    [fileToBase64, refreshPatientProfile]
+  );
+
+  const handleDeleteRecord = useCallback(
+    async (record: MedicalRecord) => {
+      if (!window.confirm(`Delete ${record.record_type} for ${record.patient_name}?`)) {
+        return;
+      }
+
+      setDeletingRecordId(record.id);
+      setError("");
+
+      try {
+        await apiRequest(`/medical-records/${record.id}`, {
+          method: "DELETE",
+          authenticated: true
+        });
+        await refreshPatientProfile();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to delete medical record";
+        setError(message);
+      } finally {
+        setDeletingRecordId(null);
+      }
+    },
+    [refreshPatientProfile]
+  );
+
   useEffect(() => {
     if (!patientId || hasInvalidPatientId) return;
 
-    apiRequest<PatientProfileResponse>(`/patients/${patientId}/profile`, { authenticated: true })
-      .then((response) => {
-        setPatient(response.data.patient);
-        setVisits(response.data.visits || []);
-        setRecords(response.data.medicalRecords || []);
-        setInvoices(response.data.invoices || []);
-        setLabOrders(response.data.labOrders || []);
-        setPharmacyDispenses(response.data.pharmacyDispenses || []);
-        setSmartSummary(response.data.smartSummary || []);
-        setSummary(response.data.summary || null);
-      })
+    setLoading(true);
+    refreshPatientProfile()
       .catch((err: Error) => setError(err.message || "Failed to load patient profile"))
       .finally(() => setLoading(false));
-  }, [patientId, hasInvalidPatientId]);
+  }, [patientId, hasInvalidPatientId, refreshPatientProfile]);
+
+  useEffect(() => {
+    if (!patient || hasInvalidPatientId) {
+      return;
+    }
+
+      const hash = window.location.hash.replace(/^#/, "");
+      if (!hash) {
+        return;
+      }
+
+    window.requestAnimationFrame(() => scrollToSection(hash));
+  }, [patient, hasInvalidPatientId, scrollToSection]);
 
   useEffect(() => {
     if (!patientId || hasInvalidPatientId) {
@@ -392,6 +511,26 @@ export default function PatientProfilePage() {
     },
     [ensureAttachmentPreview]
   );
+
+  const renderAttachmentPreview = (record: MedicalRecord) => {
+    if (!record.file_url) {
+      return null;
+    }
+
+    const preview = previews[record.id];
+    const previewUrl = preview?.url || "";
+    const contentType = preview?.contentType || inferContentType(record.file_url);
+    return (
+      <DocumentPreviewCard
+        title={record.record_type || "Attachment"}
+        fileName={preview?.fileName || getAttachmentFileName(record.id, record.file_url)}
+        fileUrl={record.file_url}
+        previewUrl={previewUrl}
+        contentType={contentType}
+        onClick={() => void handleOpenAttachment(record)}
+      />
+    );
+  };
 
   const attachmentRecords = useMemo(
     () => records.filter((record) => record.file_url).sort((left, right) => right.record_date.localeCompare(left.record_date)),
@@ -848,13 +987,6 @@ export default function PatientProfilePage() {
               Follow-up, recall, and retention work tied to this patient.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => scrollToSection("appointments")}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Jump to Appointments
-          </button>
         </div>
 
         {crmTasks.length === 0 ? (
@@ -991,13 +1123,6 @@ export default function PatientProfilePage() {
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Dispensing</p>
             <h2 className="mt-2 text-xl text-gray-900">Pharmacy History</h2>
           </div>
-          <button
-            type="button"
-            onClick={() => scrollToSection("billing")}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Jump to Billing
-          </button>
         </div>
 
         {pharmacyDispenses.length === 0 ? (
@@ -1040,13 +1165,6 @@ export default function PatientProfilePage() {
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">History</p>
             <h2 className="mt-2 text-xl text-gray-900">Visit History</h2>
           </div>
-          <button
-            type="button"
-            onClick={() => scrollToSection("medical-records")}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Jump to Medical Records
-          </button>
         </div>
 
         {visits.length === 0 ? (
@@ -1085,13 +1203,6 @@ export default function PatientProfilePage() {
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">EHR-Lite</p>
             <h2 className="mt-2 text-xl text-gray-900">Clinical Notes</h2>
           </div>
-          <button
-            type="button"
-            onClick={() => scrollToSection("lab")}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Jump to Lab
-          </button>
         </div>
 
         {records.length === 0 ? (
@@ -1116,6 +1227,36 @@ export default function PatientProfilePage() {
                 {record.diagnosis && <p className="mt-3 text-sm text-gray-800"><span className="font-medium">Diagnosis:</span> {record.diagnosis}</p>}
                 {record.prescription && <p className="mt-2 text-sm text-gray-800"><span className="font-medium">Prescription:</span> {record.prescription}</p>}
                 {record.notes && <p className="mt-2 text-sm leading-6 text-gray-700">{record.notes}</p>}
+                {renderAttachmentPreview(record)}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleAttachmentUploadClick(record)}
+                    disabled={uploadingRecordId === record.id}
+                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    {record.file_url ? "Replace Attachment" : "Upload Attachment"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadAttachment(record)}
+                    disabled={!record.file_url}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteRecord(record)}
+                    disabled={deletingRecordId === record.id}
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {deletingRecordId === record.id ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
                 {record.follow_up_date && (
                   <p className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-emerald-700">
                     Follow-up {formatDate(record.follow_up_date)}
@@ -1126,6 +1267,13 @@ export default function PatientProfilePage() {
           </div>
         )}
       </section>
+      <input
+        ref={attachmentUploadInputRef}
+        type="file"
+        accept="image/*,.pdf"
+        className="hidden"
+        onChange={(event) => void handleAttachmentUploadChange(event)}
+      />
 
       <section id="lab" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8 scroll-mt-24">
         <div className="flex items-end justify-between gap-3">
@@ -1133,13 +1281,6 @@ export default function PatientProfilePage() {
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Diagnostics</p>
             <h2 className="mt-2 text-xl text-gray-900">Lab Orders</h2>
           </div>
-          <button
-            type="button"
-            onClick={() => scrollToSection("attachments")}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Jump to Attachments
-          </button>
         </div>
 
         {labOrders.length === 0 ? (
@@ -1185,13 +1326,6 @@ export default function PatientProfilePage() {
             <p className="text-sm uppercase tracking-[0.18em] text-emerald-600">Billing</p>
             <h2 className="mt-2 text-xl text-gray-900">Invoice History</h2>
           </div>
-          <button
-            type="button"
-            onClick={() => scrollToSection("attachments")}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Jump to Attachments
-          </button>
         </div>
 
         {invoices.length === 0 ? (
@@ -1232,13 +1366,6 @@ export default function PatientProfilePage() {
               Photos and documents attached to this patient&apos;s medical records.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => scrollToSection("overview")}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Back to Overview
-          </button>
         </div>
 
         {attachmentRecords.length === 0 ? (

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, Sparkles } from "lucide-react";
 import { ApiRequestError, apiRequest } from "@/lib/api";
+import { formatClockTime, formatDateTime } from "@/lib/date-time";
 import { canDeleteAppointments, canManageAppointments, canUseAiPrescription } from "@/lib/roles";
 import {
   AiPrescriptionSuggestion,
@@ -291,8 +292,6 @@ const toAppointmentDateKey = (value: string) => {
 
   return toDateKey(parsed);
 };
-const formatAppointmentTime = (value: string) => value.slice(0, 5);
-
 const parseDate = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
@@ -534,16 +533,7 @@ const getAppointmentReminderWindow = (appointmentDate: string) => {
 };
 
 const formatTimestamp = (value?: string | null) => {
-  if (!value) {
-    return "-";
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return parsed.toLocaleString();
+  return formatDateTime(value);
 };
 
 const sortAppointments = (items: Appointment[]) =>
@@ -1134,7 +1124,7 @@ export default function AppointmentsPage() {
     if (form.appointmentTime && !options.some((option) => option.value === form.appointmentTime)) {
       options.unshift({
         value: form.appointmentTime,
-        label: formatAppointmentTime(form.appointmentTime)
+        label: formatClockTime(form.appointmentTime)
       });
     }
 
@@ -1366,7 +1356,7 @@ export default function AppointmentsPage() {
       category: appointment.category || "consultation",
       status: appointment.status || "pending",
       appointmentDate: toAppointmentDateKey(appointment.appointment_date),
-      appointmentTime: formatAppointmentTime(appointment.appointment_time),
+      appointmentTime: formatClockTime(appointment.appointment_time),
       durationMinutes: String(appointment.duration_minutes || 15),
       plannedProcedures: appointment.planned_procedures || "",
       notes: appointment.notes || ""
@@ -2021,12 +2011,12 @@ export default function AppointmentsPage() {
         </div>
         {compact ? (
           <p className={`mt-1 truncate text-[10px] ${isClosedStatus ? "opacity-75" : ""}`}>
-            {formatAppointmentTime(appointment.appointment_time)}
+            {formatClockTime(appointment.appointment_time)}
             {appointment.doctor_name ? ` | ${appointment.doctor_name}` : ""}
           </p>
         ) : (
           <div className={`mt-2 space-y-1 text-xs ${isClosedStatus ? "opacity-75" : ""}`}>
-            <p className="font-medium">{formatAppointmentTime(appointment.appointment_time)}</p>
+            <p className="font-medium">{formatClockTime(appointment.appointment_time)}</p>
             {showDoctorLine && <p className="truncate">{appointment.doctor_name}</p>}
           </div>
         )}
@@ -2472,7 +2462,7 @@ export default function AppointmentsPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm text-emerald-600">
-                          {appointment.appointment_date} | {formatAppointmentTime(appointment.appointment_time)}
+                          {appointment.appointment_date} | {formatClockTime(appointment.appointment_time)}
                         </p>
                         <h3 className={`mt-1 text-gray-900 ${isClosedStatus ? "line-through opacity-70" : ""}`}>
                           {appointment.patient_name || appointment.title}
@@ -3135,7 +3125,7 @@ export default function AppointmentsPage() {
                               </span>
                             </div>
                             <p className="text-xs text-gray-500">
-                              {suggestion.created_at ? new Date(suggestion.created_at).toLocaleString() : "Draft"}
+                              {formatDateTime(suggestion.created_at, "Draft")}
                             </p>
                           </div>
 
@@ -3205,7 +3195,7 @@ export default function AppointmentsPage() {
                             </div>
                           ) : (
                             <p className="mt-4 text-xs text-gray-500">
-                              Reviewed {suggestion.reviewed_at ? new Date(suggestion.reviewed_at).toLocaleString() : "recently"}
+                              Reviewed {formatDateTime(suggestion.reviewed_at, "recently")}
                               {suggestion.reviewed_by_name ? ` by ${suggestion.reviewed_by_name}` : ""}.
                             </p>
                           )}
@@ -3358,7 +3348,7 @@ export default function AppointmentsPage() {
                 <div className="rounded-xl bg-gray-50 p-4">
                   <p className="text-xs uppercase tracking-[0.14em] text-gray-500">When</p>
                   <p className="mt-2 text-sm text-gray-900">
-                    {selectedAppointment.appointment_date} at {formatAppointmentTime(selectedAppointment.appointment_time)}
+                    {selectedAppointment.appointment_date} at {formatClockTime(selectedAppointment.appointment_time)}
                   </p>
                 </div>
                 <div className="rounded-xl bg-gray-50 p-4">
@@ -3539,7 +3529,7 @@ export default function AppointmentsPage() {
                 Delete the appointment for <span className="font-medium text-gray-900">{deleteTarget.patient_name || deleteTarget.title}</span>?
               </p>
               <p className="text-sm text-gray-500">
-                {deleteTarget.appointment_date} at {formatAppointmentTime(deleteTarget.appointment_time)}
+                {deleteTarget.appointment_date} at {formatClockTime(deleteTarget.appointment_time)}
               </p>
               <p className="text-sm text-red-600">This removes it from the database. Cancel keeps the record, delete does not.</p>
             </div>

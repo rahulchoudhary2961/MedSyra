@@ -21,6 +21,7 @@ import {
   Users
 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import { formatDateTime } from "@/lib/date-time";
 import { clearAuthToken } from "@/lib/auth";
 import { canAccessSettings, isFullAccessRole } from "@/lib/roles";
 import {
@@ -562,7 +563,7 @@ export default function SettingsPage() {
       return "Never";
     }
 
-    return new Date(value).toLocaleString();
+    return formatDateTime(value);
   };
 
   const handleResendSetup = async (staffId: string) => {
@@ -1445,7 +1446,7 @@ export default function SettingsPage() {
                                 <p className="text-sm text-gray-900">
                                   {log.notification_type.replace(/_/g, " ")} | {log.channel.toUpperCase()}
                                 </p>
-                                <p className="mt-1 text-xs text-gray-500">{log.recipient || "No recipient"} | {new Date(log.created_at).toLocaleString()}</p>
+                                <p className="mt-1 text-xs text-gray-500">{log.recipient || "No recipient"} | {formatDateTime(log.created_at)}</p>
                                 {log.message_preview && <p className="mt-2 text-xs text-gray-600">{log.message_preview}</p>}
                                 {log.error_message && <p className="mt-2 text-xs text-red-600">{log.error_message}</p>}
                               </div>

@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Eye, FileText, Pencil, Plus, Send, Sparkles, Trash2 } from "lucide-react";
 import { apiFetch, apiRequest } from "@/lib/api";
+import { formatDateTime } from "@/lib/date-time";
+import { isUuid } from "@/lib/uuid";
 import {
   canAccessMedicalRecords,
   canDeleteMedicalRecords,
@@ -123,6 +125,7 @@ type MedicalRecordAttachment = {
 
 export default function MedicalRecordsPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const patientFilterId = searchParams.get("patientId") || "";
   const initialQuery = searchParams.get("q") || "";
   const medicalRecordStatuses = ["completed", "pending review", "in progress"] as const;
@@ -133,13 +136,11 @@ export default function MedicalRecordsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showFormModal, setShowFormModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
-  const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MedicalRecord | null>(null);
   const [currentRole, setCurrentRole] = useState("");
   const [form, setForm] = useState(initialForm);
@@ -689,20 +690,15 @@ export default function MedicalRecordsPage() {
     triggerBlobDownload(attachment.blob, attachment.fileName);
   };
 
-  const handleView = async (record: MedicalRecord) => {
+  const handleView = (record: MedicalRecord) => {
     setError("");
-    setSelectedRecord(record);
-    setShowViewModal(true);
 
-    try {
-      const response = await apiRequest<{ success: boolean; data: MedicalRecord }>(`/medical-records/${record.id}`, {
-        authenticated: true
-      });
-      setSelectedRecord(response.data);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load latest record details";
-      setError(`${message}. Showing available record data.`);
+    if (!isUuid(record.patient_id)) {
+      setError("This patient record has an invalid id and cannot be opened.");
+      return;
     }
+
+    router.push(`/dashboard/patients/${encodeURIComponent(record.patient_id)}#medical-records`);
   };
 
   const handleEdit = (record: MedicalRecord) => {
@@ -759,7 +755,7 @@ export default function MedicalRecordsPage() {
       `Doctor: ${record.doctor_name}`,
       `Type: ${record.record_type}`,
       `Status: ${record.status}`,
-      `Date: ${record.record_date}`,
+      `Date: ${formatDateTime(record.record_date)}`,
       `Notes: ${record.notes || "-"}`
     ]);
     triggerBlobDownload(pdfBlob, `medical-record-${record.id}.pdf`);
@@ -894,7 +890,11 @@ export default function MedicalRecordsPage() {
                 </tr>
               )}
               {records.map((record) => (
-                <tr key={record.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                <tr
+                  key={record.id}
+                  onClick={() => handleView(record)}
+                  className="border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 transition-colors"
+                >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white">
@@ -915,9 +915,10 @@ export default function MedicalRecordsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-gray-600">{record.doctor_name}</td>
-                  <td className="px-6 py-4 text-gray-600">{record.record_date}</td>
+                  <td className="px-6 py-4 text-gray-600">{formatDateTime(record.record_date)}</td>
                   <td className="px-6 py-4">
                     <select
+                      onClick={(event) => event.stopPropagation()}
                       value={record.status}
                       onChange={(e) => handleStatusChange(record.id, e.target.value)}
                       disabled={updatingStatusId === record.id}
@@ -933,14 +934,22 @@ export default function MedicalRecordsPage() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => handleView(record)}
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleView(record);
+                        }}
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
-                        title="View"
+                        title="Open patient profile"
                       >
                         <Eye className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => void handleDownload(record)}
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleDownload(record);
+                        }}
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
                         title="Download"
                       >
@@ -948,7 +957,11 @@ export default function MedicalRecordsPage() {
                       </button>
                       {record.follow_up_date && (
                         <button
-                          onClick={() => void handleSendReminder(record)}
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleSendReminder(record);
+                          }}
                           disabled={sendingReminderId === record.id}
                           className="p-1.5 rounded hover:bg-emerald-50 text-emerald-600 disabled:opacity-60"
                           title="Send Reminder"
@@ -958,7 +971,11 @@ export default function MedicalRecordsPage() {
                       )}
                       {(isFullAccessRole(currentRole) || currentRole === "doctor") && (
                         <button
-                          onClick={() => handleEdit(record)}
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleEdit(record);
+                          }}
                           className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
                           title="Edit"
                         >
@@ -967,7 +984,11 @@ export default function MedicalRecordsPage() {
                       )}
                       {canDeleteMedicalRecords(currentRole) && (
                         <button
-                          onClick={() => setDeleteTarget(record)}
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setDeleteTarget(record);
+                          }}
                           disabled={deletingId === record.id}
                           className="p-1.5 rounded hover:bg-red-50 text-red-600 disabled:opacity-60"
                           title="Delete"
@@ -1140,7 +1161,7 @@ export default function MedicalRecordsPage() {
                             </span>
                           </div>
                           <p className="text-xs text-gray-500">
-                            {suggestion.created_at ? new Date(suggestion.created_at).toLocaleString() : "Draft"}
+                            {formatDateTime(suggestion.created_at, "Draft")}
                           </p>
                         </div>
 
@@ -1199,7 +1220,7 @@ export default function MedicalRecordsPage() {
                           </div>
                         ) : (
                           <p className="mt-4 text-xs text-gray-500">
-                            Reviewed {suggestion.reviewed_at ? new Date(suggestion.reviewed_at).toLocaleString() : "recently"}
+                            Reviewed {formatDateTime(suggestion.reviewed_at, "recently")}
                             {suggestion.reviewed_by_name ? ` by ${suggestion.reviewed_by_name}` : ""}.
                           </p>
                         )}
@@ -1322,67 +1343,6 @@ export default function MedicalRecordsPage() {
               </button>
             </div>
           </form>
-        </div>
-      )}
-
-      {showViewModal && selectedRecord && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
-          <div className="bg-white rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl text-gray-900">Medical Record Details</h2>
-              <p className="text-sm text-gray-600 mt-1">{selectedRecord.record_type}</p>
-            </div>
-            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <p><span className="text-gray-500">Patient:</span> {patientsMap.get(selectedRecord.patient_id) || selectedRecord.patient_name}</p>
-              <p><span className="text-gray-500">Doctor:</span> {doctorsMap.get(selectedRecord.doctor_id) || selectedRecord.doctor_name}</p>
-              <p><span className="text-gray-500">Status:</span> {selectedRecord.status}</p>
-              <p><span className="text-gray-500">Date:</span> {selectedRecord.record_date}</p>
-              <p><span className="text-gray-500">Follow-up Date:</span> {selectedRecord.follow_up_date || "-"}</p>
-              <p><span className="text-gray-500">Reminder Status:</span> {selectedRecord.follow_up_reminder_status || "pending"}</p>
-              <p className="sm:col-span-2"><span className="text-gray-500">Symptoms:</span> {selectedRecord.symptoms || "-"}</p>
-              <p className="sm:col-span-2"><span className="text-gray-500">Diagnosis:</span> {selectedRecord.diagnosis || "-"}</p>
-              <p className="sm:col-span-2"><span className="text-gray-500">Prescription:</span> {selectedRecord.prescription || "-"}</p>
-              <p className="sm:col-span-2"><span className="text-gray-500">Notes:</span> {selectedRecord.notes || "-"}</p>
-              <p className="sm:col-span-2">
-                <span className="text-gray-500">Attachment:</span>{" "}
-                {selectedRecord.file_url ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setError("");
-                      void openAttachment(selectedRecord.id, selectedRecord.file_url).catch((err) => {
-                        const message = err instanceof Error ? err.message : "Failed to open attachment";
-                        setError(message);
-                      });
-                    }}
-                    className="text-emerald-700 hover:underline"
-                  >
-                    Open attachment
-                  </button>
-                ) : (
-                  "-"
-                )}
-              </p>
-            </div>
-            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-              {selectedRecord.follow_up_date && (
-                <button
-                  type="button"
-                  onClick={() => void handleSendReminder(selectedRecord)}
-                  disabled={sendingReminderId === selectedRecord.id}
-                  className="px-4 py-2 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 disabled:opacity-60"
-                >
-                  {sendingReminderId === selectedRecord.id ? "Sending..." : "Send Reminder"}
-                </button>
-              )}
-              <ModalCloseButton
-                onClick={() => {
-                  setShowViewModal(false);
-                  setSelectedRecord(null);
-                }}
-              />
-            </div>
-          </div>
         </div>
       )}
 

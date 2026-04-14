@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import { formatDateTime } from "@/lib/date-time";
 import { useDashboardUI } from "@/app/context/DashboardUIContext";
 
 type DashboardSummaryResponse = {
@@ -65,7 +66,7 @@ export default function DashboardNotifications() {
                 <div key={item.id} className="border-b border-slate-100 px-4 py-3 last:border-b-0">
                   <p className="text-sm theme-heading">{item.title}</p>
                   {item.entity_name && <p className="mt-1 text-xs theme-copy">{item.entity_name}</p>}
-                  <p className="mt-1 text-xs text-slate-400">{new Date(item.event_time).toLocaleString()}</p>
+                  <p className="mt-1 text-xs text-slate-400">{formatDateTime(item.event_time)}</p>
                 </div>
               ))}
             </div>

@@ -18,6 +18,7 @@ import {
   YAxis
 } from "recharts";
 import { apiRequest } from "@/lib/api";
+import { formatDateTime } from "@/lib/date-time";
 import { canAccessReports } from "@/lib/roles";
 
 type ReportsResponse = {
@@ -383,7 +384,7 @@ const sortByValueDesc = <T extends Record<string, unknown>, K extends keyof T>(i
   [...items].sort((left, right) => Number(right[key] ?? 0) - Number(left[key] ?? 0));
 const escapeCsv = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
 const escapePdfText = (text: string) => text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-const formatTimestamp = (value: string | null) => (value ? new Date(value).toLocaleString() : "-");
+const formatTimestamp = (value: string | null) => formatDateTime(value);
 const toOptionalInteger = (value: string) => (value.trim() ? Number.parseInt(value, 10) : undefined);
 const toOptionalNumber = (value: string) => (value.trim() ? Number(value) : undefined);
 
@@ -765,7 +766,7 @@ export default function ReportsPage() {
 
     const lines = [
       `Report Period: ${report.meta.label}`,
-      `Generated: ${new Date().toLocaleString()}`,
+      `Generated: ${formatDateTime(new Date().toISOString())}`,
       "",
       `Appointments: ${report.stats.totalAppointments}`,
       `Completed: ${report.stats.completedAppointments}`,

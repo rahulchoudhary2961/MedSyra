@@ -738,11 +738,16 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4">
           <div className="theme-surface-strong rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-slate-200">
-              <h2 className="text-xl theme-heading">Patient Details</h2>
-              <p className="text-sm theme-copy mt-1">
-                {viewPatient.full_name}
-                {viewPatient.patient_code ? ` | ${viewPatient.patient_code}` : ""}
-              </p>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl theme-heading">Patient Details</h2>
+                  <p className="text-sm theme-copy mt-1">
+                    {viewPatient.full_name}
+                    {viewPatient.patient_code ? ` | ${viewPatient.patient_code}` : ""}
+                  </p>
+                </div>
+                <ModalCloseButton onClick={() => setViewPatient(null)} />
+              </div>
             </div>
             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <p><span className="theme-muted">Patient ID:</span> {viewPatient.patient_code || "-"}</p>
@@ -756,9 +761,6 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
               <p><span className="theme-muted">Status:</span> {viewPatient.status || "-"}</p>
               <p><span className="theme-muted">Last Visit:</span> {formatLastVisitDate(viewPatient.last_visit_at)}</p>
               <p className="sm:col-span-2"><span className="theme-muted">Address:</span> {viewPatient.address || "-"}</p>
-            </div>
-            <div className="p-6 border-t border-slate-200 flex justify-end">
-              <ModalCloseButton onClick={() => setViewPatient(null)} />
             </div>
           </div>
         </div>

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, FileUp, FlaskConical, Plus, RefreshCcw } from "lucide-react";
 import { apiFetch, apiRequest } from "@/lib/api";
 import { canAccessLab, canManageLabCatalog } from "@/lib/roles";
 import { AuthUser, Doctor, LabOrder, LabTest, Patient } from "@/types/api";
+import DocumentPreviewCard from "@/app/components/DocumentPreviewCard";
 import ModalCloseButton from "@/app/components/ModalCloseButton";
 
 type LabTestsResponse = {
@@ -62,6 +63,12 @@ type UploadReportResponse = {
   data: {
     order: LabOrder;
   };
+};
+
+type ReportPreview = {
+  url: string | null;
+  fileName: string;
+  contentType: string;
 };
 
 type TestForm = {
@@ -185,6 +192,9 @@ export default function LabPage() {
   const [testForm, setTestForm] = useState<TestForm>(buildInitialTestForm());
   const [orderForm, setOrderForm] = useState<OrderForm>(buildInitialOrderForm(patientFilterId));
   const [editOrderForm, setEditOrderForm] = useState<OrderForm>(buildInitialOrderForm(patientFilterId));
+  const [reportPreviews, setReportPreviews] = useState<Record<string, ReportPreview>>({});
+  const reportPreviewUrlsRef = useRef<string[]>([]);
+  const reportPreviewsRef = useRef<Record<string, ReportPreview>>({});
 
   const loadOrders = useCallback(async () => {
     const params = new URLSearchParams();
@@ -196,6 +206,49 @@ export default function LabPage() {
     const response = await apiRequest<LabOrdersResponse>(`/lab/orders?${params.toString()}`, { authenticated: true });
     setOrders(response.data.items || []);
   }, [filters.q, filters.status, patientFilterId]);
+
+  const ensureReportPreview = useCallback(async (order: LabOrder) => {
+    const existing = reportPreviewsRef.current[order.id];
+    if (existing) {
+      return existing;
+    }
+
+    const response = await apiFetch(`/lab/orders/${order.id}/report`, {
+      method: "GET",
+      authenticated: true,
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load report preview");
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    reportPreviewUrlsRef.current.push(objectUrl);
+
+    const preview: ReportPreview = {
+      url: objectUrl,
+      fileName: extractFileNameFromDisposition(
+        response.headers.get("content-disposition"),
+        `${order.order_number}-report.pdf`
+      ),
+      contentType: blob.type || "application/pdf"
+    };
+
+    setReportPreviews((current) => ({ ...current, [order.id]: preview }));
+    reportPreviewsRef.current = { ...reportPreviewsRef.current, [order.id]: preview };
+    return preview;
+  }, []);
+
+  const openReportPreview = useCallback(async (order: LabOrder) => {
+    const preview = await ensureReportPreview(order);
+    if (!preview.url) {
+      return;
+    }
+
+    window.open(preview.url, "_blank", "noopener,noreferrer");
+  }, [ensureReportPreview]);
 
   const loadPage = useCallback(async () => {
     setLoading(true);
@@ -234,6 +287,36 @@ export default function LabPage() {
   useEffect(() => {
     void loadPage();
   }, [loadPage]);
+
+  useEffect(() => {
+    reportPreviewsRef.current = reportPreviews;
+  }, [reportPreviews]);
+
+  useEffect(() => {
+    reportPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    reportPreviewUrlsRef.current = [];
+    setReportPreviews({});
+
+    const preload = async () => {
+      const previewableOrders = orders.filter((order) => order.report_file_url).slice(0, 6);
+      await Promise.all(
+        previewableOrders.map(async (order) => {
+          try {
+            await ensureReportPreview(order);
+          } catch {
+            // Leave the card usable if preview generation fails.
+          }
+        })
+      );
+    };
+
+    void preload();
+
+    return () => {
+      reportPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      reportPreviewUrlsRef.current = [];
+    };
+  }, [ensureReportPreview, orders]);
 
   useEffect(() => {
     setOrderForm(buildInitialOrderForm(patientFilterId));
@@ -735,6 +818,17 @@ export default function LabPage() {
         ) : (
           orders.map((order) => (
             <article key={order.id} data-testid="lab-order-card" className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+              {order.report_file_url && (
+                <DocumentPreviewCard
+                  title={`${order.order_number} report`}
+                  fileName={reportPreviews[order.id]?.fileName || `${order.order_number}-report.pdf`}
+                  fileUrl={order.report_file_url}
+                  previewUrl={reportPreviews[order.id]?.url}
+                  contentType={reportPreviews[order.id]?.contentType}
+                  onClick={() => void openReportPreview(order)}
+                  className="mb-4 max-w-sm"
+                />
+              )}
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
@@ -771,12 +865,12 @@ export default function LabPage() {
                       </span>
                     ))}
                   </div>
-                  {order.notes && (
-                    <p className="max-w-3xl rounded-2xl bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-700">
-                      {order.notes}
-                    </p>
-                  )}
-                </div>
+                {order.notes && (
+                  <p className="max-w-3xl rounded-2xl bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-700">
+                    {order.notes}
+                  </p>
+                )}
+              </div>
                 <div className="flex flex-wrap gap-2 lg:justify-end">
                   <Link href={`/dashboard/patients/${order.patient_id}`} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
                     Open Patient
@@ -806,6 +900,17 @@ export default function LabPage() {
             </div>
             <ModalCloseButton onClick={() => setSelectedOrder(null)} />
           </div>
+          {selectedOrder.report_file_url && (
+            <DocumentPreviewCard
+              title={`${selectedOrder.order_number} report`}
+              fileName={reportPreviews[selectedOrder.id]?.fileName || `${selectedOrder.order_number}-report.pdf`}
+              fileUrl={selectedOrder.report_file_url}
+              previewUrl={reportPreviews[selectedOrder.id]?.url}
+              contentType={reportPreviews[selectedOrder.id]?.contentType}
+              onClick={() => void openReportPreview(selectedOrder)}
+              className="mt-5 max-w-sm"
+            />
+          )}
 
           <form className="mt-6 grid gap-4" onSubmit={submitOrderUpdate}>
             <div className="grid gap-4 lg:grid-cols-3">

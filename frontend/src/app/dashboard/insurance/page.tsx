@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileHeart, Plus, RefreshCcw, ShieldCheck } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import { formatDateTime as formatUtcDateTime } from "@/lib/date-time";
 import { canAccessInsurance, canManageInsuranceCatalog } from "@/lib/roles";
 import { AuthUser, InsuranceClaim, InsuranceProvider } from "@/types/api";
 
@@ -109,9 +110,7 @@ const formatDate = (value: string | null | undefined) => {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
 };
 const formatDateTime = (value: string | null | undefined) => {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  return formatUtcDateTime(value);
 };
 const formatCurrency = (value: number | string | null | undefined) =>
   `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;

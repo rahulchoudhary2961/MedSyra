@@ -1,5 +1,6 @@
 import { UserPlus, FileText, Calendar, CreditCard } from "lucide-react";
 import { useState } from "react";
+import { formatDateTime } from "@/lib/date-time";
 import { ActivityLog } from "@/types/api";
 
 type Props = {
@@ -47,7 +48,7 @@ export default function PatientActivityTimeline({ items, maxVisibleItems = 6 }: 
               <div className="flex-1 pb-4">
                 <p className="text-sm theme-heading">{activity.title}</p>
                 <p className="text-sm theme-copy mt-0.5">{activity.entity_name || "-"}</p>
-                <p className="text-xs theme-muted mt-1">{new Date(activity.event_time).toLocaleString()}</p>
+                <p className="text-xs theme-muted mt-1">{formatDateTime(activity.event_time)}</p>
               </div>
             </div>
           );
