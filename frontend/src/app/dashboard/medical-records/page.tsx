@@ -570,7 +570,6 @@ export default function MedicalRecordsPage() {
         setRecords((current) =>
           sortRecords(current.map((record) => (record.id === editingRecordId ? response.data : record)))
         );
-        setSelectedRecord((current) => (current?.id === editingRecordId ? response.data : current));
       } else {
         const response = await apiRequest<MedicalRecordMutationResponse>("/medical-records", {
           method: "POST",
@@ -775,7 +774,6 @@ export default function MedicalRecordsPage() {
       setRecords((previous) =>
         previous.map((record) => (record.id === recordId ? { ...record, status } : record))
       );
-      setSelectedRecord((current) => (current && current.id === recordId ? { ...current, status } : current));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update status";
       setError(message);
@@ -798,7 +796,6 @@ export default function MedicalRecordsPage() {
       setRecords((current) =>
         sortRecords(current.map((item) => (item.id === record.id ? response.data.record : item)))
       );
-      setSelectedRecord((current) => (current?.id === record.id ? response.data.record : current));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to send reminder";
       setError(message);

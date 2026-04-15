@@ -509,22 +509,42 @@ export default function ReportsPage() {
   };
 
   useEffect(() => {
-    apiRequest<MeResponse>("/auth/me", { authenticated: true })
-      .then((response) => setCurrentRole(response.data.role || ""))
-      .catch(() => setCurrentRole(""));
-  }, []);
+    let cancelled = false;
 
-  useEffect(() => {
-    Promise.all([
+    void Promise.allSettled([
+      apiRequest<MeResponse>("/auth/me", { authenticated: true }),
       apiRequest<ReportsResponse>(`/dashboard/reports?period=${period}`, { authenticated: true }),
       apiRequest<CommercialOverviewResponse>("/commercial/overview", { authenticated: true })
-    ])
-      .then(([reportResponse, commercialResponse]) => {
-        setReport(reportResponse.data);
-        applyCommercialData(commercialResponse.data);
-      })
-      .catch((err: Error) => setError(err.message || "Failed to load reports"))
-      .finally(() => setIsLoading(false));
+    ]).then(([meResult, reportResult, commercialResult]) => {
+      if (cancelled) {
+        return;
+      }
+
+      if (meResult.status === "fulfilled") {
+        setCurrentRole(meResult.value.data.role || "");
+      } else {
+        setCurrentRole("");
+      }
+
+      if (reportResult.status === "fulfilled" && commercialResult.status === "fulfilled") {
+        setReport(reportResult.value.data);
+        applyCommercialData(commercialResult.value.data);
+      } else {
+        const reason =
+          reportResult.status === "rejected"
+            ? reportResult.reason
+            : commercialResult.status === "rejected"
+              ? commercialResult.reason
+              : new Error("Failed to load reports");
+        setError(reason instanceof Error ? reason.message : "Failed to load reports");
+      }
+
+      setIsLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [period]);
 
   const handlePeriodChange = (nextPeriod: string) => {

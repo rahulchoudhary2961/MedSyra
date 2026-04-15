@@ -125,7 +125,6 @@ type MeResponse = {
 
 export default function Home() {
   const router = useRouter();
-  const [isReady, setIsReady] = useState(false);
   const [activationMode, setActivationMode] = useState<ActivationMode>("demo");
   const [demoForm, setDemoForm] = useState({
     fullName: "",
@@ -153,34 +152,12 @@ export default function Home() {
   const [activationError, setActivationError] = useState("");
 
   useEffect(() => {
-    let cancelled = false;
-
     apiRequest<MeResponse>("/auth/me", { authenticated: true })
       .then(() => {
-        if (!cancelled) {
-          router.replace("/dashboard");
-        }
+        router.replace("/dashboard");
       })
-      .catch(() => {
-        if (!cancelled) {
-          window.requestAnimationFrame(() => {
-            setIsReady(true);
-          });
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => undefined);
   }, [router]);
-
-  if (!isReady) {
-    return (
-      <div className="theme-auth-bg min-h-screen flex items-center justify-center px-6 theme-copy">
-        Opening your workspace...
-      </div>
-    );
-  }
 
   const submitDemoRequest = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

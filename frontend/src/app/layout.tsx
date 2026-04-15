@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import GlobalInputSuggestions from "./components/GlobalInputSuggestions";
+import { getSiteUrl } from "@/lib/runtime-url";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("http://localhost:3000"),
+  metadataBase: new URL(getSiteUrl()),
   title: {
     default: "MedSyra",
     template: "%s | MedSyra"

@@ -24,7 +24,7 @@ const ONLINE_PAYABLE_STATUSES = new Set(["issued", "partially_paid", "overdue"])
 const ACTIVE_LINK_STATUSES = new Set(["created", "partially_paid"]);
 
 const getPaymentCallbackUrl = (invoiceId) => {
-  const baseUrl = (env.appBaseUrl || "http://localhost:3000").replace(/\/+$/, "");
+  const baseUrl = env.appBaseUrl.replace(/\/+$/, "");
   return `${baseUrl}/dashboard/billings?invoiceId=${invoiceId}`;
 };
 

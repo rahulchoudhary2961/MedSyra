@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import DashboardClient, { type DashboardInitialData } from "./DashboardClient";
+import { getApiBaseUrl } from "@/lib/runtime-url";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1";
+const API_BASE_URL = getApiBaseUrl();
 const AUTH_COOKIE_NAME = process.env.NEXT_PUBLIC_AUTH_COOKIE_NAME || "medsyra_session";
 const GUEST_MODE_COOKIE_NAME = "medsyra_guest_mode";
 
@@ -49,13 +50,7 @@ type DashboardBootstrapResponse = {
       entity_name: string | null;
       event_time: string;
     }>;
-  };
-};
-
-type PatientsResponse = {
-  success: boolean;
-  data: {
-    items: Array<unknown>;
+    patients: Array<unknown>;
   };
 };
 
@@ -84,26 +79,21 @@ const fetchInitialDashboardData = async () => {
     Cookie: cookieHeader
   });
 
-  const [dashboardResponse, patientsResponse] = await Promise.all([
-    fetch(`${API_BASE_URL}/dashboard/summary`, {
-      method: "GET",
-      headers,
-      cache: "no-store"
-    }).then(async (response) => (response.ok ? (response.json() as Promise<DashboardBootstrapResponse>) : null)).catch(() => null),
-    fetch(`${API_BASE_URL}/patients?limit=6`, {
-      method: "GET",
-      headers,
-      cache: "no-store"
-    }).then(async (response) => (response.ok ? (response.json() as Promise<PatientsResponse>) : null)).catch(() => null)
-  ]);
+  const dashboardResponse = await fetch(`${API_BASE_URL}/dashboard/summary`, {
+    method: "GET",
+    headers,
+    cache: "no-store"
+  })
+    .then(async (response) => (response.ok ? (response.json() as Promise<DashboardBootstrapResponse>) : null))
+    .catch(() => null);
 
-  if (!dashboardResponse || !patientsResponse) {
+  if (!dashboardResponse) {
     return null;
   }
 
   return {
     ...dashboardResponse.data,
-    patients: patientsResponse.data.items || []
+    patients: dashboardResponse.data.patients || []
   };
 };
 

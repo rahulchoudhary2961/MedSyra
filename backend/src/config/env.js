@@ -20,6 +20,13 @@ if (missing.length > 0) {
   throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
 }
 
+const defaultAppBaseUrl = isProduction ? "" : "http://localhost:3000";
+const appBaseUrl = (process.env.APP_BASE_URL || process.env.CORS_ORIGIN || defaultAppBaseUrl).trim();
+
+if (isProduction && !appBaseUrl) {
+  throw new Error("APP_BASE_URL must be set in production");
+}
+
 const env = {
   nodeEnv: resolvedNodeEnv,
   port: Number(process.env.PORT || 5000),
@@ -104,7 +111,7 @@ const env = {
   razorpayKeyId: process.env.RAZORPAY_KEY_ID || "",
   razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || "",
   razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || "",
-  appBaseUrl: process.env.APP_BASE_URL || process.env.CORS_ORIGIN || "http://localhost:3000"
+  appBaseUrl
 };
 
 const weakJwtSecret = env.jwtSecret.length < 32 || env.jwtSecret.toLowerCase().includes("change-this-secret");

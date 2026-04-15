@@ -315,7 +315,7 @@ const buildRevenueForecast = (currentDateKey, monthlyTrendRows) => {
 
 const getSummary = async (organizationId, branchId = null) => {
   const currentDateKey = getCurrentDateKey();
-  const [metrics, activities, followUpQueue, recallQueue] = await Promise.all([
+  const [metrics, activities, followUpQueue, recallQueue, recentPatients] = await Promise.all([
     pool.query(
       `
       WITH most_common_issue AS (
@@ -504,6 +504,34 @@ const getSummary = async (organizationId, branchId = null) => {
       LIMIT 6
       `,
       [organizationId, currentDateKey, branchId]
+    ),
+    pool.query(
+      `
+      SELECT
+        p.id,
+        p.patient_code,
+        p.full_name,
+        p.age,
+        p.date_of_birth,
+        p.gender,
+        p.phone,
+        p.email,
+        p.blood_type,
+        p.description,
+        p.emergency_contact,
+        p.address,
+        p.status,
+        p.last_visit_at,
+        p.created_at,
+        p.updated_at
+      FROM patients p
+      WHERE p.organization_id = $1
+        AND p.is_active = true
+        ${branchExistsSql("p.organization_id", "p.id")}
+      ORDER BY p.created_at DESC
+      LIMIT 6
+      `,
+      [organizationId, branchId]
     )
   ]);
 
@@ -608,7 +636,8 @@ const getSummary = async (organizationId, branchId = null) => {
         daysSinceLastVisit: Number(row.days_since_last_visit || 0)
       }))
     },
-    recentActivity: activities.rows
+    recentActivity: activities.rows,
+    patients: recentPatients.rows
   };
 };
 

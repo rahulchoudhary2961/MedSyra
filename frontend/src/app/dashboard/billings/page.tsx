@@ -216,7 +216,7 @@ export default function BillingsPage() {
   }, []);
 
   useEffect(() => {
-    loadMetadata();
+    void loadMetadata();
   }, [loadMetadata]);
 
   useEffect(() => {
@@ -240,9 +240,23 @@ export default function BillingsPage() {
   }, [patientFilterId, patients]);
 
   useEffect(() => {
-    apiRequest<MeResponse>("/auth/me", { authenticated: true })
-      .then((response) => setCurrentRole(response.data.role || ""))
-      .catch(() => setCurrentRole(""));
+    let cancelled = false;
+
+    void apiRequest<MeResponse>("/auth/me", { authenticated: true })
+      .then((response) => {
+        if (!cancelled) {
+          setCurrentRole(response.data.role || "");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCurrentRole("");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

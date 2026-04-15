@@ -232,9 +232,25 @@ export default function PatientsPage() {
   }, [fetchPatients, initialQuery]);
 
   useEffect(() => {
-    apiRequest<MeResponse>("/auth/me", { authenticated: true })
-      .then((response) => setCurrentRole(response.data.role || ""))
-      .catch(() => setCurrentRole(""));
+    let cancelled = false;
+
+    void Promise.allSettled([
+      apiRequest<MeResponse>("/auth/me", { authenticated: true })
+    ]).then(([meResult]) => {
+      if (cancelled) {
+        return;
+      }
+
+      if (meResult.status === "fulfilled") {
+        setCurrentRole(meResult.value.data.role || "");
+      } else {
+        setCurrentRole("");
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

@@ -629,13 +629,21 @@ export default function AppointmentsPage() {
       const allItems = [...(firstResponse.data.items || [])];
       const totalPages = firstResponse.data.pagination?.totalPages || 1;
 
-      for (let page = 2; page <= totalPages; page += 1) {
-        const pageParams = new URLSearchParams(firstPageParams);
-        pageParams.set("page", String(page));
-        const pageResponse = await apiRequest<AppointmentsResponse>(`/appointments?${pageParams.toString()}`, {
-          authenticated: true
-        });
-        allItems.push(...(pageResponse.data.items || []));
+      if (totalPages > 1) {
+        const pageResponses = await Promise.all(
+          Array.from({ length: totalPages - 1 }, (_, index) => {
+            const page = index + 2;
+            const pageParams = new URLSearchParams(firstPageParams);
+            pageParams.set("page", String(page));
+            return apiRequest<AppointmentsResponse>(`/appointments?${pageParams.toString()}`, {
+              authenticated: true
+            });
+          })
+        );
+
+        for (const pageResponse of pageResponses) {
+          allItems.push(...(pageResponse.data.items || []));
+        }
       }
 
       setAppointments(allItems);

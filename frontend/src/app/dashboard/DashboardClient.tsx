@@ -80,17 +80,11 @@ type DashboardResponse = {
     operations: DashboardOperationsState;
     crm: DashboardCrmState;
     recentActivity: ActivityLog[];
+    patients: Patient[];
   };
 };
 
 export type DashboardInitialData = (DashboardResponse["data"] & { patients: Patient[] }) | null;
-
-type PatientsResponse = {
-  success: boolean;
-  data: {
-    items: Patient[];
-  };
-};
 
 type GetPatientResponse = {
   success: boolean;
@@ -233,10 +227,7 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
     setError("");
 
     try {
-      const [dashboardRes, patientsRes] = await Promise.all([
-        apiRequest<DashboardResponse>("/dashboard/summary", { authenticated: true }),
-        apiRequest<PatientsResponse>("/patients?limit=6", { authenticated: true })
-      ]);
+      const dashboardRes = await apiRequest<DashboardResponse>("/dashboard/summary", { authenticated: true });
 
       if (dashboardRequestRef.current !== requestId) {
         return;
@@ -247,7 +238,7 @@ export default function DashboardClient({ initialData }: { initialData?: Dashboa
       setOperations(dashboardRes.data.operations || emptyOperationsState);
       setCrm(dashboardRes.data.crm || emptyCrmState);
       setActivities(dashboardRes.data.recentActivity || []);
-      setPatients(patientsRes.data.items || []);
+      setPatients(dashboardRes.data.patients || []);
     } catch (err) {
       if (dashboardRequestRef.current !== requestId) {
         return;

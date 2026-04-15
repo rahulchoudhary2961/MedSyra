@@ -1,9 +1,9 @@
 import { getSelectedBranchId } from "./branch-selection";
 import { getAuthToken } from "./auth";
 import { isGuestModeEnabled } from "./guest-mode";
+import { getApiBaseUrl } from "./runtime-url";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1";
+const API_BASE_URL = getApiBaseUrl();
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
