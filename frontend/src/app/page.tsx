@@ -102,6 +102,63 @@ const trustPoints = [
   "Built for daily clinic operations"
 ];
 
+type PricingPlan = {
+  name: string;
+  price: string;
+  cadence: string;
+  description: string;
+  value: "starter" | "growth" | "enterprise";
+  badge: string;
+  featured?: boolean;
+  features: string[];
+};
+
+const pricingPlans: PricingPlan[] = [
+  {
+    name: "Starter",
+    price: "Rs. 999",
+    cadence: "/month",
+    description: "For solo doctors and small clinics that need the core outpatient workflow.",
+    value: "starter",
+    badge: "Best to start",
+    features: [
+      "Patients, doctors, appointments, records, and billing",
+      "Basic reminders and CRM follow-up",
+      "1 branch and 3 staff users",
+      "5 GB storage and 100 AI or WhatsApp credits"
+    ]
+  },
+  {
+    name: "Growth",
+    price: "Rs. 1,499",
+    cadence: "/month",
+    description: "For multi-doctor clinics that want stronger coordination and reporting.",
+    value: "growth",
+    badge: "Most clinics choose this",
+    featured: true,
+    features: [
+      "Everything in Starter",
+      "Lab module and stronger CRM workflows",
+      "1 branch and 10 staff users",
+      "25 GB storage and 300 AI or WhatsApp credits"
+    ]
+  },
+  {
+    name: "Pro / Branch",
+    price: "Rs. 2,499",
+    cadence: "/month",
+    description: "For larger clinics that need branch-aware operations and heavier workflows.",
+    value: "enterprise",
+    badge: "Advanced operations",
+    features: [
+      "Everything in Growth",
+      "Pharmacy, inventory, and insurance",
+      "Up to 3 branches and 25 staff users",
+      "100 GB storage and 800 AI or WhatsApp credits"
+    ]
+  }
+];
+
 type ActivationMode = "demo" | "trial";
 
 type LeadActivationResponse = {
@@ -226,6 +283,13 @@ export default function Home() {
     } finally {
       setIsSubmittingActivation(false);
     }
+  };
+
+  const pickPlan = (planTier: "starter" | "growth" | "enterprise") => {
+    setTrialForm((current) => ({ ...current, requestedPlanTier: planTier }));
+    setActivationMode("trial");
+    setActivationError("");
+    setActivationSuccess("");
   };
 
   return (
@@ -458,6 +522,78 @@ export default function Home() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 pb-20 lg:px-10">
+        <div className="animate-fade-up mx-auto max-w-3xl text-center">
+          <p className="text-sm font-medium uppercase tracking-[0.24em] text-emerald-700">Pricing</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-5xl">
+            Clear plans for clinics at different stages
+          </h2>
+          <p className="mt-4 text-base leading-8 text-slate-600">
+            The core workflow stays simple. Scale, storage, credits, and advanced operations increase as the clinic grows.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-6 lg:grid-cols-3">
+          {pricingPlans.map((plan, index) => (
+            <div
+              key={plan.name}
+              className={`animate-fade-up flex h-full flex-col rounded-[2rem] border p-8 shadow-[0_20px_60px_rgba(15,23,42,0.05)] ${
+                plan.featured
+                  ? "border-emerald-300 bg-[linear-gradient(180deg,#f4fff9_0%,#ffffff_100%)]"
+                  : "border-slate-200 bg-white"
+              }`}
+              style={{ animationDelay: `${index * 0.08 + 0.1}s` }}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-lg font-semibold text-slate-950">{plan.name}</p>
+                  <p className="mt-3 text-sm leading-7 text-slate-600">{plan.description}</p>
+                </div>
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
+                    plan.featured ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  {plan.badge}
+                </span>
+              </div>
+
+              <div className="mt-8 flex items-end gap-2">
+                <span className="text-4xl font-semibold tracking-[-0.05em] text-slate-950 md:text-5xl">{plan.price}</span>
+                <span className="pb-1 text-sm text-slate-500">{plan.cadence}</span>
+              </div>
+
+              <div className="mt-8 space-y-3">
+                {plan.features.map((feature) => (
+                  <div key={feature} className="flex items-start gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none text-emerald-600" />
+                    <span>{feature}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8 flex flex-1 items-end">
+                <Link
+                  href="#contact-form"
+                  onClick={() => pickPlan(plan.value)}
+                  className={`inline-flex w-full items-center justify-center rounded-full px-6 py-3 text-sm font-semibold transition ${
+                    plan.featured
+                      ? "bg-slate-950 text-white hover:bg-emerald-700"
+                      : "border border-slate-300 bg-white text-slate-900 hover:border-emerald-300 hover:text-emerald-700"
+                  }`}
+                >
+                  Start {plan.name}
+                </Link>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-8 rounded-[1.75rem] border border-emerald-100 bg-emerald-50/70 px-6 py-5 text-sm leading-7 text-slate-700">
+          Extra AI, WhatsApp, storage, branches, and onboarding can be added separately so you only pay for the scale you actually use.
         </div>
       </section>
 
@@ -717,7 +853,7 @@ export default function Home() {
                     >
                       <option value="starter">Starter</option>
                       <option value="growth">Growth</option>
-                      <option value="enterprise">Enterprise</option>
+                      <option value="enterprise">Pro / Branch</option>
                     </select>
                   </div>
                   <div>

@@ -527,7 +527,7 @@ const getSummary = async (organizationId, branchId = null) => {
       FROM patients p
       WHERE p.organization_id = $1
         AND p.is_active = true
-        ${branchExistsSql("p.organization_id", "p.id")}
+        ${branchExistsSql("p.organization_id", "p.id", 2)}
       ORDER BY p.created_at DESC
       LIMIT 6
       `,

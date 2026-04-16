@@ -91,6 +91,7 @@ type PatientTimelineItem = {
   detailLines: string[];
   sectionId: string;
   ctaLabel: string;
+  href?: string;
   toneClass: string;
   searchText: string;
 };
@@ -667,6 +668,7 @@ export default function PatientProfilePage() {
       ].filter(Boolean),
       sectionId: "pharmacy",
       ctaLabel: "Open Pharmacy",
+      href: `/dashboard/pharmacy?patientId=${encodeURIComponent(dispense.patient_id)}&action=dispense`,
       toneClass: getTimelineTone("pharmacy"),
       searchText: buildTimelineSearchText(
         dispense.dispense_number,
@@ -759,6 +761,7 @@ export default function PatientProfilePage() {
         descriptionTone: "text-gray-600"
       },
       {
+        href: `/dashboard/pharmacy?patientId=${encodeURIComponent(patient.id)}&action=dispense`,
         sectionId: "pharmacy",
         label: "Pharmacy",
         description: "Review dispensed medicines, batch history, and linked pharmacy bills.",
@@ -1103,13 +1106,22 @@ export default function PatientProfilePage() {
                     </div>
                   )}
                 </div>
-                  <button
-                    type="button"
-                    onClick={() => scrollToSection(item.sectionId)}
-                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    {item.ctaLabel}
-                  </button>
+                  {item.href ? (
+                    <Link
+                      href={item.href}
+                      className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      {item.ctaLabel}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => scrollToSection(item.sectionId)}
+                      className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      {item.ctaLabel}
+                    </button>
+                  )}
                 </div>
               </article>
             ))}

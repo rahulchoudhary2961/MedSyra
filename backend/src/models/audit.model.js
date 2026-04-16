@@ -91,7 +91,7 @@ const createAuditLog = async (dbOrPayload, maybePayload) => {
       before_state,
       after_state
     )
-    VALUES ($1,COALESCE($2,(SELECT id FROM branches WHERE organization_id = $1 AND is_default = true LIMIT 1)),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19::jsonb,$20::jsonb)
+    VALUES ($1,COALESCE($2::uuid,(SELECT id FROM branches WHERE organization_id = $1 AND is_default = true LIMIT 1)),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19::jsonb,$20::jsonb)
     RETURNING id, created_at
   `;
 
@@ -130,7 +130,7 @@ const createAuditLog = async (dbOrPayload, maybePayload) => {
       entity_name,
       event_time
     )
-    VALUES ($1,COALESCE($2,(SELECT id FROM branches WHERE organization_id = $1 AND is_default = true LIMIT 1)),$3,$4,$5,COALESCE($6, NOW()))
+    VALUES ($1,COALESCE($2::uuid,(SELECT id FROM branches WHERE organization_id = $1 AND is_default = true LIMIT 1)),$3,$4,$5,COALESCE($6, NOW()))
     `,
     [
       payload.organizationId,

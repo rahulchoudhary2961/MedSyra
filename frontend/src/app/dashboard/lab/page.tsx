@@ -195,6 +195,8 @@ export default function LabPage() {
   const [reportPreviews, setReportPreviews] = useState<Record<string, ReportPreview>>({});
   const reportPreviewUrlsRef = useRef<string[]>([]);
   const reportPreviewsRef = useRef<Record<string, ReportPreview>>({});
+  const testFormRef = useRef<HTMLElement | null>(null);
+  const orderFormRef = useRef<HTMLElement | null>(null);
 
   const loadOrders = useCallback(async () => {
     const params = new URLSearchParams();
@@ -321,6 +323,18 @@ export default function LabPage() {
   useEffect(() => {
     setOrderForm(buildInitialOrderForm(patientFilterId));
   }, [patientFilterId]);
+
+  useEffect(() => {
+    if (showTestForm) {
+      testFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [showTestForm]);
+
+  useEffect(() => {
+    if (showOrderForm) {
+      orderFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [showOrderForm]);
 
   useEffect(() => {
     if (!patientFilterId || patients.some((patient) => patient.id === patientFilterId)) {
@@ -632,7 +646,7 @@ export default function LabPage() {
       </section>
 
       {showTestForm && canManageLabCatalog(currentUser?.role) && (
-        <section data-testid="lab-test-form" className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
+        <section ref={testFormRef} data-testid="lab-test-form" className="rounded-3xl border border-emerald-200 bg-emerald-50/50 p-6 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Catalog</p>
@@ -676,7 +690,7 @@ export default function LabPage() {
       )}
 
       {showOrderForm && (
-        <section data-testid="lab-order-form" className="rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm">
+        <section ref={orderFormRef} data-testid="lab-order-form" className="rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm uppercase tracking-[0.18em] text-emerald-700">Booking</p>

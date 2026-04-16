@@ -143,7 +143,7 @@ export default function DashboardLayout({
         )}
       </DoctorAppointmentCount>
 
-      <div className={`transition-[margin-left] duration-[220ms] ease-out ${isSidebarExpanded ? "lg:ml-72" : "lg:ml-16"}`}>
+      <div className={`transition-[margin-left] duration-150 ease-out ${isSidebarExpanded ? "lg:ml-72" : "lg:ml-16"}`}>
         <DashboardHeader />
 
         <main className="p-4 sm:p-6 lg:p-8">{children}</main>

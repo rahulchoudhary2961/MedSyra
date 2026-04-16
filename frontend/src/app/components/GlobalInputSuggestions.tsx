@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 type SuggestionEntry = {
   value: string;
@@ -107,7 +108,13 @@ const commitSuggestion = (input: HTMLInputElement) => {
 };
 
 export default function GlobalInputSuggestions() {
+  const pathname = usePathname();
+
   useEffect(() => {
+    if (pathname === "/" || pathname.startsWith("/auth")) {
+      return;
+    }
+
     const datalistByKey = new Map<string, HTMLDataListElement>();
 
     const ensureDatalist = (input: HTMLInputElement) => {
@@ -201,31 +208,39 @@ export default function GlobalInputSuggestions() {
       }
     };
 
-    syncAllInputs();
-
-    const observer = new MutationObserver(() => {
+    let observer: MutationObserver | null = null;
+    let initialized = false;
+    const initTimer = window.setTimeout(() => {
+      initialized = true;
       syncAllInputs();
-    });
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+      observer = new MutationObserver(() => {
+        syncAllInputs();
+      });
 
-    document.addEventListener("focusin", handleFocusIn);
-    document.addEventListener("input", handleInput);
-    document.addEventListener("blur", handleCommit, true);
-    document.addEventListener("keydown", handleKeyDown);
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+
+      document.addEventListener("focusin", handleFocusIn);
+      document.addEventListener("input", handleInput);
+      document.addEventListener("blur", handleCommit, true);
+      document.addEventListener("keydown", handleKeyDown);
+    }, 0);
 
     return () => {
-      observer.disconnect();
-      document.removeEventListener("focusin", handleFocusIn);
-      document.removeEventListener("input", handleInput);
-      document.removeEventListener("blur", handleCommit, true);
-      document.removeEventListener("keydown", handleKeyDown);
+      window.clearTimeout(initTimer);
+      observer?.disconnect();
+      if (initialized) {
+        document.removeEventListener("focusin", handleFocusIn);
+        document.removeEventListener("input", handleInput);
+        document.removeEventListener("blur", handleCommit, true);
+        document.removeEventListener("keydown", handleKeyDown);
+      }
       datalistByKey.forEach((datalist) => datalist.remove());
     };
-  }, []);
+  }, [pathname]);
 
   return null;
 }

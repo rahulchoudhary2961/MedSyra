@@ -17,7 +17,7 @@ const createBillingAuditLog = async (dbOrPayload, maybePayload) => {
       after_state,
       metadata
     )
-    VALUES ($1,COALESCE($2,(SELECT id FROM branches WHERE organization_id = $1 AND is_default = true LIMIT 1)),$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb)
+    VALUES ($1,COALESCE($2::uuid,(SELECT id FROM branches WHERE organization_id = $1 AND is_default = true LIMIT 1)),$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb)
     RETURNING id
   `;
 

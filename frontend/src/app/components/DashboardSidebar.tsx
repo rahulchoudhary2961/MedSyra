@@ -90,7 +90,7 @@ export default function DashboardSidebar({
             sidebarCloseTimeoutRef.current = null;
           }, 70);
         }}
-        className={`theme-sidebar fixed top-0 left-0 h-full w-[85vw] max-w-72 z-50 overflow-hidden transition-[transform,width] duration-[220ms] ease-out sm:w-72 lg:translate-x-0 lg:max-w-none ${
+        className={`theme-sidebar fixed top-0 left-0 h-full w-[85vw] max-w-72 z-50 overflow-hidden transition-[transform,width] duration-150 ease-out sm:w-72 lg:translate-x-0 lg:max-w-none ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         } ${isSidebarExpanded ? "lg:w-72" : "lg:w-16"}`}
       >
@@ -98,13 +98,13 @@ export default function DashboardSidebar({
           <div className={`h-16 flex items-center border-b border-slate-800 ${isSidebarExpanded ? "px-6" : "justify-center px-3 lg:px-0"}`}>
             <div className={`flex items-center gap-2 ${!isSidebarExpanded ? "lg:justify-center" : ""}`}>
               <BrandLogo size={34} className="rounded-xl shadow-[0_0_24px_rgba(16,185,129,0.28)]" priority />
-              <span className={`font-semibold text-white transition-all duration-300 ${isSidebarExpanded ? "opacity-100 max-w-40" : "opacity-0 max-w-0 overflow-hidden lg:max-w-0"}`}>
+              <span className={`font-semibold text-white transition-[opacity,max-width] duration-150 ease-out ${isSidebarExpanded ? "opacity-100 max-w-40" : "opacity-0 max-w-0 overflow-hidden lg:max-w-0"}`}>
                 medsyra
               </span>
             </div>
           </div>
 
-          <nav className={`flex-1 px-3 py-4 overflow-y-auto transition-opacity duration-[220ms] ease-out ${isSidebarExpanded ? "opacity-100" : "no-scrollbar opacity-100"}`}>
+          <nav className={`flex-1 px-3 py-4 overflow-y-auto ${isSidebarExpanded ? "" : "no-scrollbar"}`}>
             <ul className="space-y-1">
               {navigation.map((item) => {
                 const Icon = item.icon;
@@ -123,11 +123,11 @@ export default function DashboardSidebar({
                       }}
                     >
                       <Icon className="h-7 w-7 shrink-0" />
-                      <span className={`transition-all duration-[220ms] ease-out ${isSidebarExpanded ? "opacity-100 max-w-40" : "opacity-0 max-w-0 overflow-hidden lg:translate-x-[-8px]"}`}>
+                      <span className={`transition-[opacity,max-width,transform] duration-150 ease-out ${isSidebarExpanded ? "opacity-100 max-w-40" : "opacity-0 max-w-0 overflow-hidden lg:translate-x-[-8px]"}`}>
                         {item.name}
                       </span>
                       {item.path === "/dashboard/appointments" && currentUser?.role === "doctor" && upcomingAppointmentsCount > 0 && (
-                        <span className={`ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-emerald-500 px-2 py-0.5 text-xs font-medium text-white transition-all duration-[220ms] ease-out ${isSidebarExpanded ? "opacity-100 max-w-12" : "opacity-0 max-w-0 overflow-hidden"}`}>
+                        <span className={`ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-emerald-500 px-2 py-0.5 text-xs font-medium text-white transition-[opacity,max-width] duration-150 ease-out ${isSidebarExpanded ? "opacity-100 max-w-12" : "opacity-0 max-w-0 overflow-hidden"}`}>
                           {upcomingAppointmentsCount}
                         </span>
                       )}
