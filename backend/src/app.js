@@ -53,6 +53,18 @@ app.use(
     credentials: true
   })
 );
+
+app.get("/", (_req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "MedSyra API is running"
+  });
+});
+
+app.head("/", (_req, res) => {
+  res.sendStatus(200);
+});
+
 app.use(enforceHttps);
 app.use(botProtection);
 app.use(requestSecurityMonitor);
